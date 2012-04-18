@@ -52,7 +52,7 @@ var sendTests = []struct {
 func TestSend(t *testing.T) {
 	for _, tt := range sendTests {
 		var buf bytes.Buffer
-		c := Conn{rw: bufio.ReadWriter{Writer: bufio.NewWriter(&buf)}}
+		c := conn{rw: bufio.ReadWriter{Writer: bufio.NewWriter(&buf)}}
 		err := c.Send(tt.args[0].(string), tt.args[1:]...)
 		if err != nil {
 			t.Errorf("Send(%v) returned error %v", tt.args, err)
@@ -112,7 +112,7 @@ var receiveTests = []struct {
 
 func TestReceive(t *testing.T) {
 	for _, tt := range receiveTests {
-		c := Conn{rw: bufio.ReadWriter{
+		c := conn{rw: bufio.ReadWriter{
 			Reader: bufio.NewReader(strings.NewReader(tt.reply)),
 			Writer: bufio.NewWriter(nil), // writer need to support Flush
 		}}
@@ -133,18 +133,18 @@ func TestReceive(t *testing.T) {
 	}
 }
 
-func connect() (*Conn, error) {
-	conn, err := Dial("tcp", ":6379")
+func connect() (Conn, error) {
+	c, err := Dial("tcp", ":6379")
 	if err != nil {
 		return nil, err
 	}
 
-	reply, err := conn.Do("SELECT", "9")
+	reply, err := c.Do("SELECT", "9")
 	if err != nil {
 		return nil, err
 	}
 
-	reply, err = conn.Do("DBSIZE")
+	reply, err = c.Do("DBSIZE")
 	if err != nil {
 		return nil, err
 	}
@@ -153,10 +153,10 @@ func connect() (*Conn, error) {
 		return nil, errors.New("Database #9 is not empty, test can not continue")
 	}
 
-	return conn, nil
+	return c, nil
 }
 
-func disconnect(c *Conn) error {
+func disconnect(c Conn) error {
 	_, err := c.Do("SELECT", "9")
 	if err != nil {
 		return nil
@@ -223,20 +223,20 @@ var testCommands = []struct {
 }
 
 func TestCommands(t *testing.T) {
-	conn, err := connect()
+	c, err := connect()
 	if err != nil {
 		t.Fatalf("Error connection to database, %v", err)
 	}
-	defer disconnect(conn)
+	defer disconnect(c)
 
-	for _, c := range testCommands {
-		actual, err := conn.Do(c.args[0].(string), c.args[1:]...)
+	for _, cmd := range testCommands {
+		actual, err := c.Do(cmd.args[0].(string), cmd.args[1:]...)
 		if err != nil {
-			t.Errorf("Do(%v) returned error %v", c.args, err)
+			t.Errorf("Do(%v) returned error %v", cmd.args, err)
 			continue
 		}
-		if !reflect.DeepEqual(actual, c.expected) {
-			t.Errorf("Do(%v) = %v, want %v", c.args, actual, c.expected)
+		if !reflect.DeepEqual(actual, cmd.expected) {
+			t.Errorf("Do(%v) = %v, want %v", cmd.args, actual, cmd.expected)
 		}
 	}
 }

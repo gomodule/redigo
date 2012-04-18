@@ -12,10 +12,6 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-// Package redis is a client for the Redis database.
-//
-// Package redis only supports the binary-safe Redis protocol, so you can use
-// it with any Redis version >= 1.2.0.
 package redis
 
 import (
@@ -29,20 +25,8 @@ import (
 	"time"
 )
 
-// Conn represents a connection to a Redis server.
-//
-// Conn objects are not thread-safe.
-//
-// The Conn Do and Receive methods return a Redis reply. The following table
-// shows how Redis reply types map to Go language types.
-// 
-//  Redis type          Go type
-//  Integer             int64
-//  Status              string
-//  Bulk                []byte or nil if value not present
-//  Multi-Bulk          []interface{} or nil if value not present
-//  Error               redis.Error
-type Conn struct {
+// conn is the low-level implementation of Conn
+type conn struct {
 	rw      bufio.ReadWriter
 	conn    net.Conn
 	err     error
@@ -50,7 +34,9 @@ type Conn struct {
 }
 
 // Dial connects to the Redis server at the given network and address.
-func Dial(network, address string) (*Conn, error) {
+// 
+// The returned connection is not thread-safe.
+func Dial(network, address string) (Conn, error) {
 	netConn, err := net.Dial(network, address)
 	if err != nil {
 		return nil, err
@@ -60,7 +46,7 @@ func Dial(network, address string) (*Conn, error) {
 
 // DialTimeout acts like Dial but takes a timeout. The timeout includes name
 // resolution, if required.
-func DialTimeout(network, address string, timeout time.Duration) (*Conn, error) {
+func DialTimeout(network, address string, timeout time.Duration) (Conn, error) {
 	netConn, err := net.DialTimeout(network, address, timeout)
 	if err != nil {
 		return nil, err
@@ -68,8 +54,8 @@ func DialTimeout(network, address string, timeout time.Duration) (*Conn, error) 
 	return newConn(netConn), nil
 }
 
-func newConn(netConn net.Conn) *Conn {
-	return &Conn{
+func newConn(netConn net.Conn) Conn {
+	return &conn{
 		conn: netConn,
 		rw: bufio.ReadWriter{
 			bufio.NewReader(netConn),
@@ -79,24 +65,24 @@ func newConn(netConn net.Conn) *Conn {
 }
 
 // Close closes the connection.
-func (c *Conn) Close() error {
+func (c *conn) Close() error {
 	return c.conn.Close()
 }
 
 // Err returns the permanent error for this connection.
-func (c *Conn) Err() error {
+func (c *conn) Err() error {
 	return c.err
 }
 
 // Do sends a command to the server and returns the received reply.
-func (c *Conn) Do(cmd string, args ...interface{}) (interface{}, error) {
+func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	if err := c.Send(cmd, args...); err != nil {
 		return nil, err
 	}
 	return c.Receive()
 }
 
-func (c *Conn) writeN(prefix byte, n int) error {
+func (c *conn) writeN(prefix byte, n int) error {
 	c.scratch = append(c.scratch[0:0], prefix)
 	c.scratch = strconv.AppendInt(c.scratch, int64(n), 10)
 	c.scratch = append(c.scratch, "\r\n"...)
@@ -104,7 +90,7 @@ func (c *Conn) writeN(prefix byte, n int) error {
 	return err
 }
 
-func (c *Conn) writeString(s string) error {
+func (c *conn) writeString(s string) error {
 	if err := c.writeN('$', len(s)); err != nil {
 		return err
 	}
@@ -115,7 +101,7 @@ func (c *Conn) writeString(s string) error {
 	return err
 }
 
-func (c *Conn) writeBytes(p []byte) error {
+func (c *conn) writeBytes(p []byte) error {
 	if err := c.writeN('$', len(p)); err != nil {
 		return err
 	}
@@ -126,7 +112,7 @@ func (c *Conn) writeBytes(p []byte) error {
 	return err
 }
 
-func (c *Conn) readLine() ([]byte, error) {
+func (c *conn) readLine() ([]byte, error) {
 	p, err := c.rw.ReadSlice('\n')
 	if err == bufio.ErrBufferFull {
 		return nil, errors.New("redigo: long response line")
@@ -141,12 +127,7 @@ func (c *Conn) readLine() ([]byte, error) {
 	return p[:i], nil
 }
 
-// Error represets an error returned in a command reply.
-type Error string
-
-func (err Error) Error() string { return string(err) }
-
-func (c *Conn) parseReply() (interface{}, error) {
+func (c *conn) parseReply() (interface{}, error) {
 	line, err := c.readLine()
 	if err != nil {
 		return nil, err
@@ -201,7 +182,7 @@ func (c *Conn) parseReply() (interface{}, error) {
 }
 
 // Send sends a command for the server without waiting for a reply.
-func (c *Conn) Send(cmd string, args ...interface{}) error {
+func (c *conn) Send(cmd string, args ...interface{}) error {
 	if c.err != nil {
 		return c.err
 	}
@@ -237,7 +218,7 @@ func (c *Conn) Send(cmd string, args ...interface{}) error {
 }
 
 // Receive receives a single reply from the server
-func (c *Conn) Receive() (interface{}, error) {
+func (c *conn) Receive() (interface{}, error) {
 	c.err = c.rw.Flush()
 	if c.err != nil {
 		return nil, c.err
@@ -247,7 +228,6 @@ func (c *Conn) Receive() (interface{}, error) {
 		c.err = err
 	} else if e, ok := v.(Error); ok {
 		err = e
-		v = nil
 	}
 	return v, err
 }
