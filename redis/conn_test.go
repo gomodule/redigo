@@ -222,7 +222,7 @@ var testCommands = []struct {
 	},
 }
 
-func TestCommands(t *testing.T) {
+func TestDoCommands(t *testing.T) {
 	c, err := connect()
 	if err != nil {
 		t.Fatalf("Error connection to database, %v", err)
@@ -237,6 +237,32 @@ func TestCommands(t *testing.T) {
 		}
 		if !reflect.DeepEqual(actual, cmd.expected) {
 			t.Errorf("Do(%v) = %v, want %v", cmd.args, actual, cmd.expected)
+		}
+	}
+}
+
+func TestPipelineCommands(t *testing.T) {
+	c, err := connect()
+	if err != nil {
+		t.Fatalf("Error connection to database, %v", err)
+	}
+	defer disconnect(c)
+
+	for _, cmd := range testCommands {
+		err := c.Send(cmd.args[0].(string), cmd.args[1:]...)
+		if err != nil {
+			t.Errorf("Send(%v) returned error %v", cmd.args, err)
+			continue
+		}
+	}
+	for _, cmd := range testCommands {
+		actual, err := c.Receive()
+		if err != nil {
+			t.Errorf("Receive(%v) returned error %v", cmd.args, err)
+			continue
+		}
+		if !reflect.DeepEqual(actual, cmd.expected) {
+			t.Errorf("Receive(%v) = %v, want %v", cmd.args, actual, cmd.expected)
 		}
 	}
 }

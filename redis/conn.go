@@ -31,6 +31,7 @@ type conn struct {
 	conn    net.Conn
 	err     error
 	scratch []byte
+	pending int
 }
 
 // Dial connects to the Redis server at the given network and address.
@@ -64,22 +65,28 @@ func newConn(netConn net.Conn) Conn {
 	}
 }
 
-// Close closes the connection.
 func (c *conn) Close() error {
 	return c.conn.Close()
 }
 
-// Err returns the permanent error for this connection.
 func (c *conn) Err() error {
 	return c.err
 }
 
-// Do sends a command to the server and returns the received reply.
 func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	if err := c.Send(cmd, args...); err != nil {
 		return nil, err
 	}
-	return c.Receive()
+	var reply interface{}
+	var err = c.err
+	for c.pending > 0 && c.err == nil {
+		var e error
+		reply, e = c.Receive()
+		if e != nil && err == nil {
+			err = e
+		}
+	}
+	return reply, err
 }
 
 func (c *conn) writeN(prefix byte, n int) error {
@@ -214,11 +221,12 @@ func (c *conn) Send(cmd string, args ...interface{}) error {
 			return c.err
 		}
 	}
+	c.pending += 1
 	return nil
 }
 
-// Receive receives a single reply from the server
 func (c *conn) Receive() (interface{}, error) {
+	c.pending -= 1
 	c.err = c.rw.Flush()
 	if c.err != nil {
 		return nil, c.err

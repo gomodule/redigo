@@ -16,31 +16,47 @@
 //
 // Package redis only supports the binary-safe Redis protocol, so you can use
 // it with any Redis version >= 1.2.0.
-package redis
-
-// Error represets an error returned in a command reply.
-type Error string
-
-func (err Error) Error() string { return string(err) }
-
-// Conn represents a connection to a Redis server.
 //
-// The Do method executes a Redis command. Command arguments of type string and
-// []byte are sent to the server as is. All other argument types are formatted
-// using the fmt.Fprint() function. Command replies are represented as Go types
-// as follows:
-// 
+// Connections
+//
+// The Conn interface is the primary interface for working with Redis.
+// Applications create connections by calling the Dial or DialWithTimeout
+// functions. In the future, functions will be added for creating pooled
+// connections and sharded connections.
+//
+// The application must call the connection Close method when the application
+// is done with the connection.
+//
+// Executing Commands
+//
+// The Conn interface has a generic method for executing Redis commands:
+//
+//  Do(commandName string, args ...interface{}) (reply interface{}, err error)
+//
+// Arguments of type string and []byte are sent to the server as is. All other
+// types are formatted using the fmt.Fprint function. Command replies are
+// represented as Go types as follows:
+//
 //  Redis type          Go type
 //  error               redis.Error
 //  integer             int64
 //  status              string
 //  bulk                []byte or nil if value not present.
 //  multi-bulk          []interface{} or nil if value not present.
+// 
+// Applications can use type assertions or type switches to determine 
+// the actual type of a reply.
 //
-// Connections support pipelining using the Send and Receive methods. Send
-// formats and buffers outgoing commands. Receive flushes the outgoing command
-// buffer and reads an incoming reply. The following example shows a simple
-// pipeline:
+// Pipelining
+//
+// Connections support pipelining using the Send and Receive methods. 
+//
+//  Send(commandName string, args ...interface{}) error
+//  Receive() (reply interface{}, err error)
+//
+// Send writes the command to the connection's output buffer. Receive flushes
+// the output buffer to the server and reads a single reply. The following
+// example shows a simple pipeline:
 //
 //  c.Send("SET", "foo", "bar")
 //  c.Send("GET", "foo")
@@ -53,17 +69,42 @@ func (err Error) Error() string { return string(err) }
 //  if err != nil {
 //      return err
 //  }
+//
+// The Do method is implemented with the Send and Receive methods. The method
+// starts by sending the command. Next, the method receives all unconsumed
+// replies including the reply for the command just sent by Do. If any of the
+// received replies is an error, then Do returns the error. If there are no
+// errors, then Do returns the last reply.
+//
+// The Send and Do methods can be used together to implement pipelined
+// transactions:
+//
+//  c.Send("MULTI")
+//  c.Send("INCR", "foo")
+//  c.Send("INCR", "bar")
+//  r, err := c.Do("EXEC")
+//  fmt.Println(r) // prints [1, 1]
+//
+// Publish and Subscribe
 //  
-// This API can be used to implement a blocking subscriber:
+// The connection Receive method is used to implement blocking subscribers: 
 //
 //  c.Do("SUBSCRIBE", "foo")
 //  for {
 //      reply, err := c.Receive()
 //      if err != nil {
-//          // handle error
+//          return err
 //      }
 //      // consume message
 //  }
+package redis
+
+// Error represets an error returned in a command reply.
+type Error string
+
+func (err Error) Error() string { return string(err) }
+
+// Conn represents a connection to a Redis server.
 type Conn interface {
 	// Close closes the connection.
 	Close() error
@@ -72,10 +113,10 @@ type Conn interface {
 	Err() error
 
 	// Do sends a command to the server and returns the received reply.
-	Do(cmd string, args ...interface{}) (reply interface{}, err error)
+	Do(commandName string, args ...interface{}) (reply interface{}, err error)
 
 	// Send sends a command for the server without waiting for a reply.
-	Send(cmd string, args ...interface{}) error
+	Send(commandName string, args ...interface{}) error
 
 	// Receive receives a single reply from the server
 	Receive() (reply interface{}, err error)

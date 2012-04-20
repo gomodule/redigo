@@ -1,10 +1,10 @@
 Redigo
 ======
 
-Redigo is a work in progress. The API is not frozen.
+Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/)
+database.
 
-Redigo is a minimalistic [Go](http://golang.org/) client for the
-[Redis](http://redis.io/) database.
+Redigo is a work in progress. 
 
 The Redigo API reference is available on
 [GoPkgDoc](http://gopkgdoc.appspot.com/pkg/github.com/garyburd/redigo/redis).
