@@ -12,12 +12,13 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package redis
+package redis_test
 
 import (
 	"bufio"
 	"bytes"
 	"errors"
+	"github.com/garyburd/redigo/redis"
 	"reflect"
 	"strings"
 	"testing"
@@ -52,13 +53,14 @@ var sendTests = []struct {
 func TestSend(t *testing.T) {
 	for _, tt := range sendTests {
 		var buf bytes.Buffer
-		c := conn{rw: bufio.ReadWriter{Writer: bufio.NewWriter(&buf)}}
+		rw := bufio.ReadWriter{Writer: bufio.NewWriter(&buf)}
+		c := redis.NewConnBufio(rw)
 		err := c.Send(tt.args[0].(string), tt.args[1:]...)
 		if err != nil {
 			t.Errorf("Send(%v) returned error %v", tt.args, err)
 			continue
 		}
-		c.rw.Flush()
+		rw.Flush()
 		actual := buf.String()
 		if actual != tt.expected {
 			t.Errorf("Send(%v) = %q, want %q", tt.args, actual, tt.expected)
@@ -112,10 +114,11 @@ var receiveTests = []struct {
 
 func TestReceive(t *testing.T) {
 	for _, tt := range receiveTests {
-		c := conn{rw: bufio.ReadWriter{
+		rw := bufio.ReadWriter{
 			Reader: bufio.NewReader(strings.NewReader(tt.reply)),
 			Writer: bufio.NewWriter(nil), // writer need to support Flush
-		}}
+		}
+		c := redis.NewConnBufio(rw)
 		actual, err := c.Receive()
 		if tt.expected == errorSentinel {
 			if err == nil {
@@ -133,8 +136,8 @@ func TestReceive(t *testing.T) {
 	}
 }
 
-func connect() (Conn, error) {
-	c, err := Dial("tcp", ":6379")
+func connect() (redis.Conn, error) {
+	c, err := redis.Dial("tcp", ":6379")
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +159,7 @@ func connect() (Conn, error) {
 	return c, nil
 }
 
-func disconnect(c Conn) error {
+func disconnect(c redis.Conn) error {
 	_, err := c.Do("SELECT", "9")
 	if err != nil {
 		return nil
@@ -184,6 +187,10 @@ var testCommands = []struct {
 	{
 		[]interface{}{"GET", "nokey"},
 		nil,
+	},
+	{
+		[]interface{}{"MGET", "nokey", "foo"},
+		[]interface{}{nil, []byte("bar")},
 	},
 	{
 		[]interface{}{"INCR", "mycounter"},

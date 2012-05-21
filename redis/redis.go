@@ -89,7 +89,7 @@
 //  
 // The connection Receive method is used to implement blocking subscribers: 
 //
-//  c.Do("SUBSCRIBE", "foo")
+//  c.Send("SUBSCRIBE", "foo")
 //  for {
 //      reply, err := c.Receive()
 //      if err != nil {
@@ -97,9 +97,19 @@
 //      }
 //      // consume message
 //  }
+//
+// Thread Safety
+//
+// The Send method cannot be called concurrently with other calls to Send. The
+// Receive method cannot be called concurrently  with other calls to Receive.
+// Because the Do method invokes Send and Receive, the Do method cannot be
+// called concurrently  with Send, Receive or Do. All other concurrent access is
+// allowed.
 package redis
 
-// Error represets an error returned in a command reply.
+import ()
+
+// Error represents an error returned in a command reply.
 type Error string
 
 func (err Error) Error() string { return string(err) }

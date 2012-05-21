@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -29,20 +30,19 @@ import (
 type conn struct {
 	rw      bufio.ReadWriter
 	conn    net.Conn
-	err     error
 	scratch []byte
 	pending int
+	mu      sync.Mutex
+	err     error
 }
 
 // Dial connects to the Redis server at the given network and address.
-// 
-// The returned connection is not thread-safe.
 func Dial(network, address string) (Conn, error) {
 	netConn, err := net.Dial(network, address)
 	if err != nil {
 		return nil, err
 	}
-	return newConn(netConn), nil
+	return NewConn(netConn), nil
 }
 
 // DialTimeout acts like Dial but takes a timeout. The timeout includes name
@@ -52,10 +52,11 @@ func DialTimeout(network, address string, timeout time.Duration) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newConn(netConn), nil
+	return NewConn(netConn), nil
 }
 
-func newConn(netConn net.Conn) Conn {
+// NewConn returns a new Redigo connection for the given net connection.
+func NewConn(netConn net.Conn) Conn {
 	return &conn{
 		conn: netConn,
 		rw: bufio.ReadWriter{
@@ -66,11 +67,29 @@ func newConn(netConn net.Conn) Conn {
 }
 
 func (c *conn) Close() error {
-	return c.conn.Close()
+	err := c.conn.Close()
+	if err != nil {
+		c.fatal(err)
+	} else {
+		c.fatal(errors.New("redigo: closed"))
+	}
+	return err
 }
 
 func (c *conn) Err() error {
-	return c.err
+	c.mu.Lock()
+	err := c.err
+	c.mu.Unlock()
+	return err
+}
+
+func (c *conn) fatal(err error) error {
+	c.mu.Lock()
+	if c.err != nil {
+		c.err = err
+	}
+	c.mu.Unlock()
+	return err
 }
 
 func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
@@ -190,35 +209,30 @@ func (c *conn) parseReply() (interface{}, error) {
 
 // Send sends a command for the server without waiting for a reply.
 func (c *conn) Send(cmd string, args ...interface{}) error {
-	if c.err != nil {
-		return c.err
+	if err := c.writeN('*', 1+len(args)); err != nil {
+		return c.fatal(err)
 	}
 
-	c.err = c.writeN('*', 1+len(args))
-	if c.err != nil {
-		return c.err
-	}
-
-	c.err = c.writeString(cmd)
-	if c.err != nil {
-		return c.err
+	if err := c.writeString(cmd); err != nil {
+		return c.fatal(err)
 	}
 
 	for _, arg := range args {
+		var err error
 		switch arg := arg.(type) {
 		case string:
-			c.err = c.writeString(arg)
+			err = c.writeString(arg)
 		case []byte:
-			c.err = c.writeBytes(arg)
+			err = c.writeBytes(arg)
 		case nil:
-			c.err = c.writeString("")
+			err = c.writeString("")
 		default:
 			var buf bytes.Buffer
 			fmt.Fprint(&buf, arg)
-			c.err = c.writeBytes(buf.Bytes())
+			err = c.writeBytes(buf.Bytes())
 		}
-		if c.err != nil {
-			return c.err
+		if err != nil {
+			return c.fatal(err)
 		}
 	}
 	c.pending += 1
@@ -227,15 +241,17 @@ func (c *conn) Send(cmd string, args ...interface{}) error {
 
 func (c *conn) Receive() (interface{}, error) {
 	c.pending -= 1
-	c.err = c.rw.Flush()
-	if c.err != nil {
-		return nil, c.err
+	if err := c.rw.Flush(); err != nil {
+		return nil, c.fatal(err)
 	}
 	v, err := c.parseReply()
-	if err != nil {
-		c.err = err
-	} else if e, ok := v.(Error); ok {
-		err = e
+	if err == nil {
+		if e, ok := v.(Error); ok {
+			err = e
+		}
 	}
-	return v, err
+	if err != nil {
+		return nil, c.fatal(err)
+	}
+	return v, nil
 }
