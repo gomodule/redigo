@@ -136,36 +136,43 @@ func TestReceive(t *testing.T) {
 	}
 }
 
-func connect() (redis.Conn, error) {
+type testConn struct {
+	redis.Conn
+}
+
+func (t testConn) Close() error {
+	_, err := t.Conn.Do("SELECT", "9")
+	if err != nil {
+		return nil
+	}
+	_, err = t.Conn.Do("FLUSHDB")
+	if err != nil {
+		return err
+	}
+	return t.Conn.Close()
+}
+
+func dial() (redis.Conn, error) {
 	c, err := redis.Dial("tcp", ":6379")
 	if err != nil {
 		return nil, err
 	}
 
-	reply, err := c.Do("SELECT", "9")
+	_, err = c.Do("SELECT", "9")
 	if err != nil {
 		return nil, err
 	}
 
-	reply, err = c.Do("DBSIZE")
+	n, err := redis.Int(c.Do("DBSIZE"))
 	if err != nil {
 		return nil, err
 	}
 
-	if reply, ok := reply.(int); !ok && reply != 0 {
+	if n != 0 {
 		return nil, errors.New("Database #9 is not empty, test can not continue")
 	}
 
-	return c, nil
-}
-
-func disconnect(c redis.Conn) error {
-	_, err := c.Do("SELECT", "9")
-	if err != nil {
-		return nil
-	}
-	_, err = c.Do("FLUSHDB")
-	return err
+	return testConn{c}, nil
 }
 
 var testCommands = []struct {
@@ -230,11 +237,11 @@ var testCommands = []struct {
 }
 
 func TestDoCommands(t *testing.T) {
-	c, err := connect()
+	c, err := dial()
 	if err != nil {
 		t.Fatalf("Error connection to database, %v", err)
 	}
-	defer disconnect(c)
+	defer c.Close()
 
 	for _, cmd := range testCommands {
 		actual, err := c.Do(cmd.args[0].(string), cmd.args[1:]...)
@@ -249,11 +256,11 @@ func TestDoCommands(t *testing.T) {
 }
 
 func TestPipelineCommands(t *testing.T) {
-	c, err := connect()
+	c, err := dial()
 	if err != nil {
 		t.Fatalf("Error connection to database, %v", err)
 	}
-	defer disconnect(c)
+	defer c.Close()
 
 	for _, cmd := range testCommands {
 		err := c.Send(cmd.args[0].(string), cmd.args[1:]...)

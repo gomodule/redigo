@@ -23,10 +23,10 @@ var (
 	errUnexpectedResultType = errors.New("redigo: unexpected result type")
 )
 
-// Int is a helper that wraps a call to the Conn Do and Receive methods and
-// returns the result as an integer. If the result is an integer, then Int
-// returns the integer. If the result is a bulk response, then Int parses the
-// result as a signed decimal value.  Otherwise, Int returns an error.
+// Int is a helper that converts a Redis result to an int. Integer results are
+// returned directly. Bulk responses are interpreted as signed decimal strings.
+// If err is not equal to nil or the result type is not integer or bulk, then
+// Int returns an error.
 func Int(v interface{}, err error) (int, error) {
 	if err != nil {
 		return 0, err
@@ -43,11 +43,10 @@ func Int(v interface{}, err error) (int, error) {
 	return 0, errUnexpectedResultType
 }
 
-// String is a helper that wraps a call to the Conn Do and Receive methods and
-// returns the result as a string. If the result is a bulk response, then
-// String returns the bytes converted to a string. If the result is an integer,
-// then String formats the result as a decimal string. Otherwise, String returns
-// an error.
+// String is a helper that converts a Redis result to a string. Redis bulk
+// responses are returned as a string. Redis integer responses are formatted as
+// as a signed decimal string. If err is not equal to nil or the result type is
+// not bulk or integer, then String returns an error.
 func String(v interface{}, err error) (string, error) {
 	if err != nil {
 		return "", err
@@ -63,10 +62,10 @@ func String(v interface{}, err error) (string, error) {
 	return "", errUnexpectedResultType
 }
 
-// Bytes is a helper that wraps a call to the Conn Do or Receive methods and
-// returns the result as a []byte. If the result is a bulk response, then Bytes
-// returns the result as is.  If the result is an integer, then Bytes formats
-// the result as a decimal string. Otherwise, Bytes returns an error.
+// Bytes is a helper that converts a Redis result to slice of bytes. Redis bulk
+// responses are returned as is. Redis integer responses are formatted as as a
+// signed decimal string. If err is not equal to nil or the result type is not
+// bulk or integer, then Bytes returns an error.
 func Bytes(v interface{}, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err
@@ -80,6 +79,28 @@ func Bytes(v interface{}, err error) ([]byte, error) {
 		return nil, v
 	}
 	return nil, errUnexpectedResultType
+}
+
+// Bool is a helper that converts a Redis result to a bool. Bool returns true
+// if the result is the integer 1, false if the result is the integer 0.  If
+// err is not equal to nil or the result is not the integer 0 or 1, then Bool
+// returns an error.
+func Bool(v interface{}, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	switch v := v.(type) {
+	case int64:
+		switch v {
+		case 0:
+			return false, nil
+		case 1:
+			return true, nil
+		}
+	case Error:
+		return false, v
+	}
+	return false, errUnexpectedResultType
 }
 
 // Subscribe represents a subscribe or unsubscribe notification.

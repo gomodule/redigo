@@ -23,6 +23,51 @@ import (
 	"time"
 )
 
+func ExampleBool() {
+	c, err := dial()
+	if err != nil {
+		return
+	}
+	defer c.Close()
+
+	c.Do("SET", "foo", 1)
+	exists, _ := redis.Bool(c.Do("EXISTS", "foo"))
+	fmt.Printf("%#v\n", exists)
+	// Output:
+	// true
+}
+
+func ExampleInt() {
+	c, err := dial()
+	if err != nil {
+		return
+	}
+	defer c.Close()
+
+	c.Do("SET", "k1", 1)
+	n, _ := redis.Int(c.Do("GET", "k1"))
+	fmt.Printf("%#v\n", n)
+	n, _ = redis.Int(c.Do("INCR", "k1"))
+	fmt.Printf("%#v\n", n)
+	// Output:
+	// 1
+	// 2
+}
+
+func ExampleString() {
+	c, err := dial()
+	if err != nil {
+		return
+	}
+	defer c.Close()
+
+	c.Do("SET", "hello", "world")
+	s, err := redis.String(c.Do("GET", "hello"))
+	fmt.Printf("%#v\n", s)
+	// Output:
+	// "world"
+}
+
 func ExampleNotification(c redis.Conn) {
 	c.Send("SUBSCRIBE", "mychannel")
 	for {
@@ -53,11 +98,11 @@ func expectNotification(t *testing.T, c redis.Conn, message string, expected int
 }
 
 func TestNotification(t *testing.T) {
-	pc, err := connect()
+	pc, err := dial()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer disconnect(pc)
+	defer pc.Close()
 
 	nc, err := net.Dial("tcp", ":6379")
 	if err != nil {

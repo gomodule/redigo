@@ -23,11 +23,11 @@ import (
 )
 
 func TestScript(t *testing.T) {
-	c, err := connect()
+	c, err := dial()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer disconnect(c)
+	defer c.Close()
 
 	// To test fallback in Do, we make script unique by adding comment with current time.
 	script := fmt.Sprintf("--%d\nreturn {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", time.Now().UnixNano())
