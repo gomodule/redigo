@@ -20,13 +20,13 @@ import (
 )
 
 var (
-	errUnexpectedResultType = errors.New("redigo: unexpected result type")
+	errUnexpectedReplyType = errors.New("redigo: unexpected reply type")
 )
 
-// Int is a helper that converts a Redis result to an int. Integer results are
-// returned directly. Bulk responses are interpreted as signed decimal strings.
-// If err is not equal to nil or the result type is not integer or bulk, then
-// Int returns an error.
+// Int is a helper that converts a Redis reply to an int. Integer replies are
+// returned directly. Bulk replies are interpreted as signed decimal strings.
+// If err is not equal to nil or the reply is not an integer or bulk value,
+// then Int returns an error.
 func Int(v interface{}, err error) (int, error) {
 	if err != nil {
 		return 0, err
@@ -40,13 +40,13 @@ func Int(v interface{}, err error) (int, error) {
 	case Error:
 		return 0, v
 	}
-	return 0, errUnexpectedResultType
+	return 0, errUnexpectedReplyType
 }
 
-// String is a helper that converts a Redis result to a string. Redis bulk
-// responses are returned as a string. Redis integer responses are formatted as
-// as a signed decimal string. If err is not equal to nil or the result type is
-// not bulk or integer, then String returns an error.
+// String is a helper that converts a Redis reply to a string. Bulk replies are
+// returned as a string. Integer replies are formatted as as a signed decimal
+// string. If err is not equal to nil or the reply is not an integer or bulk
+// value, then Int returns an error.
 func String(v interface{}, err error) (string, error) {
 	if err != nil {
 		return "", err
@@ -59,13 +59,13 @@ func String(v interface{}, err error) (string, error) {
 	case Error:
 		return "", v
 	}
-	return "", errUnexpectedResultType
+	return "", errUnexpectedReplyType
 }
 
-// Bytes is a helper that converts a Redis result to slice of bytes. Redis bulk
-// responses are returned as is. Redis integer responses are formatted as as a
-// signed decimal string. If err is not equal to nil or the result type is not
-// bulk or integer, then Bytes returns an error.
+// Bytes is a helper that converts a Redis reply to slice of bytes.  Bulk
+// replies are returned as is. Integer replies are formatted as as a signed
+// decimal string. If err is not equal to nil or the reply is not an integer
+// or bulk value, then Int returns an error.
 func Bytes(v interface{}, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err
@@ -78,12 +78,12 @@ func Bytes(v interface{}, err error) ([]byte, error) {
 	case Error:
 		return nil, v
 	}
-	return nil, errUnexpectedResultType
+	return nil, errUnexpectedReplyType
 }
 
-// Bool is a helper that converts a Redis result to a bool. Bool returns true
-// if the result is the integer 1, false if the result is the integer 0.  If
-// err is not equal to nil or the result is not the integer 0 or 1, then Bool
+// Bool is a helper that converts a Redis reply eo a bool. Bool returns true if
+// the reply is the integer 1 and false if the reply is the integer 0.  If err
+// is not equal to nil or the reply is not the integer 0 or 1, then Bool
 // returns an error.
 func Bool(v interface{}, err error) (bool, error) {
 	if err != nil {
@@ -100,7 +100,7 @@ func Bool(v interface{}, err error) (bool, error) {
 	case Error:
 		return false, v
 	}
-	return false, errUnexpectedResultType
+	return false, errUnexpectedReplyType
 }
 
 // Subscribe represents a subscribe or unsubscribe notification.
@@ -126,40 +126,40 @@ type Message struct {
 	Data []byte
 }
 
-// Notification returns the result from the Conn Receive method as a
+// Notification is a helper that returns a pub/sub notification as a
 // Subscription or a Message.
 func Notification(v interface{}, err error) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = errUnexpectedResultType
+	err = errUnexpectedReplyType
 	s, ok := v.([]interface{})
 	if !ok || len(s) != 3 {
-		return nil, errUnexpectedResultType
+		return nil, errUnexpectedReplyType
 	}
 	b, ok := s[0].([]byte)
 	if !ok {
-		return nil, errUnexpectedResultType
+		return nil, errUnexpectedReplyType
 	}
 	kind := string(b)
 
 	b, ok = s[1].([]byte)
 	if !ok {
-		return nil, errUnexpectedResultType
+		return nil, errUnexpectedReplyType
 	}
 	channel := string(b)
 
 	if kind == "message" {
 		data, ok := s[2].([]byte)
 		if !ok {
-			return nil, errUnexpectedResultType
+			return nil, errUnexpectedReplyType
 		}
 		return Message{channel, data}, nil
 	}
 
 	count, ok := s[2].(int64)
 	if !ok {
-		return nil, errUnexpectedResultType
+		return nil, errUnexpectedReplyType
 	}
 
 	return Subscription{kind, channel, int(count)}, nil

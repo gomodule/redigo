@@ -20,9 +20,9 @@
 // Connections
 //
 // The Conn interface is the primary interface for working with Redis.
-// Applications create connections by calling the Dial or DialWithTimeout
-// functions. In the future, functions will be added for creating pooled
-// connections and sharded connections.
+// Applications create connections by calling the Dial, DialWithTimeout or
+// NewConn functions. In the future, functions will be added for creating
+// pooled connections and sharded connections.
 //
 // The application must call the connection Close method when the application
 // is done with the connection.
@@ -35,7 +35,7 @@
 //
 // Arguments of type string and []byte are sent to the server as is. All other
 // types are formatted using the fmt.Fprint function. Command replies are
-// represented as Go types as follows:
+// represented using the following Go types:
 //
 //  Redis type          Go type
 //  error               redis.Error
@@ -44,8 +44,8 @@
 //  bulk                []byte or nil if value not present.
 //  multi-bulk          []interface{} or nil if value not present.
 // 
-// Applications can use type assertions or type switches to determine 
-// the actual type of a reply.
+// Applications can use type assertions or type switches to determine the type
+// of a reply.
 //
 // Pipelining
 //

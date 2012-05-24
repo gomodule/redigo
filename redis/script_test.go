@@ -32,15 +32,15 @@ func TestScript(t *testing.T) {
 	// To test fallback in Do, we make script unique by adding comment with current time.
 	script := fmt.Sprintf("--%d\nreturn {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", time.Now().UnixNano())
 	s := redis.NewScript(2, script)
-	result := []interface{}{[]byte("key1"), []byte("key2"), []byte("arg1"), []byte("arg2")}
+	reply := []interface{}{[]byte("key1"), []byte("key2"), []byte("arg1"), []byte("arg2")}
 
 	v, err := s.Do(c, "key1", "key2", "arg1", "arg2")
 	if err != nil {
 		t.Errorf("s.Do(c, ...) returned %v", err)
 	}
 
-	if !reflect.DeepEqual(v, result) {
-		t.Errorf("s.Do(c, ..); = %v, want %v", v, result)
+	if !reflect.DeepEqual(v, reply) {
+		t.Errorf("s.Do(c, ..); = %v, want %v", v, reply)
 	}
 
 	err = s.Load(c)
@@ -54,8 +54,8 @@ func TestScript(t *testing.T) {
 	}
 
 	v, err = c.Receive()
-	if !reflect.DeepEqual(v, result) {
-		t.Errorf("s.SendHash(c, ..); s.Recevie() = %v, want %v", v, result)
+	if !reflect.DeepEqual(v, reply) {
+		t.Errorf("s.SendHash(c, ..); s.Recevie() = %v, want %v", v, reply)
 	}
 
 	err = s.Send(c, "key1", "key2", "arg1", "arg2")
@@ -64,8 +64,8 @@ func TestScript(t *testing.T) {
 	}
 
 	v, err = c.Receive()
-	if !reflect.DeepEqual(v, result) {
-		t.Errorf("s.Send(c, ..); s.Recevie() = %v, want %v", v, result)
+	if !reflect.DeepEqual(v, reply) {
+		t.Errorf("s.Send(c, ..); s.Recevie() = %v, want %v", v, reply)
 	}
 
 }

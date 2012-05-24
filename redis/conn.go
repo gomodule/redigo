@@ -207,7 +207,6 @@ func (c *conn) parseReply() (interface{}, error) {
 	return nil, errors.New("redigo: unpexected response line")
 }
 
-// Send sends a command for the server without waiting for a reply.
 func (c *conn) Send(cmd string, args ...interface{}) error {
 	if err := c.writeN('*', 1+len(args)); err != nil {
 		return c.fatal(err)
