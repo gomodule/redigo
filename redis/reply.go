@@ -16,17 +16,41 @@ package redis
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 )
 
-var (
-	errUnexpectedReplyType = errors.New("redigo: unexpected reply type")
-)
+var ErrNil = errors.New("redigo: nil returned")
 
-// Int is a helper that converts a Redis reply to an int. Integer replies are
-// returned directly. Bulk replies are interpreted as signed decimal strings.
-// If err is not equal to nil or the reply is not an integer or bulk value,
-// then Int returns an error.
+func Values(multiBulk []interface{}, values ...interface{}) ([]interface{}, error) {
+	if len(multiBulk) < len(values) {
+		return nil, errors.New("redigo Values: short multibulk")
+	}
+	var err error
+	for i, value := range values {
+		bulk := multiBulk[i]
+		if bulk != nil {
+			switch value := value.(type) {
+			case *string:
+				*value, err = String(bulk, nil)
+			case *int:
+				*value, err = Int(bulk, nil)
+			case *bool:
+				*value, err = Bool(bulk, nil)
+			case *[]byte:
+				*value, err = Bytes(bulk, nil)
+			default:
+				panic("Value type not supported")
+			}
+			if err != nil {
+				break
+			}
+		}
+	}
+	return multiBulk[len(values):], err
+}
+
+// Int is a helper that converts a Redis reply to an int.
 func Int(v interface{}, err error) (int, error) {
 	if err != nil {
 		return 0, err
@@ -37,70 +61,91 @@ func Int(v interface{}, err error) (int, error) {
 	case []byte:
 		n, err := strconv.ParseInt(string(v), 10, 0)
 		return int(n), err
+	case nil:
+		return 0, ErrNil
 	case Error:
 		return 0, v
 	}
-	return 0, errUnexpectedReplyType
+	return 0, fmt.Errorf("redigo: unexpected type for Int, got type %T", v)
 }
 
-// String is a helper that converts a Redis reply to a string. Bulk replies are
-// returned as a string. Integer replies are formatted as as a signed decimal
-// string. If err is not equal to nil or the reply is not an integer or bulk
-// value, then Int returns an error.
+// String is a helper that converts a Redis reply to a string. 
 func String(v interface{}, err error) (string, error) {
 	if err != nil {
 		return "", err
 	}
 	switch v := v.(type) {
-	case int64:
-		return strconv.FormatInt(v, 10), nil
 	case []byte:
 		return string(v), nil
+	case int64:
+		return strconv.FormatInt(v, 10), nil
+	case nil:
+		return "", ErrNil
 	case Error:
 		return "", v
 	}
-	return "", errUnexpectedReplyType
+	panic("FOOBAR")
+	return "", fmt.Errorf("redigo: unexpected type for String, got type %T", v)
 }
 
-// Bytes is a helper that converts a Redis reply to slice of bytes.  Bulk
-// replies are returned as is. Integer replies are formatted as as a signed
-// decimal string. If err is not equal to nil or the reply is not an integer
-// or bulk value, then Int returns an error.
+// Bytes is a helper that converts a Redis reply to slice of bytes. 
 func Bytes(v interface{}, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
 	switch v := v.(type) {
-	case int64:
-		return strconv.AppendInt(nil, v, 10), nil
 	case []byte:
 		return v, nil
+	case int64:
+		return strconv.AppendInt(nil, v, 10), nil
+	case nil:
+		return nil, ErrNil
 	case Error:
 		return nil, v
 	}
-	return nil, errUnexpectedReplyType
+	return nil, fmt.Errorf("redigo: unexpected type for Bytes, got type %T", v)
 }
 
-// Bool is a helper that converts a Redis reply eo a bool. Bool returns true if
-// the reply is the integer 1 and false if the reply is the integer 0.  If err
-// is not equal to nil or the reply is not the integer 0 or 1, then Bool
-// returns an error.
+// Bool is a helper that converts a Redis reply to a bool. Bool converts the
+// integer 0 and the bulk values "0" and "" to false. All other integer and
+// bulk values are converted to true. If the reply is not an integer or bulk
+// value or err is not equal to nil, then Bool returns an error.
 func Bool(v interface{}, err error) (bool, error) {
 	if err != nil {
 		return false, err
 	}
 	switch v := v.(type) {
 	case int64:
-		switch v {
-		case 0:
+		return v != 0, nil
+	case []byte:
+		if len(v) == 0 || (len(v) == 1 && v[0] == '0') {
 			return false, nil
-		case 1:
-			return true, nil
 		}
+		return true, nil
+	case nil:
+		return false, ErrNil
 	case Error:
 		return false, v
 	}
-	return false, errUnexpectedReplyType
+	return false, fmt.Errorf("redigo: unexpected type for Bool, got type %T", v)
+}
+
+// MultiBulk is a helper that converts a Redis reply to a []interface{}. If err
+// is not equal to nil or the reply is not a multi-bulk reply, then MultiBulk
+// returns an error.
+func MultiBulk(v interface{}, err error) ([]interface{}, error) {
+	if err != nil {
+		return nil, err
+	}
+	switch v := v.(type) {
+	case []interface{}:
+		return v, nil
+	case nil:
+		return nil, ErrNil
+	case Error:
+		return nil, v
+	}
+	return nil, fmt.Errorf("redigo: unexpected type for MultiBulk, got type %T", v)
 }
 
 // Subscribe represents a subscribe or unsubscribe notification.
@@ -128,39 +173,29 @@ type Message struct {
 
 // Notification is a helper that returns a pub/sub notification as a
 // Subscription or a Message.
-func Notification(v interface{}, err error) (interface{}, error) {
+func Notification(reply interface{}, err error) (interface{}, error) {
+	multiBulk, err := MultiBulk(reply, err)
 	if err != nil {
 		return nil, err
 	}
-	err = errUnexpectedReplyType
-	s, ok := v.([]interface{})
-	if !ok || len(s) != 3 {
-		return nil, errUnexpectedReplyType
-	}
-	b, ok := s[0].([]byte)
-	if !ok {
-		return nil, errUnexpectedReplyType
-	}
-	kind := string(b)
 
-	b, ok = s[1].([]byte)
-	if !ok {
-		return nil, errUnexpectedReplyType
+	var kind, channel string
+	multiBulk, err = Values(multiBulk, &kind, &channel)
+	if err != nil {
+		return nil, err
 	}
-	channel := string(b)
 
 	if kind == "message" {
-		data, ok := s[2].([]byte)
-		if !ok {
-			return nil, errUnexpectedReplyType
+		var data []byte
+		if _, err := Values(multiBulk, &data); err != nil {
+			return nil, err
 		}
 		return Message{channel, data}, nil
 	}
 
-	count, ok := s[2].(int64)
-	if !ok {
-		return nil, errUnexpectedReplyType
+	var count int
+	if _, err := Values(multiBulk, &count); err != nil {
+		return nil, err
 	}
-
-	return Subscription{kind, channel, int(count)}, nil
+	return Subscription{kind, channel, count}, nil
 }
