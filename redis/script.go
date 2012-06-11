@@ -29,8 +29,11 @@ type Script struct {
 	hash     string
 }
 
-// NewScript returns a new script object initialized with the specified number
-// of keys and source code.
+// NewScript returns a new script object. If keyCount is greater than or equal
+// to zero, then the count is automatically inserted in the EVAL command
+// argument list. If keyCount is less than zero, then the application supplies
+// the count as the first value in the keysAndArgs argument to the Do, Send and
+// SendHash methods.
 func NewScript(keyCount int, src string) *Script {
 	h := sha1.New()
 	io.WriteString(h, src)
@@ -38,10 +41,17 @@ func NewScript(keyCount int, src string) *Script {
 }
 
 func (s *Script) args(spec string, keysAndArgs []interface{}) []interface{} {
-	args := make([]interface{}, 2+len(keysAndArgs))
-	args[0] = spec
-	args[1] = s.keyCount
-	copy(args[2:], keysAndArgs)
+	var args []interface{}
+	if s.keyCount < 0 {
+		args = make([]interface{}, 1+len(keysAndArgs))
+		args[0] = spec
+		copy(args[1:], keysAndArgs)
+	} else {
+		args = make([]interface{}, 2+len(keysAndArgs))
+		args[0] = spec
+		args[1] = s.keyCount
+		copy(args[2:], keysAndArgs)
+	}
 	return args
 }
 
