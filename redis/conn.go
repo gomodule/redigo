@@ -223,6 +223,12 @@ func (c *conn) Send(cmd string, args ...interface{}) error {
 			err = c.writeString(arg)
 		case []byte:
 			err = c.writeBytes(arg)
+		case bool:
+			if arg {
+				err = c.writeString("1")
+			} else {
+				err = c.writeString("0")
+			}
 		case nil:
 			err = c.writeString("")
 		default:

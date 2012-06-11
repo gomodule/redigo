@@ -33,9 +33,11 @@
 //
 //  Do(commandName string, args ...interface{}) (reply interface{}, err error)
 //
-// Arguments of type string and []byte are sent to the server as is. All other
-// types are formatted using the fmt.Fprint function. Command replies are
-// represented using the following Go types:
+// Arguments of type string and []byte are sent to the server as is. The value
+// false is converted to "0" and the value true is converted to "1". The value
+// nil is converted to "". All other values are converted to a string using the
+// fmt.Fprint function. Command replies are represented using the following Go
+// types:
 //
 //  Redis type          Go type
 //  error               redis.Error
