@@ -50,7 +50,14 @@ func Values(multiBulk []interface{}, values ...interface{}) ([]interface{}, erro
 	return multiBulk[len(values):], err
 }
 
-// Int is a helper that converts a Redis reply to an int.
+// Int is a helper that converts a Redis reply to an int. 
+//
+//  Reply type    Result
+//  integer       return reply as int
+//  bulk          parse decimal integer from reply
+//  nil           return error ErrNil
+//  other         return error
+//  
 func Int(v interface{}, err error) (int, error) {
 	if err != nil {
 		return 0, err
@@ -70,6 +77,13 @@ func Int(v interface{}, err error) (int, error) {
 }
 
 // String is a helper that converts a Redis reply to a string. 
+//
+//  Reply type      Result
+//  integer         format as decimal string
+//  bulk            return reply as string
+//  string          return as is
+//  nil             return error ErrNil
+//  other           return error
 func String(v interface{}, err error) (string, error) {
 	if err != nil {
 		return "", err
@@ -77,6 +91,8 @@ func String(v interface{}, err error) (string, error) {
 	switch v := v.(type) {
 	case []byte:
 		return string(v), nil
+	case string:
+		return v, nil
 	case int64:
 		return strconv.FormatInt(v, 10), nil
 	case nil:
@@ -84,11 +100,17 @@ func String(v interface{}, err error) (string, error) {
 	case Error:
 		return "", v
 	}
-	panic("FOOBAR")
 	return "", fmt.Errorf("redigo: unexpected type for String, got type %T", v)
 }
 
 // Bytes is a helper that converts a Redis reply to slice of bytes. 
+//
+//  Reply type      Result
+//  integer         format as decimal string
+//  bulk            return reply as slice of bytes
+//  string          return reply as slice of bytes
+//  nil             return error ErrNil
+//  other           return error
 func Bytes(v interface{}, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err
@@ -96,6 +118,8 @@ func Bytes(v interface{}, err error) ([]byte, error) {
 	switch v := v.(type) {
 	case []byte:
 		return v, nil
+	case string:
+		return []byte(v), nil
 	case int64:
 		return strconv.AppendInt(nil, v, 10), nil
 	case nil:
@@ -106,10 +130,13 @@ func Bytes(v interface{}, err error) ([]byte, error) {
 	return nil, fmt.Errorf("redigo: unexpected type for Bytes, got type %T", v)
 }
 
-// Bool is a helper that converts a Redis reply to a bool. Bool converts the
-// integer 0 and the bulk values "0" and "" to false. All other integer and
-// bulk values are converted to true. If the reply is not an integer or bulk
-// value or err is not equal to nil, then Bool returns an error.
+// Bool is a helper that converts a Redis reply to a bool. 
+//
+//  Reply type      Result
+//  integer         return value != 0
+//  bulk            return false if reply is "" or "0", otherwise return true.
+//  nil             return error ErrNil
+//  other           return error
 func Bool(v interface{}, err error) (bool, error) {
 	if err != nil {
 		return false, err
@@ -130,9 +157,12 @@ func Bool(v interface{}, err error) (bool, error) {
 	return false, fmt.Errorf("redigo: unexpected type for Bool, got type %T", v)
 }
 
-// MultiBulk is a helper that converts a Redis reply to a []interface{}. If err
-// is not equal to nil or the reply is not a multi-bulk reply, then MultiBulk
-// returns an error.
+// MultiBulk is a helper that converts a Redis reply to a []interface{}. 
+//
+//  Reply type      Result
+//  multi-bulk      return []interface{}
+//  nil             return error ErrNil
+//  other           return error
 func MultiBulk(v interface{}, err error) ([]interface{}, error) {
 	if err != nil {
 		return nil, err
