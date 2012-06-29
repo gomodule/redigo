@@ -26,7 +26,7 @@ import (
 func ExampleBool() {
 	c, err := dial()
 	if err != nil {
-		return
+		panic(err)
 	}
 	defer c.Close()
 
@@ -40,7 +40,7 @@ func ExampleBool() {
 func ExampleInt() {
 	c, err := dial()
 	if err != nil {
-		return
+		panic(err)
 	}
 	defer c.Close()
 
@@ -57,7 +57,7 @@ func ExampleInt() {
 func ExampleString() {
 	c, err := dial()
 	if err != nil {
-		return
+		panic(err)
 	}
 	defer c.Close()
 

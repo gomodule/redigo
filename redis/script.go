@@ -55,10 +55,10 @@ func (s *Script) args(spec string, keysAndArgs []interface{}) []interface{} {
 	return args
 }
 
-// Do evalutes the script. Under the covers, Do attempts to evaluate the script
-// using the EVALSHA command. If the command fails because the script is not
-// loaded, then Do evaluates the script using the EVAL command (thus causing
-// the script to load).
+// Do evalutes the script. Under the covers, Do optimistically evaluates the
+// script using the EVALSHA command. If the command fails because the script is
+// not loaded, then Do evaluates the script using the EVAL command (thus
+// causing the script to load).
 func (s *Script) Do(c Conn, keysAndArgs ...interface{}) (interface{}, error) {
 	v, err := c.Do("EVALSHA", s.args(s.hash, keysAndArgs)...)
 	if e, ok := err.(Error); ok && strings.HasPrefix(string(e), "NOSCRIPT ") {

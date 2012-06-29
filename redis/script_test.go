@@ -22,6 +22,16 @@ import (
 	"time"
 )
 
+func ExampleScript(c redis.Conn, reply interface{}, err error) {
+	// Initialize a package-level variable with a script.
+	var getScript = redis.NewScript(1, `return redis.call('get', KEYS[1])`)
+
+	// In a function, use the script Do method to evaluate the script. The Do
+	// method optimistically uses the EVALSHA command. If the script is not
+	// loaded, then the Do method falls back to the EVAL command.
+	reply, err = getScript.Do(c, "foo")
+}
+
 func TestScript(t *testing.T) {
 	c, err := dial()
 	if err != nil {
