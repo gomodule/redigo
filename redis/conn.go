@@ -85,7 +85,7 @@ func (c *conn) Err() error {
 
 func (c *conn) fatal(err error) error {
 	c.mu.Lock()
-	if c.err != nil {
+	if c.err == nil {
 		c.err = err
 	}
 	c.mu.Unlock()
@@ -250,13 +250,11 @@ func (c *conn) Receive() (interface{}, error) {
 		return nil, c.fatal(err)
 	}
 	v, err := c.parseReply()
-	if err == nil {
-		if e, ok := v.(Error); ok {
-			err = e
-		}
-	}
 	if err != nil {
 		return nil, c.fatal(err)
+	}
+	if err, ok := v.(Error); ok {
+		return nil, err
 	}
 	return v, nil
 }

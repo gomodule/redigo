@@ -98,10 +98,7 @@ func expectNotification(t *testing.T, c redis.Conn, message string, expected int
 }
 
 func TestNotification(t *testing.T) {
-	pc, err := dial()
-	if err != nil {
-		t.Fatal(err)
-	}
+	pc := dialt(t)
 	defer pc.Close()
 
 	nc, err := net.Dial("tcp", ":6379")

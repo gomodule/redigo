@@ -175,6 +175,14 @@ func dial() (redis.Conn, error) {
 	return testConn{c}, nil
 }
 
+func dialt(t *testing.T) redis.Conn {
+	c, err := dial()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	return c
+}
+
 var testCommands = []struct {
 	args     []interface{}
 	expected interface{}
@@ -237,10 +245,7 @@ var testCommands = []struct {
 }
 
 func TestDoCommands(t *testing.T) {
-	c, err := dial()
-	if err != nil {
-		t.Fatalf("Error connection to database, %v", err)
-	}
+	c := dialt(t)
 	defer c.Close()
 
 	for _, cmd := range testCommands {
@@ -256,10 +261,7 @@ func TestDoCommands(t *testing.T) {
 }
 
 func TestPipelineCommands(t *testing.T) {
-	c, err := dial()
-	if err != nil {
-		t.Fatalf("Error connection to database, %v", err)
-	}
+	c := dialt(t)
 	defer c.Close()
 
 	for _, cmd := range testCommands {
@@ -278,5 +280,23 @@ func TestPipelineCommands(t *testing.T) {
 		if !reflect.DeepEqual(actual, cmd.expected) {
 			t.Errorf("Receive(%v) = %v, want %v", cmd.args, actual, cmd.expected)
 		}
+	}
+}
+
+func TestError(t *testing.T) {
+	c := dialt(t)
+	defer c.Close()
+
+	c.Do("SET", "key", "val")
+	_, err := c.Do("HSET", "key", "fld", "val")
+	if err == nil {
+		t.Errorf("Expected err for HSET on string key.")
+	}
+	if c.Err() != nil {
+		t.Errorf("Conn has Err()=%v, expect nil", c.Err())
+	}
+	_, err = c.Do("SET", "key", "val")
+	if err != nil {
+		t.Errorf("Do(SET, key, val) returned error %v, expected nil.", err)
 	}
 }

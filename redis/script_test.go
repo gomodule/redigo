@@ -33,10 +33,7 @@ func ExampleScript(c redis.Conn, reply interface{}, err error) {
 }
 
 func TestScript(t *testing.T) {
-	c, err := dial()
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := dialt(t)
 	defer c.Close()
 
 	// To test fallback in Do, we make script unique by adding comment with current time.
