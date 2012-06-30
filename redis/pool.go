@@ -14,7 +14,13 @@
 
 package redis
 
+import (
+	"errors"
+)
+
 // Pool maintains a pool of connections.
+//
+// Pooled connections do not support concurrent access or pub/sub.
 //
 // The following example shows how to use a pool in a web application. The
 // application creates a pool at application startup and makes it available to
@@ -54,7 +60,8 @@ type Pool struct {
 }
 
 type pooledConnection struct {
-	Conn
+	c    Conn
+	err  error
 	pool *Pool
 }
 
@@ -78,21 +85,58 @@ func (p *Pool) Get() (Conn, error) {
 			return nil, err
 		}
 	}
-	return &pooledConnection{Conn: c, pool: p}, nil
+	return &pooledConnection{c: c, pool: p}, nil
 }
 
-func (c *pooledConnection) Close() error {
-	if c.Conn == nil {
-		return nil
+func (c *pooledConnection) Err() error {
+	if c.err != nil {
+		return c.err
 	}
-	if c.Err() != nil {
-		return nil
+	return c.c.Err()
+}
+
+func (c *pooledConnection) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return c.c.Do(commandName, args...)
+}
+
+func (c *pooledConnection) Send(commandName string, args ...interface{}) error {
+	if c.err != nil {
+		return c.err
+	}
+	return c.c.Send(commandName, args...)
+}
+
+func (c *pooledConnection) Flush() error {
+	if c.err != nil {
+		return c.err
+	}
+	return c.c.Flush()
+}
+
+func (c *pooledConnection) Receive() (reply interface{}, err error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return c.c.Receive()
+}
+
+var errPoolClosed = errors.New("redigo: pooled connection closed")
+
+func (c *pooledConnection) Close() (err error) {
+	if c.err != nil {
+		return c.err
+	}
+	c.err = errPoolClosed
+	if c.c.Err() != nil {
+		return c.c.Close()
 	}
 	select {
-	case c.pool.conns <- c.Conn:
+	case c.pool.conns <- c.c:
 	default:
-		c.Conn.Close()
+		return c.c.Close()
 	}
-	c.Conn = nil
 	return nil
 }

@@ -28,41 +28,56 @@ import (
 
 // conn is the low-level implementation of Conn
 type conn struct {
-	rw      bufio.ReadWriter
-	conn    net.Conn
-	scratch []byte
-	pending int
+	conn net.Conn
+
+	// Read
+	readTimeout time.Duration
+	br          *bufio.Reader
+	scratch     []byte
+
+	// Write
+	writeTimeout time.Duration
+	bw           *bufio.Writer
+
+	// Shared
 	mu      sync.Mutex
+	pending int
 	err     error
 }
 
 // Dial connects to the Redis server at the given network and address.
 func Dial(network, address string) (Conn, error) {
-	netConn, err := net.Dial(network, address)
+	c, err := net.Dial(network, address)
 	if err != nil {
 		return nil, errors.New("Could not connect to Redis server: " + err.Error())
 	}
-	return NewConn(netConn), nil
+	return NewConn(c, 0, 0), nil
 }
 
-// DialTimeout acts like Dial but takes a timeout. The timeout includes name
-// resolution, if required.
-func DialTimeout(network, address string, timeout time.Duration) (Conn, error) {
-	netConn, err := net.DialTimeout(network, address, timeout)
+// DialTimeout acts like Dial but takes timeouts for establishing the
+// connection to the server, write a command and reading a reply.
+func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration) (Conn, error) {
+	var c net.Conn
+	var err error
+	if connectTimeout > 0 {
+		c, err = net.DialTimeout(network, address, connectTimeout)
+	} else {
+		c, err = net.Dial(network, address)
+	}
 	if err != nil {
 		return nil, errors.New("Could not connect to Redis server: " + err.Error())
 	}
-	return NewConn(netConn), nil
+	return NewConn(c, readTimeout, writeTimeout), nil
 }
 
 // NewConn returns a new Redigo connection for the given net connection.
-func NewConn(netConn net.Conn) Conn {
+func NewConn(netConn net.Conn, readTimeout, writeTimeout time.Duration) Conn {
 	return &conn{
-		conn: netConn,
-		rw: bufio.ReadWriter{
-			bufio.NewReader(netConn),
-			bufio.NewWriter(netConn),
-		},
+		conn:         netConn,
+		bw:           bufio.NewWriter(netConn),
+		br:           bufio.NewReader(netConn),
+		readTimeout:  readTimeout,
+		writeTimeout: writeTimeout,
 	}
 }
 
@@ -76,13 +91,6 @@ func (c *conn) Close() error {
 	return err
 }
 
-func (c *conn) Err() error {
-	c.mu.Lock()
-	err := c.err
-	c.mu.Unlock()
-	return err
-}
-
 func (c *conn) fatal(err error) error {
 	c.mu.Lock()
 	if c.err == nil {
@@ -92,54 +100,66 @@ func (c *conn) fatal(err error) error {
 	return err
 }
 
-func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
-	if err := c.Send(cmd, args...); err != nil {
-		return nil, err
-	}
-	var reply interface{}
-	var err = c.err
-	for c.pending > 0 && c.err == nil {
-		var e error
-		reply, e = c.Receive()
-		if e != nil && err == nil {
-			err = e
-		}
-	}
-	return reply, err
+func (c *conn) Err() error {
+	c.mu.Lock()
+	err := c.err
+	c.mu.Unlock()
+	return err
 }
 
 func (c *conn) writeN(prefix byte, n int) error {
 	c.scratch = append(c.scratch[0:0], prefix)
 	c.scratch = strconv.AppendInt(c.scratch, int64(n), 10)
 	c.scratch = append(c.scratch, "\r\n"...)
-	_, err := c.rw.Write(c.scratch)
+	_, err := c.bw.Write(c.scratch)
 	return err
 }
 
 func (c *conn) writeString(s string) error {
-	if err := c.writeN('$', len(s)); err != nil {
-		return err
-	}
-	if _, err := c.rw.WriteString(s); err != nil {
-		return err
-	}
-	_, err := c.rw.WriteString("\r\n")
+	c.writeN('$', len(s))
+	c.bw.WriteString(s)
+	_, err := c.bw.WriteString("\r\n")
 	return err
 }
 
 func (c *conn) writeBytes(p []byte) error {
-	if err := c.writeN('$', len(p)); err != nil {
-		return err
+	c.writeN('$', len(p))
+	c.bw.Write(p)
+	_, err := c.bw.WriteString("\r\n")
+	return err
+}
+
+func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
+	c.writeN('*', 1+len(args))
+	err = c.writeString(cmd)
+	for _, arg := range args {
+		if err != nil {
+			break
+		}
+		switch arg := arg.(type) {
+		case string:
+			err = c.writeString(arg)
+		case []byte:
+			err = c.writeBytes(arg)
+		case bool:
+			if arg {
+				err = c.writeString("1")
+			} else {
+				err = c.writeString("0")
+			}
+		case nil:
+			err = c.writeString("")
+		default:
+			var buf bytes.Buffer
+			fmt.Fprint(&buf, arg)
+			err = c.writeBytes(buf.Bytes())
+		}
 	}
-	if _, err := c.rw.Write(p); err != nil {
-		return err
-	}
-	_, err := c.rw.WriteString("\r\n")
 	return err
 }
 
 func (c *conn) readLine() ([]byte, error) {
-	p, err := c.rw.ReadSlice('\n')
+	p, err := c.br.ReadSlice('\n')
 	if err == bufio.ErrBufferFull {
 		return nil, errors.New("redigo: long response line")
 	}
@@ -153,7 +173,7 @@ func (c *conn) readLine() ([]byte, error) {
 	return p[:i], nil
 }
 
-func (c *conn) parseReply() (interface{}, error) {
+func (c *conn) readReply() (interface{}, error) {
 	line, err := c.readLine()
 	if err != nil {
 		return nil, err
@@ -178,7 +198,7 @@ func (c *conn) parseReply() (interface{}, error) {
 			return nil, err
 		}
 		p := make([]byte, n)
-		_, err = io.ReadFull(c.rw, p)
+		_, err = io.ReadFull(c.br, p)
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +217,7 @@ func (c *conn) parseReply() (interface{}, error) {
 		}
 		r := make([]interface{}, n)
 		for i := range r {
-			r[i], err = c.parseReply()
+			r[i], err = c.readReply()
 			if err != nil {
 				return nil, err
 			}
@@ -208,53 +228,73 @@ func (c *conn) parseReply() (interface{}, error) {
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {
-	if err := c.writeN('*', 1+len(args)); err != nil {
+	if c.writeTimeout != 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+	}
+	if err := c.writeCommand(cmd, args); err != nil {
 		return c.fatal(err)
 	}
-
-	if err := c.writeString(cmd); err != nil {
-		return c.fatal(err)
-	}
-
-	for _, arg := range args {
-		var err error
-		switch arg := arg.(type) {
-		case string:
-			err = c.writeString(arg)
-		case []byte:
-			err = c.writeBytes(arg)
-		case bool:
-			if arg {
-				err = c.writeString("1")
-			} else {
-				err = c.writeString("0")
-			}
-		case nil:
-			err = c.writeString("")
-		default:
-			var buf bytes.Buffer
-			fmt.Fprint(&buf, arg)
-			err = c.writeBytes(buf.Bytes())
-		}
-		if err != nil {
-			return c.fatal(err)
-		}
-	}
+	c.mu.Lock()
 	c.pending += 1
+	c.mu.Unlock()
 	return nil
 }
 
-func (c *conn) Receive() (interface{}, error) {
-	c.pending -= 1
-	if err := c.rw.Flush(); err != nil {
+func (c *conn) Flush() error {
+	if c.writeTimeout != 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+	}
+	if err := c.bw.Flush(); err != nil {
+		return c.fatal(err)
+	}
+	return nil
+}
+
+func (c *conn) Receive() (reply interface{}, err error) {
+	c.mu.Lock()
+	// There can be more receives than sends when using pub/sub. To allow
+	// normal use of the connection after unsubscribe from all channels, do not
+	// decrement pending to a negative value.
+	if c.pending > 0 {
+		c.pending -= 1
+	}
+	c.mu.Unlock()
+	if c.readTimeout != 0 {
+		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+	}
+	if reply, err = c.readReply(); err != nil {
 		return nil, c.fatal(err)
 	}
-	v, err := c.parseReply()
-	if err != nil {
-		return nil, c.fatal(err)
-	}
-	if err, ok := v.(Error); ok {
+	if err, ok := reply.(Error); ok {
 		return nil, err
 	}
-	return v, nil
+	return
+}
+
+func (c *conn) Do(cmd string, args ...interface{}) (reply interface{}, err error) {
+	// Send
+	if c.writeTimeout != 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+	}
+	c.writeCommand(cmd, args)
+	if err = c.bw.Flush(); err != nil {
+		return nil, c.fatal(err)
+	}
+
+	c.mu.Lock()
+	pending := c.pending
+	c.pending = 0
+	c.mu.Unlock()
+
+	// Receive
+	for ; pending >= 0; pending-- {
+		var e error
+		if reply, e = c.readReply(); e != nil {
+			return nil, c.fatal(e)
+		}
+		if e, ok := reply.(Error); ok && err == nil {
+			err = e
+		}
+	}
+	return
 }

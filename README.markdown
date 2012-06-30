@@ -6,7 +6,7 @@ Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) da
 Features
 -------
 
-* An [fmt.Print-like](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Executing_Commands) API with support for all Redis commands.
+* A [Print-like](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Executing_Commands) API with support for all Redis commands.
 * [Pipelining](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Pipelining), including pipelined transactions.
 * [Publish/Subscribe](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Publish_and_Subscribe).
 * [Connection pooling](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Pool).

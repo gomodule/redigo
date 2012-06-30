@@ -20,5 +20,5 @@ import (
 
 // NewConnBufio is a hook for tests.
 func NewConnBufio(rw bufio.ReadWriter) Conn {
-	return &conn{rw: rw}
+	return &conn{br: rw.Reader, bw: rw.Writer}
 }

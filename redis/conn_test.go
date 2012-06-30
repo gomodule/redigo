@@ -22,9 +22,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
-var sendTests = []struct {
+var writeTests = []struct {
 	args     []interface{}
 	expected string
 }{
@@ -50,8 +51,8 @@ var sendTests = []struct {
 	},
 }
 
-func TestSend(t *testing.T) {
-	for _, tt := range sendTests {
+func TestWrite(t *testing.T) {
+	for _, tt := range writeTests {
 		var buf bytes.Buffer
 		rw := bufio.ReadWriter{Writer: bufio.NewWriter(&buf)}
 		c := redis.NewConnBufio(rw)
@@ -70,7 +71,7 @@ func TestSend(t *testing.T) {
 
 var errorSentinel = &struct{}{}
 
-var receiveTests = []struct {
+var readTests = []struct {
 	reply    string
 	expected interface{}
 }{
@@ -112,8 +113,8 @@ var receiveTests = []struct {
 	},
 }
 
-func TestReceive(t *testing.T) {
-	for _, tt := range receiveTests {
+func TestRead(t *testing.T) {
+	for _, tt := range readTests {
 		rw := bufio.ReadWriter{
 			Reader: bufio.NewReader(strings.NewReader(tt.reply)),
 			Writer: bufio.NewWriter(nil), // writer need to support Flush
@@ -153,7 +154,7 @@ func (t testConn) Close() error {
 }
 
 func dial() (redis.Conn, error) {
-	c, err := redis.Dial("tcp", ":6379")
+	c, err := redis.DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -265,11 +266,13 @@ func TestPipelineCommands(t *testing.T) {
 	defer c.Close()
 
 	for _, cmd := range testCommands {
-		err := c.Send(cmd.args[0].(string), cmd.args[1:]...)
-		if err != nil {
+		if err := c.Send(cmd.args[0].(string), cmd.args[1:]...); err != nil {
 			t.Errorf("Send(%v) returned error %v", cmd.args, err)
 			continue
 		}
+	}
+	if err := c.Flush(); err != nil {
+		t.Errorf("Flush() returned error %v", err)
 	}
 	for _, cmd := range testCommands {
 		actual, err := c.Receive()
