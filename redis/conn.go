@@ -55,7 +55,7 @@ func Dial(network, address string) (Conn, error) {
 }
 
 // DialTimeout acts like Dial but takes timeouts for establishing the
-// connection to the server, write a command and reading a reply.
+// connection to the server, writing a command and reading a reply.
 func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration) (Conn, error) {
 	var c net.Conn
 	var err error
