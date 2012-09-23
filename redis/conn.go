@@ -228,15 +228,15 @@ func (c *conn) readReply() (interface{}, error) {
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {
+	c.mu.Lock()
+	c.pending += 1
+	c.mu.Unlock()
 	if c.writeTimeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 	}
 	if err := c.writeCommand(cmd, args); err != nil {
 		return c.fatal(err)
 	}
-	c.mu.Lock()
-	c.pending += 1
-	c.mu.Unlock()
 	return nil
 }
 
