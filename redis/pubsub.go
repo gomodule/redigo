@@ -15,7 +15,7 @@
 package redis
 
 import (
-	"bytes"
+	"errors"
 )
 
 // Subscribe represents a subscribe or unsubscribe notification.
@@ -33,6 +33,19 @@ type Subscription struct {
 
 // Message represents a message notification.
 type Message struct {
+
+	// The originating channel.
+	Channel string
+
+	// The message data.
+	Data []byte
+}
+
+// PMessage represents a pmessage notification.
+type PMessage struct {
+
+	// The matched pattern.
+	Pattern string
 
 	// The originating channel.
 	Channel string
@@ -77,35 +90,40 @@ func (c PubSubConn) PUnsubscribe(channel ...interface{}) error {
 	return c.Conn.Flush()
 }
 
-var messageBytes = []byte("message")
-
-// Receive returns a pushed message as a Subscription, Message or error. The
-// return value is intended to be used directly in a type switch as illustrated
-// in the PubSubConn example.
+// Receive returns a pushed message as a Subscription, Message, PMessage or
+// error. The return value is intended to be used directly in a type switch as
+// illustrated in the PubSubConn example.
 func (c PubSubConn) Receive() interface{} {
 	multiBulk, err := MultiBulk(c.Conn.Receive())
 	if err != nil {
 		return err
 	}
 
-	var kind []byte
-	var channel string
-	multiBulk, err = Values(multiBulk, &kind, &channel)
+	var kind string
+	multiBulk, err = Values(multiBulk, &kind)
 	if err != nil {
 		return err
 	}
 
-	if bytes.Equal(kind, messageBytes) {
-		var data []byte
-		if _, err := Values(multiBulk, &data); err != nil {
+	switch kind {
+	case "message":
+		var m Message
+		if _, err := Values(multiBulk, &m.Channel, &m.Data); err != nil {
 			return err
 		}
-		return Message{channel, data}
+		return m
+	case "pmessage":
+		var pm PMessage
+		if _, err := Values(multiBulk, &pm.Pattern, &pm.Channel, &pm.Data); err != nil {
+			return err
+		}
+		return pm
+	case "subscribe", "psubscribe", "unsubscribe", "punsubscribe":
+		s := Subscription{Kind: kind}
+		if _, err := Values(multiBulk, &s.Channel, &s.Count); err != nil {
+			return err
+		}
+		return s
 	}
-
-	var count int
-	if _, err := Values(multiBulk, &count); err != nil {
-		return err
-	}
-	return Subscription{string(kind), channel, count}
+	return errors.New("redigo: unknown pubsub notification")
 }

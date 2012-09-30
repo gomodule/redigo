@@ -45,17 +45,19 @@ func ExamplePubSubConn() {
 
 	psc := redis.PubSubConn{c}
 
-	// This goroutine receives and prints pushed messages from the server. The
-	// goroutine exits when the connection is unsubscribed from all channels or
-	// there is an error.
+	// This goroutine receives and prints pushed notifications from the server.
+	// The goroutine exits when the connection is unsubscribed from all
+	// channels or there is an error.
 	go func() {
 		defer wg.Done()
 		for {
 			switch n := psc.Receive().(type) {
 			case redis.Message:
-				fmt.Printf("%s: message: %s\n", n.Channel, n.Data)
+				fmt.Printf("Message: %s %s\n", n.Channel, n.Data)
+			case redis.PMessage:
+				fmt.Printf("PMessage: %s %s %s\n", n.Pattern, n.Channel, n.Data)
 			case redis.Subscription:
-				fmt.Printf("%s: %s %d\n", n.Channel, n.Kind, n.Count)
+				fmt.Printf("Subscription: %s %s %d\n", n.Kind, n.Channel, n.Count)
 				if n.Count == 0 {
 					return
 				}
@@ -71,24 +73,32 @@ func ExamplePubSubConn() {
 		defer wg.Done()
 
 		psc.Subscribe("example")
+		psc.PSubscribe("p*")
 
 		// The following function calls publish a message using another
 		// connection to the Redis server.
 		publish("example", "hello")
 		publish("example", "world")
+		publish("pexample", "foo")
+		publish("pexample", "bar")
 
 		// Unsubscribe from all connections. This will cause the receiving
 		// goroutine to exit.
 		psc.Unsubscribe()
+		psc.PUnsubscribe()
 	}()
 
 	wg.Wait()
 
 	// Output:
-	// example: subscribe 1
-	// example: message: hello
-	// example: message: world
-	// example: unsubscribe 0
+	// Subscription: subscribe example 1
+	// Subscription: psubscribe p* 2
+	// Message: example hello
+	// Message: example world
+	// PMessage: p* pexample foo
+	// PMessage: p* pexample bar
+	// Subscription: unsubscribe example 1
+	// Subscription: punsubscribe p* 0
 }
 
 func expectPushed(t *testing.T, c redis.PubSubConn, message string, expected interface{}) {
