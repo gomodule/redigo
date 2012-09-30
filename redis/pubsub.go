@@ -41,6 +41,19 @@ type Message struct {
 	Data []byte
 }
 
+// PMessage represents a pmessage notification.
+type PMessage struct {
+
+	// The matched pattern
+	Pattern string
+
+	// The originating channel.
+	Channel string
+
+	// The message data.
+	Data []byte
+}
+
 // PubSubConn wraps a Conn with convenience methods for subscribers.
 type PubSubConn struct {
 	Conn Conn
@@ -78,6 +91,7 @@ func (c PubSubConn) PUnsubscribe(channel ...interface{}) error {
 }
 
 var messageBytes = []byte("message")
+var pmessageBytes = []byte("pmessage")
 
 // Receive returns a pushed message as a Subscription, Message or error. The
 // return value is intended to be used directly in a type switch as illustrated
@@ -89,8 +103,8 @@ func (c PubSubConn) Receive() interface{} {
 	}
 
 	var kind []byte
-	var channel string
-	multiBulk, err = Values(multiBulk, &kind, &channel)
+	var pattern string
+	multiBulk, err = Values(multiBulk, &kind, &pattern)
 	if err != nil {
 		return err
 	}
@@ -100,12 +114,21 @@ func (c PubSubConn) Receive() interface{} {
 		if _, err := Values(multiBulk, &data); err != nil {
 			return err
 		}
-		return Message{channel, data}
+		return Message{pattern, data}
+	}
+
+	if bytes.Equal(kind, pmessageBytes) {
+		var channel string
+		var data []byte
+		if _, err := Values(multiBulk, &channel, &data); err != nil {
+			return err
+		}
+		return PMessage{pattern, channel, data}
 	}
 
 	var count int
 	if _, err := Values(multiBulk, &count); err != nil {
 		return err
 	}
-	return Subscription{string(kind), channel, count}
+	return Subscription{string(kind), pattern, count}
 }
