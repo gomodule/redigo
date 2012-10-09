@@ -21,7 +21,7 @@ func main() {
 
 	v0 := &MyStruct{1, "hello"}
 
-	_, err = c.Do("HMSET", append([]interface{}{"key"}, scan.FormatStruct(v0)...)...)
+	_, err = c.Do("HMSET", scan.AppendStruct([]interface{}{"key"}, v0)...)
 	if err != nil {
 		log.Fatal(err)
 	}

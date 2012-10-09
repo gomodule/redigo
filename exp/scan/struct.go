@@ -97,7 +97,7 @@ func ScanStruct(reply interface{}, dst interface{}) error {
 	return nil
 }
 
-func FormatStruct(src interface{}) []interface{} {
+func AppendStruct(args []interface{}, src interface{}) []interface{} {
 	v := reflect.ValueOf(src)
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
@@ -109,11 +109,9 @@ func FormatStruct(src interface{}) []interface{} {
 		panic("redigo: FormatStruct argument must be a struct or pointer to a struct")
 	}
 	ss := structSpecForType(v.Type())
-
-	result := make([]interface{}, 0, 2*len(ss.l))
 	for _, fs := range ss.l {
 		fv := v.FieldByIndex(fs.index)
-		result = append(result, fs.name, fv.Interface())
+		args = append(args, fs.name, fv.Interface())
 	}
-	return result
+	return args
 }
