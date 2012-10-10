@@ -135,4 +135,16 @@
 //  if err != nil {
 //      // handle error return from c.Do or type conversion error.
 //  }
+//
+// The Scan function converts elements of a multi-bulk reply to Go types:
+//
+//  var value1 int
+//  var value2 string
+//  mb, err := redis.MultiBulk(c.Do("MGET", "key1", "key2"))
+//  if err != nil {
+//      // handle error
+//  }
+//   if _, err := redis.Scan(mb, &value1, &value2); err != nil {
+//      // handle error
+//  }
 package redis

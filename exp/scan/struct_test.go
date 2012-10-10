@@ -83,7 +83,7 @@ var formatStructTests = []struct {
 
 func TestFormatStruct(t *testing.T) {
 	for _, tt := range formatStructTests {
-		args := scan.FormatStruct(tt.value)
+		args := scan.AppendStruct(nil, tt.value)
 		if !reflect.DeepEqual(args, tt.args) {
 			t.Fatalf("FormatStruct(%s) returned %v, want %v", tt.title, args, tt.args)
 		}

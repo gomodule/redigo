@@ -100,7 +100,7 @@ func (c PubSubConn) Receive() interface{} {
 	}
 
 	var kind string
-	multiBulk, err = Values(multiBulk, &kind)
+	multiBulk, err = Scan(multiBulk, &kind)
 	if err != nil {
 		return err
 	}
@@ -108,19 +108,19 @@ func (c PubSubConn) Receive() interface{} {
 	switch kind {
 	case "message":
 		var m Message
-		if _, err := Values(multiBulk, &m.Channel, &m.Data); err != nil {
+		if _, err := Scan(multiBulk, &m.Channel, &m.Data); err != nil {
 			return err
 		}
 		return m
 	case "pmessage":
 		var pm PMessage
-		if _, err := Values(multiBulk, &pm.Pattern, &pm.Channel, &pm.Data); err != nil {
+		if _, err := Scan(multiBulk, &pm.Pattern, &pm.Channel, &pm.Data); err != nil {
 			return err
 		}
 		return pm
 	case "subscribe", "psubscribe", "unsubscribe", "punsubscribe":
 		s := Subscription{Kind: kind}
-		if _, err := Values(multiBulk, &s.Channel, &s.Count); err != nil {
+		if _, err := Scan(multiBulk, &s.Channel, &s.Count); err != nil {
 			return err
 		}
 		return s

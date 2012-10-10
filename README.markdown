@@ -11,6 +11,7 @@ Features
 * [Publish/Subscribe](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Publish_and_Subscribe).
 * [Connection pooling](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Pool).
 * [Script helper object](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Script) with optimistic use of EVALSHA.
+* [Helper functions](http://go.pkgdoc.org/pkg/github.com/garyburd/redigo/redis#Reply_Helpers) for working with command replies.
 
 Documentation
 -------------
