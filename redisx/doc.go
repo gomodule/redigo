@@ -12,7 +12,6 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-// Package scan is an experimental package for working with Redis commands and replies.  
-//
-// This package is a work in progress. The API is not stable.
-package scan
+// Package redisx contains experimental features for Redigo. Features in this
+// package may be modified or deleted at any time.
+package redisx

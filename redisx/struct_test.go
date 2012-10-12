@@ -12,10 +12,10 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package scan_test
+package redisx_test
 
 import (
-	"github.com/garyburd/redigo/exp/scan"
+	"github.com/garyburd/redigo/redisx"
 	"reflect"
 	"testing"
 )
@@ -51,7 +51,7 @@ func TestScanStruct(t *testing.T) {
 
 		value := reflect.New(reflect.ValueOf(tt.value).Type().Elem())
 
-		if err := scan.ScanStruct(reply, value.Interface()); err != nil {
+		if err := redisx.ScanStruct(reply, value.Interface()); err != nil {
 			t.Fatalf("ScanStruct(%s) returned error %v", tt.title)
 		}
 
@@ -83,7 +83,7 @@ var formatStructTests = []struct {
 
 func TestFormatStruct(t *testing.T) {
 	for _, tt := range formatStructTests {
-		args := scan.AppendStruct(nil, tt.value)
+		args := redisx.AppendStruct(nil, tt.value)
 		if !reflect.DeepEqual(args, tt.args) {
 			t.Fatalf("FormatStruct(%s) returned %v, want %v", tt.title, args, tt.args)
 		}

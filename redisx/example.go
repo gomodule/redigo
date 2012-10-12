@@ -3,8 +3,8 @@
 package main
 
 import (
-	"github.com/garyburd/redigo/exp/scan"
 	"github.com/garyburd/redigo/redis"
+	"github.com/garyburd/redigo/redisx"
 	"log"
 )
 
@@ -21,7 +21,7 @@ func main() {
 
 	v0 := &MyStruct{1, "hello"}
 
-	_, err = c.Do("HMSET", scan.AppendStruct([]interface{}{"key"}, v0)...)
+	_, err = c.Do("HMSET", redisx.AppendStruct([]interface{}{"key"}, v0)...)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func main() {
 
 	v1 := &MyStruct{}
 
-	err = scan.ScanStruct(reply, v1)
+	err = redisx.ScanStruct(reply, v1)
 	if err != nil {
 		log.Fatal(err)
 	}
