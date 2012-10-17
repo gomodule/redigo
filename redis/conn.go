@@ -286,6 +286,10 @@ func (c *conn) Do(cmd string, args ...interface{}) (reply interface{}, err error
 	c.pending = 0
 	c.mu.Unlock()
 
+	if c.readTimeout != 0 {
+		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+	}
+
 	// Receive
 	for ; pending >= 0; pending-- {
 		var e error

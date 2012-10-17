@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"errors"
 	"github.com/garyburd/redigo/redis"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -301,6 +302,52 @@ func TestError(t *testing.T) {
 	_, err = c.Do("SET", "key", "val")
 	if err != nil {
 		t.Errorf("Do(SET, key, val) returned error %v, expected nil.", err)
+	}
+}
+
+func TestReadDeadline(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen returned %v", err)
+	}
+	defer l.Close()
+
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				time.Sleep(time.Second)
+				c.Write([]byte("+OK\r\n"))
+				c.Close()
+			}()
+		}
+	}()
+
+	c1, err := redis.DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
+	if err != nil {
+		t.Fatalf("redis.Dial returned %v", err)
+	}
+	defer c1.Close()
+
+	_, err = c1.Do("PING")
+	if err == nil {
+		t.Fatalf("Dodid not return error.")
+	}
+
+	c2, err := redis.DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
+	if err != nil {
+		t.Fatalf("redis.Dial returned %v", err)
+	}
+	defer c2.Close()
+
+	c2.Send("PING")
+	c2.Flush()
+	_, err = c2.Receive()
+	if err == nil {
+		t.Fatalf("Receive did not return error.")
 	}
 }
 
