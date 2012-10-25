@@ -15,12 +15,19 @@
 package redis
 
 import (
+	"container/list"
 	"errors"
+	"sync"
+	"time"
 )
 
-// Pool maintains a pool of connections.
-//
-// Pooled connections do not support concurrent access or pub/sub.
+var nowFunc = time.Now // for testing
+
+var errPoolClosed = errors.New("redigo: connection pool closed")
+
+// Pool maintains a pool of connections. The application calls the Get method
+// to get a connection from the pool and the connection's Close method to
+// return the connection's resources to the pool.
 //
 // The following example shows how to use a pool in a web application. The
 // application creates a pool at application startup and makes it available to
@@ -30,13 +37,18 @@ import (
 //      var password string
 //      ...
 //
-//      pool = redis.NewPool(func () (c redis.Conn, err error) {
-//              c, err = redis.Dial(server)
-//              if err != nil {
-//                  err = c.Do("AUTH", password)
-//              }
-//              return
-//          }, 3)
+//      pool = &redis.Pool{
+//              MaxIdle: 3,
+//              Dial: func () (c redis.Conn err error) {
+//                  c, err = redis.Dial("tcp", server)
+//                  if err != nil {
+//                      return nil, err
+//                  }
+//                  if err = c.Do("AUTH", password); err != nil {
+//                      return nil, err    
+//                  }
+//              },
+//          }
 //
 // This pool has a maximum of three connections to the server specified by the
 // variable "server". Each connection is authenticated using a password.
@@ -45,98 +57,165 @@ import (
 // when the handler is done:
 //
 //  conn, err := pool.Get()
-//  if err != nil {
-//      // handle the error
-//  }
 //  defer conn.Close()
 //  // do something with the connection
-//
-// Close() returns the connection to the pool if there's room in the pool and
-// the connection does not have a permanent error. Otherwise, Close() releases
-// the resources used by the connection.
 type Pool struct {
-	newFn func() (Conn, error)
-	conns chan Conn
+
+	// Dial is an application supplied function for creating new connections.
+	Dial func() (Conn, error)
+
+	// Maximum number of idle connections in the pool.
+	MaxIdle int
+
+	// Close connections after remaining idle for this duration. If the value
+	// is zero, then idle connections are not closed. Applications should set
+	// the timeout to a value less than the server's timeout.
+	IdleTimeout time.Duration
+
+	// mu protects fields defined below.
+	mu     sync.Mutex
+	closed bool
+
+	// Stack of idleConn with most recently used at the front.
+	idle list.List
+}
+
+type idleConn struct {
+	c Conn
+	t time.Time
+}
+
+// NewPool returns a pool that uses newPool to create connections as needed.
+// The pool keeps a maximum of maxIdle idle connections. 
+func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
+	return &Pool{Dial: newFn, MaxIdle: maxIdle}
+}
+
+// Get gets a connection from the pool.
+func (p *Pool) Get() Conn {
+	return &pooledConnection{p: p}
+}
+
+// Close releases the resources used by the pool.
+func (p *Pool) Close() error {
+	p.mu.Lock()
+	idle := p.idle
+	p.idle.Init()
+	p.closed = true
+	p.mu.Unlock()
+	for e := idle.Front(); e != nil; e = e.Next() {
+		e.Value.(idleConn).c.Close()
+	}
+	return nil
+}
+
+func (p *Pool) get() (c Conn, err error) {
+	p.mu.Lock()
+	if p.IdleTimeout > 0 {
+		for {
+			e := p.idle.Back()
+			if e == nil || nowFunc().Before(e.Value.(idleConn).t) {
+				break
+			}
+			cStale := e.Value.(idleConn).c
+			p.idle.Remove(e)
+
+			// Release the pool lock during the potentially long call to the
+			// connecton's Close method.
+			p.mu.Unlock()
+			cStale.Close()
+			p.mu.Lock()
+		}
+	}
+	if p.closed {
+		p.mu.Unlock()
+		return nil, errors.New("redigo: get on closed pool")
+	}
+	if e := p.idle.Front(); e != nil {
+		c = e.Value.(idleConn).c
+		p.idle.Remove(e)
+	}
+	p.mu.Unlock()
+	if c == nil {
+		c, err = p.Dial()
+	}
+	return c, err
+}
+
+func (p *Pool) put(c Conn) error {
+	p.mu.Lock()
+	if !p.closed {
+		p.idle.PushFront(idleConn{t: nowFunc().Add(p.IdleTimeout), c: c})
+		if p.idle.Len() > p.MaxIdle {
+			c = p.idle.Remove(p.idle.Back()).(idleConn).c
+		} else {
+			c = nil
+		}
+	}
+	p.mu.Unlock()
+	if c != nil {
+		return c.Close()
+	}
+	return nil
 }
 
 type pooledConnection struct {
-	c    Conn
-	err  error
-	pool *Pool
+	c   Conn
+	err error
+	p   *Pool
 }
 
-// NewPool returns a new connection pool. The pool uses newFn to create
-// connections as needed and maintains a maximum of maxIdle idle connections.
-func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
-	return &Pool{newFn: newFn, conns: make(chan Conn, maxIdle)}
-}
-
-// Get returns an idle connection from the pool if available or creates a new
-// connection. The caller should Close() the connection to return the
-// connection to the pool.
-func (p *Pool) Get() (Conn, error) {
-	var c Conn
-	select {
-	case c = <-p.conns:
-	default:
-		var err error
-		c, err = p.newFn()
-		if err != nil {
-			return nil, err
-		}
+func (c *pooledConnection) get() error {
+	if c.err == nil && c.c == nil {
+		c.c, c.err = c.p.get()
 	}
-	return &pooledConnection{c: c, pool: p}, nil
+	return c.err
+}
+
+func (c *pooledConnection) Close() (err error) {
+	if c.c != nil {
+		if c.c.Err() != nil {
+			err = c.c.Close()
+		} else {
+			err = c.p.put(c.c)
+		}
+		c.c = nil
+		c.err = errPoolClosed
+	}
+	return err
 }
 
 func (c *pooledConnection) Err() error {
-	if c.err != nil {
-		return c.err
+	if err := c.get(); err != nil {
+		return err
 	}
 	return c.c.Err()
 }
 
 func (c *pooledConnection) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
-	if c.err != nil {
-		return nil, c.err
+	if err := c.get(); err != nil {
+		return nil, err
 	}
 	return c.c.Do(commandName, args...)
 }
 
 func (c *pooledConnection) Send(commandName string, args ...interface{}) error {
-	if c.err != nil {
-		return c.err
+	if err := c.get(); err != nil {
+		return err
 	}
 	return c.c.Send(commandName, args...)
 }
 
 func (c *pooledConnection) Flush() error {
-	if c.err != nil {
-		return c.err
+	if err := c.get(); err != nil {
+		return err
 	}
 	return c.c.Flush()
 }
 
 func (c *pooledConnection) Receive() (reply interface{}, err error) {
-	if c.err != nil {
-		return nil, c.err
+	if err := c.get(); err != nil {
+		return nil, err
 	}
 	return c.c.Receive()
-}
-
-var errPoolClosed = errors.New("redigo: pooled connection closed")
-
-func (c *pooledConnection) Close() (err error) {
-	if c.err != nil {
-		return c.err
-	}
-	c.err = errPoolClosed
-	if c.c.Err() != nil {
-		return c.c.Close()
-	}
-	select {
-	case c.pool.conns <- c.c:
-	default:
-		return c.c.Close()
-	}
-	return nil
 }

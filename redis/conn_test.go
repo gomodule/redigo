@@ -334,7 +334,7 @@ func TestReadDeadline(t *testing.T) {
 
 	_, err = c1.Do("PING")
 	if err == nil {
-		t.Fatalf("Dodid not return error.")
+		t.Fatalf("Do did not return error.")
 	}
 
 	c2, err := redis.DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
