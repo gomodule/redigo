@@ -48,6 +48,12 @@ var scanConversionTests = []struct {
 	{[]byte("t"), true},
 	{[]byte("hello"), "hello"},
 	{[]byte("world"), []byte("world")},
+	{[]interface{}{[]byte("foo")}, []string{"foo"}},
+	{[]interface{}{[]byte("bar")}, [][]byte{[]byte("bar")}},
+	{[]interface{}{[]byte("1")}, []int{1}},
+	{[]interface{}{[]byte("1"), []byte("2")}, []int{1, 2}},
+	{[]interface{}{[]byte("1")}, []byte{1}},
+	{[]interface{}{[]byte("1")}, []bool{true}},
 }
 
 var scanConversionErrorTests = []struct {
@@ -59,13 +65,14 @@ var scanConversionErrorTests = []struct {
 	{[]byte("-1"), byte(0)},
 	{int64(-1), byte(0)},
 	{[]byte("junk"), false},
+	{redis.Error("blah"), false},
 }
 
 func TestScanConversion(t *testing.T) {
 	for _, tt := range scanConversionTests {
-		multiBulk := []interface{}{tt.src}
+		values := []interface{}{tt.src}
 		dest := reflect.New(reflect.TypeOf(tt.dest))
-		multiBulk, err := redis.Scan(multiBulk, dest.Interface())
+		values, err := redis.Scan(values, dest.Interface())
 		if err != nil {
 			t.Errorf("Scan(%v) returned error %v", tt, err)
 			continue
@@ -78,9 +85,9 @@ func TestScanConversion(t *testing.T) {
 
 func TestScanConversionError(t *testing.T) {
 	for _, tt := range scanConversionErrorTests {
-		multiBulk := []interface{}{tt.src}
+		values := []interface{}{tt.src}
 		dest := reflect.New(reflect.TypeOf(tt.dest))
-		multiBulk, err := redis.Scan(multiBulk, dest.Interface())
+		values, err := redis.Scan(values, dest.Interface())
 		if err == nil {
 			t.Errorf("Scan(%v) did not return error", tt)
 		}
@@ -100,7 +107,7 @@ func ExampleScan() {
 	c.Send("LPUSH", "albums", "1")
 	c.Send("LPUSH", "albums", "2")
 	c.Send("LPUSH", "albums", "3")
-	multiBulk, err := redis.MultiBulk(c.Do("SORT", "albums",
+	values, err := redis.Values(c.Do("SORT", "albums",
 		"BY", "album:*->rating",
 		"GET", "album:*->title",
 		"GET", "album:*->rating"))
@@ -108,10 +115,10 @@ func ExampleScan() {
 		panic(err)
 	}
 
-	for len(multiBulk) > 0 {
+	for len(values) > 0 {
 		var title string
 		rating := -1 // initialize to illegal value to detect nil.
-		multiBulk, err = redis.Scan(multiBulk, &title, &rating)
+		values, err = redis.Scan(values, &title, &rating)
 		if err != nil {
 			panic(err)
 		}
@@ -125,4 +132,45 @@ func ExampleScan() {
 	// Beat not-rated
 	// Earthbound 1
 	// Red 5
+}
+
+var scanStructTests = []struct {
+	title string
+	reply []string
+	value interface{}
+}{
+	{"basic",
+		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "f", "Bt", "1", "Bf", "0"},
+		&struct {
+			I  int    `redis:"i"`
+			U  uint   `redis:"u"`
+			S  string `redis:"s"`
+			P  []byte `redis:"p"`
+			B  bool   `redis:"b"`
+			Bt bool
+			Bf bool
+		}{
+			-1234, 5678, "hello", []byte("world"), false, true, false,
+		},
+	},
+}
+
+func TestScanStruct(t *testing.T) {
+	for _, tt := range scanStructTests {
+
+		var reply []interface{}
+		for _, v := range tt.reply {
+			reply = append(reply, []byte(v))
+		}
+
+		value := reflect.New(reflect.ValueOf(tt.value).Type().Elem())
+
+		if err := redis.ScanStruct(reply, value.Interface()); err != nil {
+			t.Fatalf("ScanStruct(%s) returned error %v", tt.title, err)
+		}
+
+		if !reflect.DeepEqual(value.Interface(), tt.value) {
+			t.Fatalf("ScanStruct(%s) returned %v, want %v", tt.title, value.Interface(), tt.value)
+		}
+	}
 }

@@ -22,7 +22,7 @@
 // The Conn interface is the primary interface for working with Redis.
 // Applications create connections by calling the Dial, DialWithTimeout or
 // NewConn functions. In the future, functions will be added for creating
-// shareded and other types of connections.
+// sharded and other types of connections.
 //
 // The application must call the connection Close method when the application
 // is done with the connection.
@@ -124,12 +124,11 @@
 //
 // Reply Helpers
 //
-// The Bool, Int, Bytes, String and MultiBulk functions convert a reply to a
-// value of a specific type. To allow convenient wrapping of calls to the
-// connection Do and Receive methods, the functions take a second argument of
-// type error. If the error is non-nil, then the helper function returns the
-// error. If the error is nil, the function converts the reply to the specified
-// type:
+// The Bool, Int, Bytes, String and Values functions convert a reply to a value
+// of a specific type. To allow convenient wrapping of calls to the connection
+// Do and Receive methods, the functions take a second argument of type error.
+// If the error is non-nil, then the helper function returns the error. If the
+// error is nil, the function converts the reply to the specified type:
 //
 //  exists, err := redis.Bool(c.Do("EXISTS", "foo"))
 //  if err != nil {
@@ -140,11 +139,11 @@
 //
 //  var value1 int
 //  var value2 string
-//  mb, err := redis.MultiBulk(c.Do("MGET", "key1", "key2"))
+//  reply, err := redis.Values(c.Do("MGET", "key1", "key2"))
 //  if err != nil {
 //      // handle error
 //  }
-//   if _, err := redis.Scan(mb, &value1, &value2); err != nil {
+//   if _, err := redis.Scan(reply, &value1, &value2); err != nil {
 //      // handle error
 //  }
 package redis

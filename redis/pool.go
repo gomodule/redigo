@@ -39,19 +39,22 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //
 //      pool = &redis.Pool{
 //              MaxIdle: 3,
-//              Dial: func () (c redis.Conn err error) {
-//                  c, err = redis.Dial("tcp", server)
+//              IdleTimeout: 240 * time.Second,
+//              Dial: func () (redis.Conn error) {
+//                  c, err := redis.Dial("tcp", server)
 //                  if err != nil {
 //                      return nil, err
 //                  }
-//                  if err = c.Do("AUTH", password); err != nil {
+//                  if err := c.Do("AUTH", password); err != nil {
+//                      c.Close()
 //                      return nil, err    
 //                  }
+//                  return c, err
 //              },
 //          }
 //
 // This pool has a maximum of three connections to the server specified by the
-// variable "server". Each connection is authenticated using a password.
+// variable "server". Each connection is authenticated using a password. 
 //
 // A request handler gets a connection from the pool and closes the connection
 // when the handler is done:
@@ -121,7 +124,7 @@ func (p *Pool) get() (c Conn, err error) {
 			p.idle.Remove(e)
 
 			// Release the pool lock during the potentially long call to the
-			// connecton's Close method.
+			// connection's Close method.
 			p.mu.Unlock()
 			cStale.Close()
 			p.mu.Lock()

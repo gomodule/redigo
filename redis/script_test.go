@@ -36,7 +36,7 @@ func TestScript(t *testing.T) {
 	c := dialt(t)
 	defer c.Close()
 
-	// To test fallback in Do, we make script unique by adding comment with current time.
+	// To test fall back in Do, we make script unique by adding comment with current time.
 	script := fmt.Sprintf("--%d\nreturn {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", time.Now().UnixNano())
 	s := redis.NewScript(2, script)
 	reply := []interface{}{[]byte("key1"), []byte("key2"), []byte("arg1"), []byte("arg2")}

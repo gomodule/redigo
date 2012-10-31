@@ -271,13 +271,16 @@ func (c *conn) Receive() (reply interface{}, err error) {
 	return
 }
 
-func (c *conn) Do(cmd string, args ...interface{}) (reply interface{}, err error) {
-	// Send
+func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	if c.writeTimeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 	}
-	c.writeCommand(cmd, args)
-	if err = c.bw.Flush(); err != nil {
+
+	if cmd != "" {
+		c.writeCommand(cmd, args)
+	}
+
+	if err := c.bw.Flush(); err != nil {
 		return nil, c.fatal(err)
 	}
 
@@ -290,8 +293,21 @@ func (c *conn) Do(cmd string, args ...interface{}) (reply interface{}, err error
 		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
 	}
 
-	// Receive
-	for ; pending >= 0; pending-- {
+	if cmd == "" {
+		reply := make([]interface{}, pending)
+		for i := range reply {
+			if r, e := c.readReply(); e != nil {
+				return nil, c.fatal(e)
+			} else {
+				reply[i] = r
+			}
+		}
+		return reply, nil
+	}
+
+	var err error
+	var reply interface{}
+	for i := 0; i <= pending; i++ {
 		var e error
 		if reply, e = c.readReply(); e != nil {
 			return nil, c.fatal(e)
@@ -300,5 +316,5 @@ func (c *conn) Do(cmd string, args ...interface{}) (reply interface{}, err error
 			err = e
 		}
 	}
-	return
+	return reply, err
 }

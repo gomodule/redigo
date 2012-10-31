@@ -22,8 +22,8 @@ import (
 
 var ErrNil = errors.New("redigo: nil returned")
 
-// Values is deprecated. Use Scan instead.
-func Values(multiBulk []interface{}, values ...interface{}) ([]interface{}, error) {
+// xValues is deprecated. Use Scan instead.
+func xValues(multiBulk []interface{}, values ...interface{}) ([]interface{}, error) {
 	if len(multiBulk) < len(values) {
 		return nil, errors.New("redigo Values: short multibulk")
 	}
@@ -160,15 +160,18 @@ func Bool(reply interface{}, err error) (bool, error) {
 	return false, fmt.Errorf("redigo: unexpected type for Bool, got type %T", reply)
 }
 
-// MultiBulk is a helper that converts a command reply to a []interface{}. If
-// err is not equal to nil, then MultiBulk returns nil, err. Otherwise,
-// MultiBulk converts the reply as follows:
+// MultiBulk is deprecated. Use Values.
+func MultiBulk(reply interface{}, err error) ([]interface{}, error) { return Values(reply, err) }
+
+// Values is a helper that converts a multi-bulk command reply to a
+// []interface{}. If err is not equal to nil, then Values returns nil, err.
+// Otherwise, Multi converts the reply as follows:
 //
 //  Reply type      Result
 //  multi-bulk      reply, nil
 //  nil             nil, ErrNil
 //  other           nil, error
-func MultiBulk(reply interface{}, err error) ([]interface{}, error) {
+func Values(reply interface{}, err error) ([]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -180,5 +183,5 @@ func MultiBulk(reply interface{}, err error) ([]interface{}, error) {
 	case Error:
 		return nil, reply
 	}
-	return nil, fmt.Errorf("redigo: unexpected type for MultiBulk, got type %T", reply)
+	return nil, fmt.Errorf("redigo: unexpected type for Multi, got type %T", reply)
 }

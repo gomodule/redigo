@@ -268,8 +268,7 @@ func TestPipelineCommands(t *testing.T) {
 
 	for _, cmd := range testCommands {
 		if err := c.Send(cmd.args[0].(string), cmd.args[1:]...); err != nil {
-			t.Errorf("Send(%v) returned error %v", cmd.args, err)
-			continue
+			t.Fatalf("Send(%v) returned error %v", cmd.args, err)
 		}
 	}
 	if err := c.Flush(); err != nil {
@@ -278,9 +277,32 @@ func TestPipelineCommands(t *testing.T) {
 	for _, cmd := range testCommands {
 		actual, err := c.Receive()
 		if err != nil {
-			t.Errorf("Receive(%v) returned error %v", cmd.args, err)
-			continue
+			t.Fatalf("Receive(%v) returned error %v", cmd.args, err)
 		}
+		if !reflect.DeepEqual(actual, cmd.expected) {
+			t.Errorf("Receive(%v) = %v, want %v", cmd.args, actual, cmd.expected)
+		}
+	}
+}
+
+func TestBlankCommmand(t *testing.T) {
+	c := dialt(t)
+	defer c.Close()
+
+	for _, cmd := range testCommands {
+		if err := c.Send(cmd.args[0].(string), cmd.args[1:]...); err != nil {
+			t.Fatalf("Send(%v) returned error %v", cmd.args, err)
+		}
+	}
+	reply, err := redis.Values(c.Do(""))
+	if err != nil {
+		t.Fatalf("Do() returned error %v", err)
+	}
+	if len(reply) != len(testCommands) {
+		t.Fatalf("len(reply)=%d, want %d", len(reply), len(testCommands))
+	}
+	for i, cmd := range testCommands {
+		actual := reply[i]
 		if !reflect.DeepEqual(actual, cmd.expected) {
 			t.Errorf("Receive(%v) = %v, want %v", cmd.args, actual, cmd.expected)
 		}

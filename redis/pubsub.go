@@ -94,13 +94,13 @@ func (c PubSubConn) PUnsubscribe(channel ...interface{}) error {
 // error. The return value is intended to be used directly in a type switch as
 // illustrated in the PubSubConn example.
 func (c PubSubConn) Receive() interface{} {
-	multiBulk, err := MultiBulk(c.Conn.Receive())
+	reply, err := Values(c.Conn.Receive())
 	if err != nil {
 		return err
 	}
 
 	var kind string
-	multiBulk, err = Scan(multiBulk, &kind)
+	reply, err = Scan(reply, &kind)
 	if err != nil {
 		return err
 	}
@@ -108,19 +108,19 @@ func (c PubSubConn) Receive() interface{} {
 	switch kind {
 	case "message":
 		var m Message
-		if _, err := Scan(multiBulk, &m.Channel, &m.Data); err != nil {
+		if _, err := Scan(reply, &m.Channel, &m.Data); err != nil {
 			return err
 		}
 		return m
 	case "pmessage":
 		var pm PMessage
-		if _, err := Scan(multiBulk, &pm.Pattern, &pm.Channel, &pm.Data); err != nil {
+		if _, err := Scan(reply, &pm.Pattern, &pm.Channel, &pm.Data); err != nil {
 			return err
 		}
 		return pm
 	case "subscribe", "psubscribe", "unsubscribe", "punsubscribe":
 		s := Subscription{Kind: kind}
-		if _, err := Scan(multiBulk, &s.Channel, &s.Count); err != nil {
+		if _, err := Scan(reply, &s.Channel, &s.Count); err != nil {
 			return err
 		}
 		return s
