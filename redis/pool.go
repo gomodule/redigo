@@ -40,7 +40,7 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //      pool = &redis.Pool{
 //              MaxIdle: 3,
 //              IdleTimeout: 240 * time.Second,
-//              Dial: func () (redis.Conn error) {
+//              Dial: func () (redis.Conn, error) {
 //                  c, err := redis.Dial("tcp", server)
 //                  if err != nil {
 //                      return nil, err
