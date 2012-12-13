@@ -22,35 +22,6 @@ import (
 
 var ErrNil = errors.New("redigo: nil returned")
 
-// xValues is deprecated. Use Scan instead.
-func xValues(multiBulk []interface{}, values ...interface{}) ([]interface{}, error) {
-	if len(multiBulk) < len(values) {
-		return nil, errors.New("redigo Values: short multibulk")
-	}
-	var err error
-	for i, value := range values {
-		bulk := multiBulk[i]
-		if bulk != nil {
-			switch value := value.(type) {
-			case *string:
-				*value, err = String(bulk, nil)
-			case *int:
-				*value, err = Int(bulk, nil)
-			case *bool:
-				*value, err = Bool(bulk, nil)
-			case *[]byte:
-				*value, err = Bytes(bulk, nil)
-			default:
-				panic("Value type not supported")
-			}
-			if err != nil {
-				break
-			}
-		}
-	}
-	return multiBulk[len(values):], err
-}
-
 // Int is a helper that converts a command reply to an integer. If err is not
 // equal to nil, then Int returns 0, err. Otherwise, Int converts the
 // reply to an int as follows:
@@ -140,7 +111,7 @@ func Bytes(reply interface{}, err error) ([]byte, error) {
 //
 //  Reply type      Result
 //  integer         value != 0, nil
-//  bulk            strconv.ParseBool(reply) 
+//  bulk            strconv.ParseBool(reply)
 //  nil             false, ErrNil
 //  other           false, error
 func Bool(reply interface{}, err error) (bool, error) {

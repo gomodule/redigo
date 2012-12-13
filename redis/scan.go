@@ -184,16 +184,16 @@ func convertAssign(d interface{}, s interface{}) (err error) {
 	return
 }
 
-// Scan copies from the multi-bulk src to the values pointed at by dest. 
-// 
+// Scan copies from the multi-bulk src to the values pointed at by dest.
+//
 // The values pointed at by test must be a numeric type, boolean, string,
 // []byte, interface{} or a slice of these types. Scan uses the standard
-// strconv package to convert bulk values to numeric and boolean types. 
+// strconv package to convert bulk values to numeric and boolean types.
 //
 // If a dest value is nil, then the corresponding src value is skipped.
 //
 // If the multi-bulk value is nil, then the corresponding dest value is not
-// modified. 
+// modified.
 //
 // To enable easy use of Scan in a loop, Scan returns the slice of src
 // following the copied values.
@@ -233,7 +233,7 @@ func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *st
 		case f.PkgPath != "":
 			// Ignore unexported fields.
 		case f.Anonymous:
-			// TODO: Handle pointers. Requires change to decoder and 
+			// TODO: Handle pointers. Requires change to decoder and
 			// protection against infinite recursion.
 			if f.Type.Kind() == reflect.Struct {
 				compileStructSpec(f.Type, depth, append(index, i), ss)

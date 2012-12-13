@@ -47,14 +47,14 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //                  }
 //                  if err := c.Do("AUTH", password); err != nil {
 //                      c.Close()
-//                      return nil, err    
+//                      return nil, err
 //                  }
 //                  return c, err
 //              },
 //          }
 //
 // This pool has a maximum of three connections to the server specified by the
-// variable "server". Each connection is authenticated using a password. 
+// variable "server". Each connection is authenticated using a password.
 //
 // A request handler gets a connection from the pool and closes the connection
 // when the handler is done:
@@ -89,7 +89,7 @@ type idleConn struct {
 }
 
 // NewPool returns a pool that uses newPool to create connections as needed.
-// The pool keeps a maximum of maxIdle idle connections. 
+// The pool keeps a maximum of maxIdle idle connections.
 func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 	return &Pool{Dial: newFn, MaxIdle: maxIdle}
 }
@@ -177,6 +177,7 @@ func (c *pooledConnection) get() error {
 
 func (c *pooledConnection) Close() (err error) {
 	if c.c != nil {
+		c.c.Do("")
 		if c.c.Err() != nil {
 			err = c.c.Close()
 		} else {

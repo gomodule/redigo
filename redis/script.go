@@ -74,7 +74,7 @@ func (s *Script) SendHash(c Conn, keysAndArgs ...interface{}) error {
 	return c.Send("EVALSHA", s.args(s.hash, keysAndArgs)...)
 }
 
-// Send evaluates the script without waiting for the reply. 
+// Send evaluates the script without waiting for the reply.
 func (s *Script) Send(c Conn, keysAndArgs ...interface{}) error {
 	return c.Send("EVAL", s.args(s.src, keysAndArgs)...)
 }

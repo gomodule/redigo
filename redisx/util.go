@@ -43,7 +43,7 @@ func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *st
 		case f.PkgPath != "":
 			// Ignore unexported fields.
 		case f.Anonymous:
-			// TODO: Handle pointers. Requires change to decoder and 
+			// TODO: Handle pointers. Requires change to decoder and
 			// protection against infinite recursion.
 			if f.Type.Kind() == reflect.Struct {
 				compileStructSpec(f.Type, depth, append(index, i), ss)

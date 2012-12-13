@@ -68,7 +68,7 @@ func ExamplePubSubConn() {
 		}
 	}()
 
-	// This goroutine manages subscriptions for the connection. 
+	// This goroutine manages subscriptions for the connection.
 	go func() {
 		defer wg.Done()
 

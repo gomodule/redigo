@@ -45,13 +45,13 @@
 //  status              string
 //  bulk                []byte or nil if value not present.
 //  multi-bulk          []interface{} or nil if value not present.
-// 
+//
 // Applications can use type assertions or type switches to determine the type
 // of a reply.
 //
 // Pipelining
 //
-// Connections support pipelining using the Send, Flush and Receive methods. 
+// Connections support pipelining using the Send, Flush and Receive methods.
 //
 //  Send(commandName string, args ...interface{}) error
 //  Flush() error
@@ -92,7 +92,7 @@
 // concurrent access is allowed.
 //
 // Publish and Subscribe
-//  
+//
 // Use the Send, Flush and Receive methods to implement Pub/Sub subscribers.
 //
 //  c.Send("SUBSCRIBE", "example")
@@ -104,7 +104,7 @@
 //      }
 //      // process pushed message
 //  }
-// 
+//
 // The PubSubConn type wraps a Conn with convenience methods for implementing
 // subscribers. The Subscribe, PSubscribe, Unsubscribe and PUnsubscribe methods
 // send and flush a subscription management command. The receive method
