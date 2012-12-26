@@ -186,7 +186,7 @@ func convertAssign(d interface{}, s interface{}) (err error) {
 
 // Scan copies from the multi-bulk src to the values pointed at by dest.
 //
-// The values pointed at by test must be a numeric type, boolean, string,
+// The values pointed at by dest must be a numeric type, boolean, string,
 // []byte, interface{} or a slice of these types. Scan uses the standard
 // strconv package to convert bulk values to numeric and boolean types.
 //
