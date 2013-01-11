@@ -67,6 +67,9 @@ type Pool struct {
 	// Dial is an application supplied function for creating new connections.
 	Dial func() (Conn, error)
 
+	// Test is an application supplied function for testing new connections as they are requested
+	Test func(Conn) error
+
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
 
@@ -171,6 +174,16 @@ type pooledConnection struct {
 func (c *pooledConnection) get() error {
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
+	}
+	if c.err != nil {
+		if c.p.Test != nil {
+			if c.p.Test(c.c) != nil {
+				// connection acquisition test function error'd
+				// kill this connection and get a different one
+				c.c.Close()
+				return c.get()
+			}
+		}
 	}
 	return c.err
 }
