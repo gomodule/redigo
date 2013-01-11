@@ -51,6 +51,14 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //                  }
 //                  return c, err
 //              },
+// 				//custom connection test method
+//				Test: func(c redis.Conn) error {
+//					if _, err := c.Do("PING"); err != nil {
+//						log.Printf("Redis Test function caught error %v", err)
+//						return err
+//					}
+//					return nil
+//				},
 //          }
 //
 // This pool has a maximum of three connections to the server specified by the
@@ -66,6 +74,12 @@ type Pool struct {
 
 	// Dial is an application supplied function for creating new connections.
 	Dial func() (Conn, error)
+
+	// Test is an application supplied function for testing new connections as they are requested
+	Test func(Conn) error
+
+	// Maximum tries when connection tests fail
+	MaxConnectionRetries int
 
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
@@ -168,9 +182,40 @@ type pooledConnection struct {
 	p   *Pool
 }
 
+func (c *pooledConnection) remove(c1 Conn) {
+	var toRemove *list.Element
+	for e := c.p.idle.Front(); e != nil; e = e.Next() {
+		c2 := e.Value.(idleConn).c
+		if c1 == c2 {
+			toRemove = e
+			break
+		}
+	}
+	if toRemove != nil {
+		c.p.mu.Lock()
+		c.p.idle.Remove(toRemove)
+		c.p.mu.Unlock()
+	}
+}
+
 func (c *pooledConnection) get() error {
+	return c.getWithRetry(0)
+}
+
+func (c *pooledConnection) getWithRetry(retryCount int) error {
+	if retryCount > c.p.MaxConnectionRetries {
+		return errors.New("Maximum connection retries exceeded, something may be wrong with your Redis server.")
+	}
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
+		if c.err == nil && c.p.Test != nil {
+			// execute the connection test
+			if c.p.Test(c.c) != nil {
+				// it failed, kill this connection and get a different one
+				c.remove(c.c)
+				return c.getWithRetry(retryCount)
+			}
+		}
 	}
 	return c.err
 }
