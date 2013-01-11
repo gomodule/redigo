@@ -173,12 +173,17 @@ type pooledConnection struct {
 }
 
 func (c *pooledConnection) remove(c1 Conn) {
+	var toRemove *list.Element
 	for e := c.p.idle.Front(); e != nil; e = e.Next() {
+		log.Printf("enumerating")
 		c2 := e.Value.(idleConn).c
 		if c1 == c2 {
-			c.p.idle.Remove(e)
-			return
+			toRemove = e
+			break
 		}
+	}
+	if toRemove != nil {
+		c.p.idle.Remove(toRemove)
 	}
 }
 
