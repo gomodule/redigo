@@ -17,7 +17,6 @@ package redis
 import (
 	"container/list"
 	"errors"
-	"log"
 	"sync"
 	"time"
 )
@@ -175,7 +174,6 @@ type pooledConnection struct {
 func (c *pooledConnection) remove(c1 Conn) {
 	var toRemove *list.Element
 	for e := c.p.idle.Front(); e != nil; e = e.Next() {
-		log.Printf("enumerating")
 		c2 := e.Value.(idleConn).c
 		if c1 == c2 {
 			toRemove = e
@@ -183,30 +181,21 @@ func (c *pooledConnection) remove(c1 Conn) {
 		}
 	}
 	if toRemove != nil {
-		//						c.p.mu.Lock()
-		//				c.p.mu.Unlock()
-		log.Printf("removing %v", toRemove)
+		c.p.mu.Lock()
 		c.p.idle.Remove(toRemove)
+		c.p.mu.Unlock()
 	}
 }
 
 func (c *pooledConnection) get() error {
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
-		if c.err == nil {
-			log.Printf("c.err == nil")
-			if c.p.Test != nil {
-				log.Printf("c.p.Test != nil")
-				if c.p.Test(c.c) != nil {
-					log.Printf("c.p.Test(c.c) != nil")
-					// connection acquisition test function error'd
-					// kill this connection and get a different one
-					c.remove(c.c)
-					log.Printf("removed connection, acquiring new one")
-					err := c.get()
-					log.Printf("get returned [%v]", err)
-					return err
-				}
+		if c.err == nil && c.p.Test != nil {
+			// execute the connection test
+			if c.p.Test(c.c) != nil {
+				// it failed, kill this connection and get a different one
+				c.remove(c.c)
+				return c.get()
 			}
 		}
 	}
