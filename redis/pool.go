@@ -176,9 +176,8 @@ func (c *pooledConnection) get() error {
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
 	}
-	log.Printf("pooledConnection.get()")
-	if c.err != nil {
-		log.Printf("c.err != nil")
+	if c.err == nil {
+		log.Printf("c.err == nil")
 		if c.p.Test != nil {
 			log.Printf("c.p.Test != nil")
 			if c.p.Test(c.c) != nil {
