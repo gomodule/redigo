@@ -185,7 +185,7 @@ func (c *pooledConnection) remove(c1 Conn) {
 	if toRemove != nil {
 		//						c.p.mu.Lock()
 		//				c.p.mu.Unlock()
-
+		log.Printf("removing %v", toRemove)
 		c.p.idle.Remove(toRemove)
 	}
 }
@@ -193,20 +193,20 @@ func (c *pooledConnection) remove(c1 Conn) {
 func (c *pooledConnection) get() error {
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
-	}
-	if c.err == nil {
-		log.Printf("c.err == nil")
-		if c.p.Test != nil {
-			log.Printf("c.p.Test != nil")
-			if c.p.Test(c.c) != nil {
-				log.Printf("c.p.Test(c.c) != nil")
-				// connection acquisition test function error'd
-				// kill this connection and get a different one
-				c.remove(c.c)
-				log.Printf("removed connection, acquiring new one")
-				err := c.get()
-				log.Printf("get returned [%v]", err)
-				return err
+		if c.err == nil {
+			log.Printf("c.err == nil")
+			if c.p.Test != nil {
+				log.Printf("c.p.Test != nil")
+				if c.p.Test(c.c) != nil {
+					log.Printf("c.p.Test(c.c) != nil")
+					// connection acquisition test function error'd
+					// kill this connection and get a different one
+					c.remove(c.c)
+					log.Printf("removed connection, acquiring new one")
+					err := c.get()
+					log.Printf("get returned [%v]", err)
+					return err
+				}
 			}
 		}
 	}
