@@ -70,6 +70,9 @@ type Pool struct {
 	// Test is an application supplied function for testing new connections as they are requested
 	Test func(Conn) error
 
+	// Maximum tries when connection tests fail
+	MaxConnectionRetries int
+
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
 
@@ -188,6 +191,13 @@ func (c *pooledConnection) remove(c1 Conn) {
 }
 
 func (c *pooledConnection) get() error {
+	return c.getWithRetry(0)
+}
+
+func (c *pooledConnection) getWithRetry(retryCount int) error {
+	if retryCount > c.p.MaxConnectionRetries {
+		return errors.New("Maximum connection retries exceeded, something may be wrong with your Redis server.")
+	}
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
 		if c.err == nil && c.p.Test != nil {
@@ -195,7 +205,7 @@ func (c *pooledConnection) get() error {
 			if c.p.Test(c.c) != nil {
 				// it failed, kill this connection and get a different one
 				c.remove(c.c)
-				return c.get()
+				return c.getWithRetry(retryCount)
 			}
 		}
 	}
