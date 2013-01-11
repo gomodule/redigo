@@ -51,6 +51,14 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //                  }
 //                  return c, err
 //              },
+// 				//custom connection test method
+//				Test: func(c redis.Conn) error {
+//					if _, err := c.Do("PING"); err != nil {
+//						log.Printf("Redis Test function caught error %v", err)
+//						return err
+//					}
+//					return nil
+//				},
 //          }
 //
 // This pool has a maximum of three connections to the server specified by the

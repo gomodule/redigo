@@ -16,7 +16,6 @@ package redis
 
 import (
 	"io"
-	"log"
 	"testing"
 	"time"
 )
@@ -54,9 +53,7 @@ func TestPoolReuse(t *testing.T) {
 		MaxIdle: 2,
 		Dial:    func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
 		Test: func(c Conn) error {
-			log.Printf("testing connection %v", c)
 			if _, err := c.Do("PING"); err != nil {
-				log.Printf("Redis Test function caught error %v", err)
 				return err
 			}
 			return nil
