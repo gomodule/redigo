@@ -172,6 +172,16 @@ type pooledConnection struct {
 	p   *Pool
 }
 
+func (c *pooledConnection) remove(c1 Conn) {
+	for e := c.p.idle.Front(); e != nil; e = e.Next() {
+		c2 := e.Value.(idleConn).c
+		if c1 == c2 {
+			c.p.idle.Remove(e)
+			return
+		}
+	}
+}
+
 func (c *pooledConnection) get() error {
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
@@ -184,7 +194,9 @@ func (c *pooledConnection) get() error {
 				log.Printf("c.p.Test(c.c) != nil")
 				// connection acquisition test function error'd
 				// kill this connection and get a different one
-				c.c.Close()
+				c.p.mu.Unlock()
+				c.remove(c.c)
+				c.p.mu.Lock()
 				return c.get()
 			}
 		}
