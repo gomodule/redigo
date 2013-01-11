@@ -183,6 +183,9 @@ func (c *pooledConnection) remove(c1 Conn) {
 		}
 	}
 	if toRemove != nil {
+		//						c.p.mu.Lock()
+		//				c.p.mu.Unlock()
+
 		c.p.idle.Remove(toRemove)
 	}
 }
@@ -199,9 +202,7 @@ func (c *pooledConnection) get() error {
 				log.Printf("c.p.Test(c.c) != nil")
 				// connection acquisition test function error'd
 				// kill this connection and get a different one
-				c.p.mu.Lock()
 				c.remove(c.c)
-				c.p.mu.Unlock()
 				return c.get()
 			}
 		}
