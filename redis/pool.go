@@ -203,7 +203,10 @@ func (c *pooledConnection) get() error {
 				// connection acquisition test function error'd
 				// kill this connection and get a different one
 				c.remove(c.c)
-				return c.get()
+				log.Printf("removed connection, acquiring new one")
+				err := c.get()
+				log.Printf("get returned [%v]", err)
+				return err
 			}
 		}
 	}
