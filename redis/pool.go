@@ -51,6 +51,14 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //                  }
 //                  return c, err
 //              },
+// 				//custom connection test method
+//				Test: func(c redis.Conn) error {
+//					if _, err := c.Do("PING"); err != nil {
+//						log.Printf("Redis Test function caught error %v", err)
+//						return err
+//					}
+//					return nil
+//				},
 //          }
 //
 // This pool has a maximum of three connections to the server specified by the
@@ -66,6 +74,9 @@ type Pool struct {
 
 	// Dial is an application supplied function for creating new connections.
 	Dial func() (Conn, error)
+
+	// TestOnBorrow is an application supplied function for testing new connections as they are requested
+	TestOnBorrow func(Conn) error
 
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
@@ -134,9 +145,18 @@ func (p *Pool) get() (c Conn, err error) {
 		p.mu.Unlock()
 		return nil, errors.New("redigo: get on closed pool")
 	}
-	if e := p.idle.Front(); e != nil {
-		c = e.Value.(idleConn).c
-		p.idle.Remove(e)
+	for {
+		e := p.idle.Front()
+		if e != nil {
+			c = e.Value.(idleConn).c
+			if p.TestOnBorrow != nil && p.TestOnBorrow(c) != nil {
+				// it failed, kill this connection and get a different one
+				p.idle.Remove(e)
+			} else {
+				// no TestOnBorrow function or TestOnBorrow didn't error
+				break
+			}
+		}
 	}
 	p.mu.Unlock()
 	if c == nil {

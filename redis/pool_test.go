@@ -52,6 +52,12 @@ func TestPoolReuse(t *testing.T) {
 	p := &Pool{
 		MaxIdle: 2,
 		Dial:    func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		Test: func(c Conn) error {
+			if _, err := c.Do("PING"); err != nil {
+				return err
+			}
+			return nil
+		},
 	}
 
 	for i := 0; i < 10; i++ {
