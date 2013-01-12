@@ -75,11 +75,8 @@ type Pool struct {
 	// Dial is an application supplied function for creating new connections.
 	Dial func() (Conn, error)
 
-	// Test is an application supplied function for testing new connections as they are requested
-	Test func(Conn) error
-
-	// Maximum tries when connection tests fail
-	MaxConnectionRetries int
+	// TestOnBorrow is an application supplied function for testing new connections as they are requested
+	TestOnBorrow func(Conn) error
 
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
@@ -148,9 +145,18 @@ func (p *Pool) get() (c Conn, err error) {
 		p.mu.Unlock()
 		return nil, errors.New("redigo: get on closed pool")
 	}
-	if e := p.idle.Front(); e != nil {
-		c = e.Value.(idleConn).c
-		p.idle.Remove(e)
+	for {
+		e := p.idle.Front()
+		if e != nil {
+			c = e.Value.(idleConn).c
+			if p.TestOnBorrow != nil && p.TestOnBorrow(c) != nil {
+				// it failed, kill this connection and get a different one
+				p.idle.Remove(e)
+			} else {
+				// no TestOnBorrow function or TestOnBorrow didn't error
+				break
+			}
+		}
 	}
 	p.mu.Unlock()
 	if c == nil {
@@ -182,40 +188,9 @@ type pooledConnection struct {
 	p   *Pool
 }
 
-func (c *pooledConnection) remove(c1 Conn) {
-	var toRemove *list.Element
-	for e := c.p.idle.Front(); e != nil; e = e.Next() {
-		c2 := e.Value.(idleConn).c
-		if c1 == c2 {
-			toRemove = e
-			break
-		}
-	}
-	if toRemove != nil {
-		c.p.mu.Lock()
-		c.p.idle.Remove(toRemove)
-		c.p.mu.Unlock()
-	}
-}
-
 func (c *pooledConnection) get() error {
-	return c.getWithRetry(0)
-}
-
-func (c *pooledConnection) getWithRetry(retryCount int) error {
-	if retryCount > c.p.MaxConnectionRetries {
-		return errors.New("Maximum connection retries exceeded, something may be wrong with your Redis server.")
-	}
 	if c.err == nil && c.c == nil {
 		c.c, c.err = c.p.get()
-		if c.err == nil && c.p.Test != nil {
-			// execute the connection test
-			if c.p.Test(c.c) != nil {
-				// it failed, kill this connection and get a different one
-				c.remove(c.c)
-				return c.getWithRetry(retryCount)
-			}
-		}
 	}
 	return c.err
 }
