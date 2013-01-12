@@ -51,6 +51,10 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //                  }
 //                  return c, err
 //              },
+//				TestOnBorrow: func(c redis.Conn, t time.Time) error {
+//				    _, err := c.Do("PING")
+//                  return err
+//			    },
 //          }
 //
 // This pool has a maximum of three connections to the server specified by the
@@ -66,6 +70,13 @@ type Pool struct {
 
 	// Dial is an application supplied function for creating new connections.
 	Dial func() (Conn, error)
+
+	// TestOnBorrow is an optional application supplied function for checking
+	// the health of an idle connection before the connection is used again by
+	// the application. Argument t is the time that the connection was returned
+	// to the pool. If the function returns an error, then the connection is
+	// closed.
+	TestOnBorrow func(c Conn, t time.Time) error
 
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
@@ -112,43 +123,65 @@ func (p *Pool) Close() error {
 	return nil
 }
 
-func (p *Pool) get() (c Conn, err error) {
+// get prunes stale connections and returns a connection from the idle list or
+// creates a new connection.
+func (p *Pool) get() (Conn, error) {
 	p.mu.Lock()
-	if p.IdleTimeout > 0 {
-		for {
-			e := p.idle.Back()
-			if e == nil || nowFunc().Before(e.Value.(idleConn).t) {
-				break
-			}
-			cStale := e.Value.(idleConn).c
-			p.idle.Remove(e)
 
-			// Release the pool lock during the potentially long call to the
-			// connection's Close method.
-			p.mu.Unlock()
-			cStale.Close()
-			p.mu.Lock()
-		}
-	}
 	if p.closed {
 		p.mu.Unlock()
 		return nil, errors.New("redigo: get on closed pool")
 	}
-	if e := p.idle.Front(); e != nil {
-		c = e.Value.(idleConn).c
+
+	// Prune stale connections.
+
+	if timeout := p.IdleTimeout; timeout > 0 {
+		for i, n := 0, p.idle.Len(); i < n; i++ {
+			e := p.idle.Back()
+			if e == nil {
+				break
+			}
+			ic := e.Value.(idleConn)
+			if ic.t.Add(timeout).After(nowFunc()) {
+				break
+			}
+			p.idle.Remove(e)
+			p.mu.Unlock()
+			ic.c.Close()
+			p.mu.Lock()
+		}
+	}
+
+	// Get idle connection.
+
+	for i, n := 0, p.idle.Len(); i < n; i++ {
+		e := p.idle.Front()
+		if e == nil {
+			break
+		}
+		ic := e.Value.(idleConn)
 		p.idle.Remove(e)
+		test := p.TestOnBorrow
+		p.mu.Unlock()
+		if test != nil && test(ic.c, ic.t) != nil {
+			ic.c.Close()
+		} else {
+			return ic.c, nil
+		}
+		p.mu.Lock()
 	}
+
+	// No idle connection, create new.
+
+	dial := p.Dial
 	p.mu.Unlock()
-	if c == nil {
-		c, err = p.Dial()
-	}
-	return c, err
+	return dial()
 }
 
 func (p *Pool) put(c Conn) error {
 	p.mu.Lock()
 	if !p.closed {
-		p.idle.PushFront(idleConn{t: nowFunc().Add(p.IdleTimeout), c: c})
+		p.idle.PushFront(idleConn{t: nowFunc(), c: c})
 		if p.idle.Len() > p.MaxIdle {
 			c = p.idle.Remove(p.idle.Back()).(idleConn).c
 		} else {

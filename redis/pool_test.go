@@ -185,3 +185,21 @@ func TestPoolTimeout(t *testing.T) {
 		t.Errorf("want open=1, got %d; want dialed=2, got %d", open, dialed)
 	}
 }
+
+func TestBorrowCheck(t *testing.T) {
+	var open, dialed int
+	p := &Pool{
+		MaxIdle:      2,
+		Dial:         func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		TestOnBorrow: func(Conn, time.Time) error { return Error("BLAH") },
+	}
+
+	for i := 0; i < 10; i++ {
+		c := p.Get()
+		c.Do("PING")
+		c.Close()
+	}
+	if open != 1 || dialed != 10 {
+		t.Errorf("want open=1, got %d; want dialed=10, got %d", open, dialed)
+	}
+}
