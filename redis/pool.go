@@ -149,30 +149,19 @@ func (p *Pool) get() (c Conn, err error) {
 	for {
 		e := p.idle.Front()
 		if e != nil {
-			c = e.Value.(idleConn).c
+			c := e.Value.(idleConn).c
 			p.idle.Remove(e)
-			if p.TestOnBorrow != nil {
-				err := p.TestOnBorrow(c)
-				if err != nil {
-					p.mu.Unlock()
-					c.Close()
-					p.mu.Lock()
-				} else {
-					break
-				}
+			p.mu.Unlock()
+			if p.TestOnBorrow != nil && p.TestOnBorrow(c) != nil {
+				c.Close()
 			} else {
-				break
+				return c, nil
 			}
-		} else {
-			break
+			p.mu.Lock()
 		}
 	}
-
 	p.mu.Unlock()
-	if c == nil {
-		c, err = p.Dial()
-	}
-	return c, err
+	return p.Dial()
 }
 
 func (p *Pool) put(c Conn) error {
