@@ -6,17 +6,17 @@ Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) da
 Features
 -------
 
-* A [Print-like](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Executing_Commands) API with support for all Redis commands.
-* [Pipelining](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Pipelining), including pipelined transactions.
-* [Publish/Subscribe](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Publish_and_Subscribe).
-* [Connection pooling](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Pool).
-* [Script helper object](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Script) with optimistic use of EVALSHA.
-* [Helper functions](http://go.pkgdoc.org/github.com/garyburd/redigo/redis#Reply_Helpers) for working with command replies.
+* A [Print-like](http://godoc.org/github.com/garyburd/redigo/redis#hdr-Executing_Commands) API with support for all Redis commands.
+* [Pipelining](http://godoc.org/github.com/garyburd/redigo/redis#hdr-Pipelining), including pipelined transactions.
+* [Publish/Subscribe](http://godoc.org/github.com/garyburd/redigo/redis#hdr-Publish_and_Subscribe).
+* [Connection pooling](http://godoc.org/github.com/garyburd/redigo/redis#Pool).
+* [Script helper type](http://godoc.org/github.com/garyburd/redigo/redis#Script) with optimistic use of EVALSHA.
+* [Helper functions](http://godoc.org/github.com/garyburd/redigo/redis#hdr-Reply_Helpers) for working with command replies.
 
 Documentation
 -------------
 
-The Redigo API reference is available on [GoPkgDoc](http://gopkgdoc.appspot.com/pkg/github.com/garyburd/redigo/redis).
+The Redigo API reference is available on [GoPkgDoc](http://godoc.org/github.com/garyburd/redigo/redis).
 
 Installation
 ------------
