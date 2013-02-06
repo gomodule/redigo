@@ -134,24 +134,32 @@ func ExampleScan() {
 	// Red 5
 }
 
+type s0 struct {
+	X  int
+	Y  int `redis:"y"`
+	Bt bool
+}
+
+type s1 struct {
+	X  int    `redis:"-"`
+	I  int    `redis:"i"`
+	U  uint   `redis:"u"`
+	S  string `redis:"s"`
+	P  []byte `redis:"p"`
+	B  bool   `redis:"b"`
+	Bt bool
+	Bf bool
+	s0
+}
+
 var scanStructTests = []struct {
 	title string
 	reply []string
 	value interface{}
 }{
 	{"basic",
-		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "f", "Bt", "1", "Bf", "0"},
-		&struct {
-			I  int    `redis:"i"`
-			U  uint   `redis:"u"`
-			S  string `redis:"s"`
-			P  []byte `redis:"p"`
-			B  bool   `redis:"b"`
-			Bt bool
-			Bf bool
-		}{
-			-1234, 5678, "hello", []byte("world"), false, true, false,
-		},
+		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "X", "123", "y", "456"},
+		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, s0: s0{X: 123, Y: 456}},
 	},
 }
 
