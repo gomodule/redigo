@@ -362,3 +362,33 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 	}
 	return nil
 }
+
+// AppendStruct scans a struct containing values and turns then into alternating
+// key and value pairs. The HMSET and CONFIG SET commands take arguments of this
+// type. AppendStruct is often used in conjuction with ScanStruct for saving
+// back the modified values.
+//
+// AppendStruct uses the struct field name to match values in the response. Use
+// 'redis' field tag to override the name:
+//
+//      Field int `redis:"myName"`
+//
+// Fields with the tag redis:"-" are ignored.
+func AppendStruct(args []interface{}, src interface{}) ([]interface{}, error) {
+	v := reflect.ValueOf(src)
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil, errors.New("redigo: AppendStruct argument must not be nil")
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil, errors.New("redigo: AppendStruct argument must be a struct or pointer to a struct")
+	}
+	ss := structSpecForType(v.Type())
+	for _, fs := range ss.l {
+		fv := v.FieldByIndex(fs.index)
+		args = append(args, fs.name, fv.Interface())
+	}
+	return args, nil
+}
