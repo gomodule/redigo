@@ -392,3 +392,13 @@ func AppendStruct(args []interface{}, src interface{}) ([]interface{}, error) {
 	}
 	return args, nil
 }
+
+// FlattenStruct is the same as AppendStruct, but it panics on errors.
+// See AppendStruct for full explanation.
+func FlattenStruct(args []interface{}, src interface{}) []interface{} {
+	res, err := AppendStruct(args, src)
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
