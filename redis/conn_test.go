@@ -18,12 +18,14 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"github.com/garyburd/redigo/redis"
+	"math"
 	"net"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/garyburd/redigo/redis"
 )
 
 var writeTests = []struct {
@@ -39,8 +41,16 @@ var writeTests = []struct {
 		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n",
 	},
 	{
+		[]interface{}{"SET", "foo", byte(100)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n100\r\n",
+	},
+	{
 		[]interface{}{"SET", "foo", 100},
 		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n100\r\n",
+	},
+	{
+		[]interface{}{"SET", "foo", int64(math.MinInt64)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$20\r\n-9223372036854775808\r\n",
 	},
 	{
 		[]interface{}{"SET", "", []byte("foo")},

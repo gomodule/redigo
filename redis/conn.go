@@ -28,21 +28,27 @@ import (
 
 // conn is the low-level implementation of Conn
 type conn struct {
-	conn net.Conn
-
-	// Read
-	readTimeout time.Duration
-	br          *bufio.Reader
-	scratch     []byte
-
-	// Write
-	writeTimeout time.Duration
-	bw           *bufio.Writer
 
 	// Shared
 	mu      sync.Mutex
 	pending int
 	err     error
+	conn    net.Conn
+
+	// Read
+	readTimeout time.Duration
+	br          *bufio.Reader
+
+	// Write
+	writeTimeout time.Duration
+	bw           *bufio.Writer
+
+	// Scratch space for formatting argument length.
+	// '*' or '$', length, "\r\n"
+	lenScratch [1 + 19 + 2]byte
+
+	// Scratch space for formatting integers.
+	intScratch [20]byte
 }
 
 // Dial connects to the Redis server at the given network and address.
@@ -107,30 +113,34 @@ func (c *conn) Err() error {
 	return err
 }
 
-func (c *conn) writeN(prefix byte, n int) error {
-	c.scratch = append(c.scratch[0:0], prefix)
-	c.scratch = strconv.AppendInt(c.scratch, int64(n), 10)
-	c.scratch = append(c.scratch, "\r\n"...)
-	_, err := c.bw.Write(c.scratch)
+func (c *conn) writeLen(prefix byte, n int) error {
+	c.lenScratch[0] = prefix
+	s := strconv.AppendInt(c.lenScratch[:1], int64(n), 10)
+	s = append(s, "\r\n"...)
+	_, err := c.bw.Write(s)
 	return err
 }
 
 func (c *conn) writeString(s string) error {
-	c.writeN('$', len(s))
+	c.writeLen('$', len(s))
 	c.bw.WriteString(s)
 	_, err := c.bw.WriteString("\r\n")
 	return err
 }
 
 func (c *conn) writeBytes(p []byte) error {
-	c.writeN('$', len(p))
+	c.writeLen('$', len(p))
 	c.bw.Write(p)
 	_, err := c.bw.WriteString("\r\n")
 	return err
 }
 
+func (c *conn) writeInt64(n int64) error {
+	return c.writeBytes(strconv.AppendInt(c.intScratch[0:0], n, 10))
+}
+
 func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
-	c.writeN('*', 1+len(args))
+	c.writeLen('*', 1+len(args))
 	err = c.writeString(cmd)
 	for _, arg := range args {
 		if err != nil {
@@ -141,6 +151,10 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 			err = c.writeString(arg)
 		case []byte:
 			err = c.writeBytes(arg)
+		case int:
+			err = c.writeInt64(int64(arg))
+		case int64:
+			err = c.writeInt64(arg)
 		case bool:
 			if arg {
 				err = c.writeString("1")
