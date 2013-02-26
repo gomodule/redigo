@@ -20,6 +20,8 @@ import (
 	"strconv"
 )
 
+// ScanStruct is deprecated. Use redis.ScanStruct instead.
+//
 // ScanStruct scans a reply containing alternating names and values to a
 // struct. The HGETALL and CONFIG GET commands return replies in this format.
 //
@@ -97,6 +99,7 @@ func ScanStruct(reply interface{}, dst interface{}) error {
 	return nil
 }
 
+// AppendStruct is deprecated. Use redis.Args{}.AddFlat() instead.
 func AppendStruct(args []interface{}, src interface{}) []interface{} {
 	v := reflect.ValueOf(src)
 	if v.Kind() == reflect.Ptr {

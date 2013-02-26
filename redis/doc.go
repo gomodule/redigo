@@ -46,8 +46,9 @@
 //  bulk                []byte or nil if value not present.
 //  multi-bulk          []interface{} or nil if value not present.
 //
-// Applications can use type assertions or type switches to determine the type
-// of a reply.
+// The Redis command reference (http://redis.io/commands) documents the Redis
+// type returned for each command. Use type assertions to convert from
+// interface{} to the specific Go type for the command result.
 //
 // Pipelining
 //

@@ -362,3 +362,59 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 	}
 	return nil
 }
+
+// Args is a helper for constructing command arguments from structured values.
+type Args []interface{}
+
+// Add returns the result of appending value to args.
+func (args Args) Add(value interface{}) Args {
+	return append(args, value)
+}
+
+// AddFlat returns the result of appending the flattened value of v to args.
+//
+// Maps are flattened by appending the alternating keys and map values to args.
+//
+// Slices are flattened by appending the slice elements to args.
+//
+// Structs are flattened by appending the alternating field names and field
+// values to args. If v is a nil struct pointer, then nothing is appended. The
+// 'redis' field tag overrides struct field names. See ScanStruct for more
+// information on the use of the 'redis' field tag.
+//
+// Other types are appended to args as is.
+func (args Args) AddFlat(v interface{}) Args {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Struct:
+		args = flattenStruct(args, rv)
+	case reflect.Slice:
+		for i := 0; i < rv.Len(); i++ {
+			args = append(args, rv.Index(i).Interface())
+		}
+	case reflect.Map:
+		for _, k := range rv.MapKeys() {
+			args = append(args, k.Interface(), rv.MapIndex(k).Interface())
+		}
+	case reflect.Ptr:
+		if rv.Type().Elem().Kind() == reflect.Struct {
+			if !rv.IsNil() {
+				args = flattenStruct(args, rv.Elem())
+			}
+		} else {
+			args = append(args, v)
+		}
+	default:
+		args = append(args, v)
+	}
+	return args
+}
+
+func flattenStruct(args Args, v reflect.Value) Args {
+	ss := structSpecForType(v.Type())
+	for _, fs := range ss.l {
+		fv := v.FieldByIndex(fs.index)
+		args = append(args, fs.name, fv.Interface())
+	}
+	return args
+}

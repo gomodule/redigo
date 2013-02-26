@@ -182,3 +182,89 @@ func TestScanStruct(t *testing.T) {
 		}
 	}
 }
+
+var argsTests = []struct {
+	title    string
+	actual   redis.Args
+	expected redis.Args
+}{
+	{"struct ptr",
+		redis.Args{}.AddFlat(&struct {
+			I  int    `redis:"i"`
+			U  uint   `redis:"u"`
+			S  string `redis:"s"`
+			P  []byte `redis:"p"`
+			Bt bool
+			Bf bool
+		}{
+			-1234, 5678, "hello", []byte("world"), true, false,
+		}),
+		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "Bt", true, "Bf", false},
+	},
+	{"struct",
+		redis.Args{}.AddFlat(struct{ I int }{123}),
+		redis.Args{"I", 123},
+	},
+	{"slice",
+		redis.Args{}.Add(1).AddFlat([]string{"a", "b", "c"}).Add(2),
+		redis.Args{1, "a", "b", "c", 2},
+	},
+}
+
+func TestArgs(t *testing.T) {
+	for _, tt := range argsTests {
+		if !reflect.DeepEqual(tt.actual, tt.expected) {
+			t.Fatalf("%s is %v, want %v", tt.title, tt.actual, tt.expected)
+		}
+	}
+}
+
+func ExampleArgs() {
+	c, err := dial()
+	if err != nil {
+		panic(err)
+	}
+	defer c.Close()
+
+	var p1, p2 struct {
+		Title  string `redis:"title"`
+		Author string `redis:"author"`
+		Body   string `redis:"body"`
+	}
+
+	p1.Title = "Example"
+	p1.Author = "Gary"
+	p1.Body = "Hello"
+
+	if _, err := c.Do("HMSET", redis.Args{}.Add("id1").AddFlat(&p1)...); err != nil {
+		panic(err)
+	}
+
+	m := map[string]string{
+		"title":  "Example2",
+		"author": "Steve",
+		"body":   "Map",
+	}
+
+	if _, err := c.Do("HMSET", redis.Args{}.Add("id2").AddFlat(m)...); err != nil {
+		panic(err)
+	}
+
+	for _, id := range []string{"id1", "id2"} {
+
+		v, err := redis.Values(c.Do("HGETALL", id))
+		if err != nil {
+			panic(err)
+		}
+
+		if err := redis.ScanStruct(v, &p2); err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("%+v\n", p2)
+	}
+
+	// Output:
+	// {Title:Example Author:Gary Body:Hello}
+	// {Title:Example2 Author:Steve Body:Map}
+}
