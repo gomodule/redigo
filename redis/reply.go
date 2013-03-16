@@ -53,6 +53,33 @@ func Int(reply interface{}, err error) (int, error) {
 	return 0, fmt.Errorf("redigo: unexpected type for Int, got type %T", reply)
 }
 
+// Int64 is a helper that converts a command reply to 64 bit integer. If err is
+// not equal to nil, then Int returns 0, err. Otherwise, Int converts the reply
+// to an int as follows:
+//
+//  Reply type    Result
+//  integer       reply, nil
+//  bulk          strconv.ParseInt(reply, 10, 64)
+//  nil           0, ErrNil
+//  other         0, error
+func Int64(reply interface{}, err error) (int64, error) {
+	if err != nil {
+		return 0, err
+	}
+	switch reply := reply.(type) {
+	case int64:
+		return reply, nil
+	case []byte:
+		n, err := strconv.ParseInt(string(reply), 10, 64)
+		return n, err
+	case nil:
+		return 0, ErrNil
+	case Error:
+		return 0, reply
+	}
+	return 0, fmt.Errorf("redigo: unexpected type for Int64, got type %T", reply)
+}
+
 // String is a helper that converts a command reply to a string. If err is not
 // equal to nil, then String returns "", err. Otherwise String converts the
 // reply to a string as follows:

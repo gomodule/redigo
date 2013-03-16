@@ -12,10 +12,8 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-// Package redis is a client for the Redis database.
-//
-// Package redis only supports the binary-safe Redis protocol, so you can use
-// it with any Redis version >= 1.2.0.
+// Package redis is a client for the Redis database. Package redis supports
+// Redis version 1.2.0 and above. All commands are supported.
 //
 // Connections
 //

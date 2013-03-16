@@ -52,7 +52,7 @@ func TestScanStruct(t *testing.T) {
 		value := reflect.New(reflect.ValueOf(tt.value).Type().Elem())
 
 		if err := redisx.ScanStruct(reply, value.Interface()); err != nil {
-			t.Fatalf("ScanStruct(%s) returned error %v", tt.title)
+			t.Fatalf("ScanStruct(%s) returned error %v", tt.title, err)
 		}
 
 		if !reflect.DeepEqual(value.Interface(), tt.value) {
