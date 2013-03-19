@@ -53,6 +53,10 @@ var writeTests = []struct {
 		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$20\r\n-9223372036854775808\r\n",
 	},
 	{
+		[]interface{}{"SET", "foo", float64(1349673917.939762)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$21\r\n1.349673917939762e+09\r\n",
+	},
+	{
 		[]interface{}{"SET", "", []byte("foo")},
 		"*3\r\n$3\r\nSET\r\n$0\r\n\r\n$3\r\nfoo\r\n",
 	},

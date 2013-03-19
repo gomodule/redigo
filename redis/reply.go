@@ -28,7 +28,7 @@ var ErrNil = errors.New("redigo: nil returned")
 //
 //  Reply type    Result
 //  integer       int(reply), nil
-//  bulk          strconv.ParseInt(reply, 10, 0)
+//  bulk          parsed reply, nil
 //  nil           0, ErrNil
 //  other         0, error
 func Int(reply interface{}, err error) (int, error) {
@@ -54,12 +54,12 @@ func Int(reply interface{}, err error) (int, error) {
 }
 
 // Int64 is a helper that converts a command reply to 64 bit integer. If err is
-// not equal to nil, then Int returns 0, err. Otherwise, Int converts the reply
-// to an int as follows:
+// not equal to nil, then Int returns 0, err. Otherwise, Int64 converts the
+// reply to an int64 as follows:
 //
 //  Reply type    Result
 //  integer       reply, nil
-//  bulk          strconv.ParseInt(reply, 10, 64)
+//  bulk          parsed reply, nil
 //  nil           0, ErrNil
 //  other         0, error
 func Int64(reply interface{}, err error) (int64, error) {
@@ -78,6 +78,30 @@ func Int64(reply interface{}, err error) (int64, error) {
 		return 0, reply
 	}
 	return 0, fmt.Errorf("redigo: unexpected type for Int64, got type %T", reply)
+}
+
+// Float64 is a helper that converts a command reply to 64 bit float. If err is
+// not equal to nil, then Float64 returns 0, err. Otherwise, Float64 converts
+// the reply to an int as follows:
+//
+//  Reply type    Result
+//  bulk          parsed reply, nil
+//  nil           0, ErrNil
+//  other         0, error
+func Float64(reply interface{}, err error) (float64, error) {
+	if err != nil {
+		return 0, err
+	}
+	switch reply := reply.(type) {
+	case []byte:
+		n, err := strconv.ParseFloat(string(reply), 64)
+		return n, err
+	case nil:
+		return 0, ErrNil
+	case Error:
+		return 0, reply
+	}
+	return 0, fmt.Errorf("redigo: unexpected type for Float64, got type %T", reply)
 }
 
 // String is a helper that converts a command reply to a string. If err is not
@@ -181,5 +205,34 @@ func Values(reply interface{}, err error) ([]interface{}, error) {
 	case Error:
 		return nil, reply
 	}
-	return nil, fmt.Errorf("redigo: unexpected type for Multi, got type %T", reply)
+	return nil, fmt.Errorf("redigo: unexpected type for Values, got type %T", reply)
+}
+
+// Strings is a helper that converts a multi-bulk command reply to a []string.
+// If err is not equal to nil, then Strings returns nil, err.  If one if the
+// multi-bulk items is not a bulk value or nil, then Strings returns an error.
+func Strings(reply interface{}, err error) ([]string, error) {
+	if err != nil {
+		return nil, err
+	}
+	switch reply := reply.(type) {
+	case []interface{}:
+		result := make([]string, len(reply))
+		for i := range reply {
+			if reply[i] == nil {
+				continue
+			}
+			p, ok := reply[i].([]byte)
+			if !ok {
+				return nil, fmt.Errorf("redigo: unexpected element type for Strings, got type %T", reply[i])
+			}
+			result[i] = string(p)
+		}
+		return result, nil
+	case nil:
+		return nil, ErrNil
+	case Error:
+		return nil, reply
+	}
+	return nil, fmt.Errorf("redigo: unexpected type for Strings, got type %T", reply)
 }

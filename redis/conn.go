@@ -48,7 +48,7 @@ type conn struct {
 	lenScratch [1 + 19 + 2]byte
 
 	// Scratch space for formatting integers.
-	intScratch [20]byte
+	numScratch [40]byte
 }
 
 // Dial connects to the Redis server at the given network and address.
@@ -136,7 +136,11 @@ func (c *conn) writeBytes(p []byte) error {
 }
 
 func (c *conn) writeInt64(n int64) error {
-	return c.writeBytes(strconv.AppendInt(c.intScratch[0:0], n, 10))
+	return c.writeBytes(strconv.AppendInt(c.numScratch[:0], n, 10))
+}
+
+func (c *conn) writeFloat64(n float64) error {
+	return c.writeBytes(strconv.AppendFloat(c.numScratch[:0], n, 'g', -1, 64))
 }
 
 func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
@@ -155,6 +159,8 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 			err = c.writeInt64(int64(arg))
 		case int64:
 			err = c.writeInt64(arg)
+		case float64:
+			err = c.writeFloat64(arg)
 		case bool:
 			if arg {
 				err = c.writeString("1")

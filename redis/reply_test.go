@@ -16,8 +16,69 @@ package redis_test
 
 import (
 	"fmt"
+	"reflect"
+	"testing"
+
 	"github.com/garyburd/redigo/redis"
 )
+
+type valueError struct {
+	v   interface{}
+	err error
+}
+
+func ve(v interface{}, err error) valueError {
+	return valueError{v, err}
+}
+
+var replyTests = []struct {
+	name     interface{}
+	actual   valueError
+	expected valueError
+}{
+	{
+		"strings([v1, v2])",
+		ve(redis.Strings([]interface{}{[]byte("v1"), []byte("v2")}, nil)),
+		ve([]string{"v1", "v2"}, nil),
+	},
+	{
+		"strings(nil)",
+		ve(redis.Strings(nil, nil)),
+		ve([]string(nil), redis.ErrNil),
+	},
+	{
+		"values([v1, v2])",
+		ve(redis.Values([]interface{}{[]byte("v1"), []byte("v2")}, nil)),
+		ve([]interface{}{[]byte("v1"), []byte("v2")}, nil),
+	},
+	{
+		"values(nil)",
+		ve(redis.Values(nil, nil)),
+		ve([]interface{}(nil), redis.ErrNil),
+	},
+	{
+		"float64(1.0)",
+		ve(redis.Float64([]byte("1.0"), nil)),
+		ve(float64(1.0), nil),
+	},
+	{
+		"float64(nil)",
+		ve(redis.Float64(nil, nil)),
+		ve(float64(0.0), redis.ErrNil),
+	},
+}
+
+func TestReply(t *testing.T) {
+	for _, rt := range replyTests {
+		if rt.actual.err != rt.expected.err {
+			t.Errorf("%s returned err %v, want %v", rt.name, rt.actual.err, rt.expected.err)
+			continue
+		}
+		if !reflect.DeepEqual(rt.actual.v, rt.expected.v) {
+			t.Errorf("%s=%+v, want %+v", rt.name, rt.actual.v, rt.expected.v)
+		}
+	}
+}
 
 func ExampleBool() {
 	c, err := dial()
