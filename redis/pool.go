@@ -81,6 +81,9 @@ type Pool struct {
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
 
+	// Buffered chanel used to inforce the connection limit
+	connSem chan bool
+
 	// Close connections after remaining idle for this duration. If the value
 	// is zero, then idle connections are not closed. Applications should set
 	// the timeout to a value less than the server's timeout.
@@ -101,8 +104,12 @@ type idleConn struct {
 
 // NewPool returns a pool that uses newPool to create connections as needed.
 // The pool keeps a maximum of maxIdle idle connections.
-func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
-	return &Pool{Dial: newFn, MaxIdle: maxIdle}
+func NewPool(newFn func() (Conn, error), maxConn, maxIdle int) *Pool {
+	connSem := make(chan bool, maxConn)
+	for i := 0; i < maxConn; i += 1 {
+		connSem <- true
+	}
+	return &Pool{Dial: newFn, MaxIdle: maxIdle, connSem: connSem}
 }
 
 // Get gets a connection from the pool.
@@ -148,6 +155,7 @@ func (p *Pool) get() (Conn, error) {
 			p.idle.Remove(e)
 			p.mu.Unlock()
 			ic.c.Close()
+			p.connSem <- true
 			p.mu.Lock()
 		}
 	}
@@ -165,6 +173,7 @@ func (p *Pool) get() (Conn, error) {
 		p.mu.Unlock()
 		if test != nil && test(ic.c, ic.t) != nil {
 			ic.c.Close()
+			p.connSem <- true
 		} else {
 			return ic.c, nil
 		}
@@ -172,7 +181,9 @@ func (p *Pool) get() (Conn, error) {
 	}
 
 	// No idle connection, create new.
-
+	p.mu.Unlock()
+	<-p.connSem
+	p.mu.Lock()
 	dial := p.Dial
 	p.mu.Unlock()
 	return dial()
@@ -213,6 +224,7 @@ func (c *pooledConnection) Close() (err error) {
 		c.c.Do("")
 		if c.c.Err() != nil {
 			err = c.c.Close()
+			c.p.connSem <- true
 		} else {
 			err = c.p.put(c.c)
 		}
