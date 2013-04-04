@@ -47,7 +47,7 @@ type conn struct {
 	// '*' or '$', length, "\r\n"
 	lenScratch [1 + 19 + 2]byte
 
-	// Scratch space for formatting integers.
+	// Scratch space for formatting integers and floats.
 	numScratch [40]byte
 }
 

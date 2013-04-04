@@ -47,11 +47,34 @@ func (c *fakeConn) Receive() (reply interface{}, err error) {
 	return nil, nil
 }
 
+type dialer struct {
+	t            *testing.T
+	dialed, open int
+}
+
+func (d *dialer) dial() (Conn, error) {
+	d.open += 1
+	d.dialed += 1
+	return &fakeConn{open: &d.open}, nil
+}
+
+func (d *dialer) check(message string, p *Pool, dialed, open int) {
+	if d.dialed != dialed {
+		d.t.Errorf("%s: dialed=%d, want %d", message, d.dialed, dialed)
+	}
+	if d.open != open {
+		d.t.Errorf("%s: open=%d, want %d", message, d.open, open)
+	}
+	if active := p.ActiveCount(); active != open {
+		d.t.Errorf("%s: active=%d, want %d", message, active, open)
+	}
+}
+
 func TestPoolReuse(t *testing.T) {
-	var open, dialed int
+	d := dialer{t: t}
 	p := &Pool{
 		MaxIdle: 2,
-		Dial:    func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		Dial:    d.dial,
 	}
 
 	for i := 0; i < 10; i++ {
@@ -62,18 +85,18 @@ func TestPoolReuse(t *testing.T) {
 		c1.Close()
 		c2.Close()
 	}
-	if open != 2 || dialed != 2 {
-		t.Errorf("want open=2, got %d; want dialed=2, got %d", open, dialed)
-	}
+
+	d.check("before close", p, 2, 2)
+	p.Close()
+	d.check("after close", p, 2, 0)
 }
 
 func TestPoolMaxIdle(t *testing.T) {
-	var open, dialed int
+	d := dialer{t: t}
 	p := &Pool{
 		MaxIdle: 2,
-		Dial:    func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		Dial:    d.dial,
 	}
-
 	for i := 0; i < 10; i++ {
 		c1 := p.Get()
 		c1.Do("PING")
@@ -85,16 +108,16 @@ func TestPoolMaxIdle(t *testing.T) {
 		c2.Close()
 		c3.Close()
 	}
-	if open != 2 || dialed != 12 {
-		t.Errorf("want open=2, got %d; want dialed=12, got %d", open, dialed)
-	}
+	d.check("before close", p, 12, 2)
+	p.Close()
+	d.check("after close", p, 12, 0)
 }
 
 func TestPoolError(t *testing.T) {
-	var open, dialed int
+	d := dialer{t: t}
 	p := &Pool{
 		MaxIdle: 2,
-		Dial:    func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		Dial:    d.dial,
 	}
 
 	c := p.Get()
@@ -108,16 +131,14 @@ func TestPoolError(t *testing.T) {
 	c.Do("ERR", io.EOF)
 	c.Close()
 
-	if open != 0 || dialed != 2 {
-		t.Errorf("want open=0, got %d; want dialed=2, got %d", open, dialed)
-	}
+	d.check(".", p, 2, 0)
 }
 
 func TestPoolClose(t *testing.T) {
-	var open, dialed int
+	d := dialer{t: t}
 	p := &Pool{
 		MaxIdle: 2,
-		Dial:    func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		Dial:    d.dial,
 	}
 
 	c1 := p.Get()
@@ -136,18 +157,15 @@ func TestPoolClose(t *testing.T) {
 
 	p.Close()
 
-	if open != 1 {
-		t.Errorf("want open=1, got %d", open)
-	}
+	d.check("after pool close", p, 3, 1)
 
 	if _, err := c1.Do("PING"); err == nil {
 		t.Errorf("expected error after connection and pool closed")
 	}
 
 	c3.Close()
-	if open != 0 {
-		t.Errorf("want open=0, got %d", open)
-	}
+
+	d.check("after channel close", p, 3, 0)
 
 	c1 = p.Get()
 	if _, err := c1.Do("PING"); err == nil {
@@ -156,11 +174,11 @@ func TestPoolClose(t *testing.T) {
 }
 
 func TestPoolTimeout(t *testing.T) {
-	var open, dialed int
+	d := dialer{t: t}
 	p := &Pool{
 		MaxIdle:     2,
 		IdleTimeout: 300 * time.Second,
-		Dial:        func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		Dial:        d.dial,
 	}
 
 	now := time.Now()
@@ -171,9 +189,7 @@ func TestPoolTimeout(t *testing.T) {
 	c.Do("PING")
 	c.Close()
 
-	if open != 1 || dialed != 1 {
-		t.Errorf("want open=1, got %d; want dialed=1, got %d", open, dialed)
-	}
+	d.check("1", p, 1, 1)
 
 	now = now.Add(p.IdleTimeout)
 
@@ -181,16 +197,14 @@ func TestPoolTimeout(t *testing.T) {
 	c.Do("PING")
 	c.Close()
 
-	if open != 1 || dialed != 2 {
-		t.Errorf("want open=1, got %d; want dialed=2, got %d", open, dialed)
-	}
+	d.check("2", p, 2, 1)
 }
 
 func TestBorrowCheck(t *testing.T) {
-	var open, dialed int
+	d := dialer{t: t}
 	p := &Pool{
 		MaxIdle:      2,
-		Dial:         func() (Conn, error) { open += 1; dialed += 1; return &fakeConn{open: &open}, nil },
+		Dial:         d.dial,
 		TestOnBorrow: func(Conn, time.Time) error { return Error("BLAH") },
 	}
 
@@ -199,7 +213,38 @@ func TestBorrowCheck(t *testing.T) {
 		c.Do("PING")
 		c.Close()
 	}
-	if open != 1 || dialed != 10 {
-		t.Errorf("want open=1, got %d; want dialed=10, got %d", open, dialed)
+	d.check("1", p, 10, 1)
+}
+
+func TestMaxActive(t *testing.T) {
+	d := dialer{t: t}
+	p := &Pool{
+		MaxIdle:   2,
+		MaxActive: 2,
+		Dial:      d.dial,
 	}
+	c1 := p.Get()
+	c1.Do("PING")
+	c2 := p.Get()
+	c2.Do("PING")
+
+	d.check("1", p, 2, 2)
+
+	c3 := p.Get()
+	if _, err := c3.Do("PING"); err != ErrPoolExhausted {
+		t.Errorf("expected pool exhausted")
+	}
+
+	c3.Close()
+	d.check("2", p, 2, 2)
+	c2.Close()
+	d.check("2", p, 2, 2)
+
+	c3 = p.Get()
+	if _, err := c3.Do("PING"); err != nil {
+		t.Errorf("expected good channel, err=%v", err)
+	}
+	c3.Close()
+
+	d.check("2", p, 2, 2)
 }
