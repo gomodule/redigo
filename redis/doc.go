@@ -90,6 +90,9 @@
 // with Send, Flush, Receive or Do. Unless stated otherwise, all other
 // concurrent access is allowed.
 //
+// For full concurrent access to Redis, use the thread-safe Pool to get and
+// release connections from within a goroutine.
+//
 // Publish and Subscribe
 //
 // Use the Send, Flush and Receive methods to implement Pub/Sub subscribers.
