@@ -244,7 +244,7 @@ func (c *conn) readReply() (interface{}, error) {
 		}
 		return r, nil
 	}
-	return nil, errors.New("redigo: unpexected response line")
+	return nil, errors.New("redigo: unexpected response line")
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {
