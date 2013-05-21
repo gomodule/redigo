@@ -45,7 +45,7 @@ type conn struct {
 
 	// Scratch space for formatting argument length.
 	// '*' or '$', length, "\r\n"
-	lenScratch [1 + 19 + 2]byte
+	lenScratch [32]byte
 
 	// Scratch space for formatting integers and floats.
 	numScratch [40]byte
@@ -114,10 +114,19 @@ func (c *conn) Err() error {
 }
 
 func (c *conn) writeLen(prefix byte, n int) error {
-	c.lenScratch[0] = prefix
-	s := strconv.AppendInt(c.lenScratch[:1], int64(n), 10)
-	s = append(s, "\r\n"...)
-	_, err := c.bw.Write(s)
+	c.lenScratch[len(c.lenScratch)-1] = '\n'
+	c.lenScratch[len(c.lenScratch)-2] = '\r'
+	i := len(c.lenScratch) - 3
+	for {
+		c.lenScratch[i] = byte('0' + n%10)
+		i -= 1
+		n = n / 10
+		if n == 0 {
+			break
+		}
+	}
+	c.lenScratch[i] = prefix
+	_, err := c.bw.Write(c.lenScratch[i:])
 	return err
 }
 
@@ -193,6 +202,64 @@ func (c *conn) readLine() ([]byte, error) {
 	return p[:i], nil
 }
 
+// parseLen parses bulk and multi-bulk lengths.
+func parseLen(p []byte) (int, error) {
+	if len(p) == 0 {
+		return -1, errors.New("redigo: malformed length")
+	}
+
+	if p[0] == '-' && len(p) == 2 && p[1] == '1' {
+		// handle $-1 and $-1 null replies.
+		return -1, nil
+	}
+
+	var n int
+	for _, b := range p {
+		n *= 10
+		if b < '0' || b > '9' {
+			return -1, errors.New("redigo: illegal bytes in length")
+		}
+		n += int(b - '0')
+	}
+
+	return n, nil
+}
+
+// parseInt parses an integer reply.
+func parseInt(p []byte) (interface{}, error) {
+	if len(p) == 0 {
+		return 0, errors.New("redigo: malformed integer")
+	}
+
+	var negate bool
+	if p[0] == '-' {
+		negate = true
+		p = p[1:]
+		if len(p) == 0 {
+			return 0, errors.New("redigo: malformed integer")
+		}
+	}
+
+	var n int64
+	for _, b := range p {
+		n *= 10
+		if b < '0' || b > '9' {
+			return 0, errors.New("redigo: illegal bytes in length")
+		}
+		n += int64(b - '0')
+	}
+
+	if negate {
+		n = -n
+	}
+	return n, nil
+}
+
+var (
+	okReply   interface{} = "OK"
+	pongReply interface{} = "PONG"
+)
+
 func (c *conn) readReply() (interface{}, error) {
 	line, err := c.readLine()
 	if err != nil {
@@ -203,18 +270,23 @@ func (c *conn) readReply() (interface{}, error) {
 	}
 	switch line[0] {
 	case '+':
-		return string(line[1:]), nil
+		switch {
+		case len(line) == 3 && line[1] == 'O' && line[2] == 'K':
+			// Avoid allocation for frequent "+OK" response.
+			return okReply, nil
+		case len(line) == 5 && line[1] == 'P' && line[2] == 'O' && line[3] == 'N' && line[4] == 'G':
+			// Avoid allocation in PING command benchmarks :)
+			return pongReply, nil
+		default:
+			return string(line[1:]), nil
+		}
 	case '-':
 		return Error(string(line[1:])), nil
 	case ':':
-		n, err := strconv.ParseInt(string(line[1:]), 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		return n, nil
+		return parseInt(line[1:])
 	case '$':
-		n, err := strconv.Atoi(string(line[1:]))
-		if err != nil || n < 0 {
+		n, err := parseLen(line[1:])
+		if n < 0 {
 			return nil, err
 		}
 		p := make([]byte, n)
@@ -222,17 +294,15 @@ func (c *conn) readReply() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		line, err := c.readLine()
-		if err != nil {
+		if line, err := c.readLine(); err != nil {
 			return nil, err
-		}
-		if len(line) != 0 {
+		} else if len(line) != 0 {
 			return nil, errors.New("redigo: bad bulk format")
 		}
 		return p, nil
 	case '*':
-		n, err := strconv.Atoi(string(line[1:]))
-		if err != nil || n < 0 {
+		n, err := parseLen(line[1:])
+		if n < 0 {
 			return nil, err
 		}
 		r := make([]interface{}, n)

@@ -95,6 +95,10 @@ var readTests = []struct {
 		"OK",
 	},
 	{
+		"+PONG\r\n",
+		"PONG",
+	},
+	{
 		"@OK\r\n",
 		errorSentinel,
 	},
@@ -109,6 +113,10 @@ var readTests = []struct {
 	{
 		":1\r\n",
 		int64(1),
+	},
+	{
+		":-2\r\n",
+		int64(-2),
 	},
 	{
 		"*0\r\n",
