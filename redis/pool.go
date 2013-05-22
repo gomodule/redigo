@@ -64,7 +64,7 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 // A request handler gets a connection from the pool and closes the connection
 // when the handler is done:
 //
-//  conn, err := pool.Get()
+//  conn := pool.Get()
 //  defer conn.Close()
 //  // do something with the connection
 type Pool struct {
