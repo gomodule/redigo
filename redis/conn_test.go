@@ -402,5 +402,4 @@ func ExampleDial(x int) {
 		// handle error
 	}
 	defer c.Close()
-
 }
