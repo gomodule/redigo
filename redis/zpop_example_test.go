@@ -16,7 +16,6 @@ package redis_test
 
 import (
 	"fmt"
-
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -62,9 +61,7 @@ func zpop(c redis.Conn, key string) (result string, err error) {
 
 // zpopScript pops a value from a ZSET.
 var zpopScript = redis.NewScript(1, `
-    redis.log(redis.LOG_WARNING, KEYS[1])
     local r = redis.call('ZRANGE', KEYS[1], 0, 0)
-    redis.log(redis.LOG_WARNING, #r)
     if r ~= nil then
         r = r[1]
         redis.call('ZREM', KEYS[1], r)
@@ -72,11 +69,13 @@ var zpopScript = redis.NewScript(1, `
     return r
 `)
 
-// This example implements ZPOP as described at http://redis.io/topics/transactions.
+// This example implements ZPOP as described at
+// http://redis.io/topics/transactions using WATCH/MULTI/EXEC and scripting.
 func Example_zpop() {
 	c, err := dial()
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	defer c.Close()
 
@@ -86,7 +85,8 @@ func Example_zpop() {
 		c.Send("ZADD", "zset", i, member)
 	}
 	if _, err := c.Do(""); err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	// Pop using WATCH/MULTI/EXEC
@@ -98,7 +98,7 @@ func Example_zpop() {
 	}
 	fmt.Println(v)
 
-	// Pop using a script. The script is simpler and faster.
+	// Pop using a script.
 
 	v, err = redis.String(zpopScript.Do(c, "zset"))
 	if err != nil {
