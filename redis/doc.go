@@ -81,14 +81,12 @@
 //  r, err := c.Do("EXEC")
 //  fmt.Println(r) // prints [1, 1]
 //
-// Thread Safety
+// Concurrency
 //
-// The connection Send and Flush methods cannot be called concurrently with
-// other calls to these methods. The connection Receive method cannot be called
-// concurrently  with other calls to Receive. Because the connection Do method
-// uses Send, Flush and Receive, the Do method cannot be called concurrently
-// with Send, Flush, Receive or Do. Unless stated otherwise, all other
-// concurrent access is allowed.
+// Connections support a single concurrent caller to the write methods (Send,
+// Flush) and a single concurrent caller to the read method (Receive). Because
+// Do method combines the functionality of Send, Flush and Receive, the Do
+// method cannot be called concurrently with the other methods.
 //
 // For full concurrent access to Redis, use the thread-safe Pool to get and
 // release connections from within a goroutine.

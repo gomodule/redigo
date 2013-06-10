@@ -186,9 +186,9 @@ func convertAssign(d interface{}, s interface{}) (err error) {
 
 // Scan copies from the multi-bulk src to the values pointed at by dest.
 //
-// The values pointed at by dest must be a numeric type, boolean, string,
-// []byte, interface{} or a slice of these types. Scan uses the standard
-// strconv package to convert bulk values to numeric and boolean types.
+// The values pointed at by dest must be an integer, float, boolean, string, or
+// []byte. Scan uses the standard strconv package to convert bulk values to
+// numeric and boolean types.
 //
 // If a dest value is nil, then the corresponding src value is skipped.
 //
@@ -323,6 +323,13 @@ func structSpecForType(t reflect.Type) *structSpec {
 //      Field int `redis:"myName"`
 //
 // Fields with the tag redis:"-" are ignored.
+//
+// Integer, float boolean string and []byte fields are supported. Scan uses
+// the standard strconv package to convert bulk values to numeric and boolean
+// types.
+//
+// If the multi-bulk value is nil, then the corresponding field is not
+// modified.
 func ScanStruct(src []interface{}, dest interface{}) error {
 	d := reflect.ValueOf(dest)
 	if d.Kind() != reflect.Ptr || d.IsNil() {
