@@ -12,15 +12,14 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package redis_test
+package redis
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 )
 
 // zpop pops a value from the ZSET key using WATCH/MULTI/EXEC commands.
-func zpop(c redis.Conn, key string) (result string, err error) {
+func zpop(c Conn, key string) (result string, err error) {
 
 	defer func() {
 		// Return connection to normal state on error.
@@ -35,12 +34,12 @@ func zpop(c redis.Conn, key string) (result string, err error) {
 			return "", err
 		}
 
-		members, err := redis.Strings(c.Do("ZRANGE", key, 0, 0))
+		members, err := Strings(c.Do("ZRANGE", key, 0, 0))
 		if err != nil {
 			return "", err
 		}
 		if len(members) != 1 {
-			return "", redis.ErrNil
+			return "", ErrNil
 		}
 
 		c.Send("MULTI")
@@ -60,7 +59,7 @@ func zpop(c redis.Conn, key string) (result string, err error) {
 }
 
 // zpopScript pops a value from a ZSET.
-var zpopScript = redis.NewScript(1, `
+var zpopScript = NewScript(1, `
     local r = redis.call('ZRANGE', KEYS[1], 0, 0)
     if r ~= nil then
         r = r[1]
@@ -100,7 +99,7 @@ func Example_zpop() {
 
 	// Pop using a script.
 
-	v, err = redis.String(zpopScript.Do(c, "zset"))
+	v, err = String(zpopScript.Do(c, "zset"))
 	if err != nil {
 		fmt.Println(err)
 		return
