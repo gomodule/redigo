@@ -12,11 +12,10 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package redis_test
+package redis
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 	"net"
 	"reflect"
 	"sync"
@@ -43,7 +42,7 @@ func ExamplePubSubConn() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	psc := redis.PubSubConn{c}
+	psc := PubSubConn{c}
 
 	// This goroutine receives and prints pushed notifications from the server.
 	// The goroutine exits when the connection is unsubscribed from all
@@ -52,11 +51,11 @@ func ExamplePubSubConn() {
 		defer wg.Done()
 		for {
 			switch n := psc.Receive().(type) {
-			case redis.Message:
+			case Message:
 				fmt.Printf("Message: %s %s\n", n.Channel, n.Data)
-			case redis.PMessage:
+			case PMessage:
 				fmt.Printf("PMessage: %s %s %s\n", n.Pattern, n.Channel, n.Data)
-			case redis.Subscription:
+			case Subscription:
 				fmt.Printf("Subscription: %s %s %d\n", n.Kind, n.Channel, n.Count)
 				if n.Count == 0 {
 					return
@@ -101,7 +100,7 @@ func ExamplePubSubConn() {
 	// Subscription: punsubscribe p* 0
 }
 
-func expectPushed(t *testing.T, c redis.PubSubConn, message string, expected interface{}) {
+func expectPushed(t *testing.T, c PubSubConn, message string, expected interface{}) {
 	actual := c.Receive()
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("%s = %v, want %v", message, actual, expected)
@@ -119,20 +118,20 @@ func TestPushed(t *testing.T) {
 	defer nc.Close()
 	nc.SetReadDeadline(time.Now().Add(4 * time.Second))
 
-	c := redis.PubSubConn{redis.NewConn(nc, 0, 0)}
+	c := PubSubConn{NewConn(nc, 0, 0)}
 
 	c.Subscribe("c1")
-	expectPushed(t, c, "Subscribe(c1)", redis.Subscription{"subscribe", "c1", 1})
+	expectPushed(t, c, "Subscribe(c1)", Subscription{"subscribe", "c1", 1})
 	c.Subscribe("c2")
-	expectPushed(t, c, "Subscribe(c2)", redis.Subscription{"subscribe", "c2", 2})
+	expectPushed(t, c, "Subscribe(c2)", Subscription{"subscribe", "c2", 2})
 	c.PSubscribe("p1")
-	expectPushed(t, c, "PSubscribe(p1)", redis.Subscription{"psubscribe", "p1", 3})
+	expectPushed(t, c, "PSubscribe(p1)", Subscription{"psubscribe", "p1", 3})
 	c.PSubscribe("p2")
-	expectPushed(t, c, "PSubscribe(p2)", redis.Subscription{"psubscribe", "p2", 4})
+	expectPushed(t, c, "PSubscribe(p2)", Subscription{"psubscribe", "p2", 4})
 	c.PUnsubscribe()
-	expectPushed(t, c, "Punsubscribe(p1)", redis.Subscription{"punsubscribe", "p1", 3})
-	expectPushed(t, c, "Punsubscribe()", redis.Subscription{"punsubscribe", "p2", 2})
+	expectPushed(t, c, "Punsubscribe(p1)", Subscription{"punsubscribe", "p1", 3})
+	expectPushed(t, c, "Punsubscribe()", Subscription{"punsubscribe", "p2", 2})
 
 	pc.Do("PUBLISH", "c1", "hello")
-	expectPushed(t, c, "PUBLISH c1 hello", redis.Message{"c1", []byte("hello")})
+	expectPushed(t, c, "PUBLISH c1 hello", Message{"c1", []byte("hello")})
 }

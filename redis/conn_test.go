@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package redis_test
+package redis
 
 import (
 	"bufio"
@@ -24,8 +24,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/garyburd/redigo/redis"
 )
 
 var writeTests = []struct {
@@ -70,7 +68,7 @@ func TestWrite(t *testing.T) {
 	for _, tt := range writeTests {
 		var buf bytes.Buffer
 		rw := bufio.ReadWriter{Writer: bufio.NewWriter(&buf)}
-		c := redis.NewConnBufio(rw)
+		c := NewConnBufio(rw)
 		err := c.Send(tt.args[0].(string), tt.args[1:]...)
 		if err != nil {
 			t.Errorf("Send(%v) returned error %v", tt.args, err)
@@ -142,7 +140,7 @@ func TestRead(t *testing.T) {
 			Reader: bufio.NewReader(strings.NewReader(tt.reply)),
 			Writer: bufio.NewWriter(nil), // writer need to support Flush
 		}
-		c := redis.NewConnBufio(rw)
+		c := NewConnBufio(rw)
 		actual, err := c.Receive()
 		if tt.expected == errorSentinel {
 			if err == nil {
@@ -161,7 +159,7 @@ func TestRead(t *testing.T) {
 }
 
 type testConn struct {
-	redis.Conn
+	Conn
 }
 
 func (t testConn) Close() error {
@@ -176,8 +174,8 @@ func (t testConn) Close() error {
 	return t.Conn.Close()
 }
 
-func dial() (redis.Conn, error) {
-	c, err := redis.DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
+func dial() (Conn, error) {
+	c, err := DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +185,7 @@ func dial() (redis.Conn, error) {
 		return nil, err
 	}
 
-	n, err := redis.Int(c.Do("DBSIZE"))
+	n, err := Int(c.Do("DBSIZE"))
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +197,7 @@ func dial() (redis.Conn, error) {
 	return testConn{c}, nil
 }
 
-func dialt(t *testing.T) redis.Conn {
+func dialt(t *testing.T) Conn {
 	c, err := dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
@@ -316,7 +314,7 @@ func TestBlankCommmand(t *testing.T) {
 			t.Fatalf("Send(%v) returned error %v", cmd.args, err)
 		}
 	}
-	reply, err := redis.Values(c.Do(""))
+	reply, err := Values(c.Do(""))
 	if err != nil {
 		t.Fatalf("Do() returned error %v", err)
 	}
@@ -370,7 +368,7 @@ func TestReadDeadline(t *testing.T) {
 		}
 	}()
 
-	c1, err := redis.DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
+	c1, err := DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
 	if err != nil {
 		t.Fatalf("redis.Dial returned %v", err)
 	}
@@ -381,7 +379,7 @@ func TestReadDeadline(t *testing.T) {
 		t.Fatalf("Do did not return error.")
 	}
 
-	c2, err := redis.DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
+	c2, err := DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
 	if err != nil {
 		t.Fatalf("redis.Dial returned %v", err)
 	}
@@ -397,7 +395,7 @@ func TestReadDeadline(t *testing.T) {
 
 // Connect to local instance of Redis running on the default port.
 func ExampleDial(x int) {
-	c, err := redis.Dial("tcp", ":6379")
+	c, err := Dial("tcp", ":6379")
 	if err != nil {
 		// handle error
 	}

@@ -17,7 +17,6 @@ package redis
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -55,7 +54,7 @@ type conn struct {
 func Dial(network, address string) (Conn, error) {
 	c, err := net.Dial(network, address)
 	if err != nil {
-		return nil, errors.New("Could not connect to Redis server: " + err.Error())
+		return nil, &ConnectionError{"Could not connect to Redis server: " + err.Error()}
 	}
 	return NewConn(c, 0, 0), nil
 }
@@ -71,7 +70,7 @@ func DialTimeout(network, address string, connectTimeout, readTimeout, writeTime
 		c, err = net.Dial(network, address)
 	}
 	if err != nil {
-		return nil, errors.New("Could not connect to Redis server: " + err.Error())
+		return nil, &ConnectionError{"Could not connect to Redis server: " + err.Error()}
 	}
 	return NewConn(c, readTimeout, writeTimeout), nil
 }
@@ -92,7 +91,7 @@ func (c *conn) Close() error {
 	if err != nil {
 		c.fatal(err)
 	} else {
-		c.fatal(errors.New("redigo: closed"))
+		c.fatal(&ConnectionError{"Closed"})
 	}
 	return err
 }
@@ -190,14 +189,14 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 func (c *conn) readLine() ([]byte, error) {
 	p, err := c.br.ReadSlice('\n')
 	if err == bufio.ErrBufferFull {
-		return nil, errors.New("redigo: long response line")
+		return nil, &ProtocolError{"Response is too big"}
 	}
 	if err != nil {
 		return nil, err
 	}
 	i := len(p) - 2
 	if i < 0 || p[i] != '\r' {
-		return nil, errors.New("redigo: bad response line terminator")
+		return nil, &ProtocolError{"Bad response line terminator"}
 	}
 	return p[:i], nil
 }
@@ -205,7 +204,7 @@ func (c *conn) readLine() ([]byte, error) {
 // parseLen parses bulk and multi-bulk lengths.
 func parseLen(p []byte) (int, error) {
 	if len(p) == 0 {
-		return -1, errors.New("redigo: malformed length")
+		return -1, &ProtocolError{"Malformed length field"}
 	}
 
 	if p[0] == '-' && len(p) == 2 && p[1] == '1' {
@@ -217,7 +216,7 @@ func parseLen(p []byte) (int, error) {
 	for _, b := range p {
 		n *= 10
 		if b < '0' || b > '9' {
-			return -1, errors.New("redigo: illegal bytes in length")
+			return -1, &ProtocolError{"Illegal bytes in length field"}
 		}
 		n += int(b - '0')
 	}
@@ -228,7 +227,7 @@ func parseLen(p []byte) (int, error) {
 // parseInt parses an integer reply.
 func parseInt(p []byte) (interface{}, error) {
 	if len(p) == 0 {
-		return 0, errors.New("redigo: malformed integer")
+		return 0, &ProtocolError{"Malformed integer field"}
 	}
 
 	var negate bool
@@ -236,7 +235,7 @@ func parseInt(p []byte) (interface{}, error) {
 		negate = true
 		p = p[1:]
 		if len(p) == 0 {
-			return 0, errors.New("redigo: malformed integer")
+			return 0, &ProtocolError{"Malformed integer field"}
 		}
 	}
 
@@ -244,7 +243,7 @@ func parseInt(p []byte) (interface{}, error) {
 	for _, b := range p {
 		n *= 10
 		if b < '0' || b > '9' {
-			return 0, errors.New("redigo: illegal bytes in length")
+			return 0, &ProtocolError{"Illegal bytes in length field"}
 		}
 		n += int64(b - '0')
 	}
@@ -266,7 +265,7 @@ func (c *conn) readReply() (interface{}, error) {
 		return nil, err
 	}
 	if len(line) == 0 {
-		return nil, errors.New("redigo: short response line")
+		return nil, &ProtocolError{"Short response line"}
 	}
 	switch line[0] {
 	case '+':
@@ -297,7 +296,7 @@ func (c *conn) readReply() (interface{}, error) {
 		if line, err := c.readLine(); err != nil {
 			return nil, err
 		} else if len(line) != 0 {
-			return nil, errors.New("redigo: bad bulk format")
+			return nil, &ProtocolError{"Bad bulk format"}
 		}
 		return p, nil
 	case '*':
@@ -314,7 +313,7 @@ func (c *conn) readReply() (interface{}, error) {
 		}
 		return r, nil
 	}
-	return nil, errors.New("redigo: unexpected response line")
+	return nil, &ProtocolError{"Unexpected response line"}
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {

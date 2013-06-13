@@ -15,12 +15,11 @@
 package redis
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 )
 
-var ErrNil = errors.New("redigo: nil returned")
+var ErrNil = &NilError{"nil returned"}
 
 // Int is a helper that converts a command reply to an integer. If err is not
 // equal to nil, then Int returns 0, err. Otherwise, Int converts the
