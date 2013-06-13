@@ -16,15 +16,14 @@ package redis
 
 import (
 	"container/list"
-	"errors"
 	"sync"
 	"time"
 )
 
 var nowFunc = time.Now // for testing
 
-var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
-var errPoolClosed = errors.New("redigo: connection pool closed")
+var ErrPoolExhausted = &ConnectionPoolError{"Connection pool exhausted"}
+var errPoolClosed = &ConnectionPoolError{"Connection pool closed"}
 
 // Pool maintains a pool of connections. The application calls the Get method
 // to get a connection from the pool and the connection's Close method to
@@ -145,7 +144,7 @@ func (p *Pool) get() (Conn, error) {
 
 	if p.closed {
 		p.mu.Unlock()
-		return nil, errors.New("redigo: get on closed pool")
+		return nil, &ConnectionPoolError{"Connection pool is closed"}
 	}
 
 	// Prune stale connections.

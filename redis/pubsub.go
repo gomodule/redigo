@@ -14,10 +14,6 @@
 
 package redis
 
-import (
-	"errors"
-)
-
 // Subscribe represents a subscribe or unsubscribe notification.
 type Subscription struct {
 
@@ -125,5 +121,5 @@ func (c PubSubConn) Receive() interface{} {
 		}
 		return s
 	}
-	return errors.New("redigo: unknown pubsub notification")
+	return &ProtocolError{"Unknown pubsub notification kind: " + kind}
 }

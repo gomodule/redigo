@@ -199,7 +199,7 @@ func convertAssign(d interface{}, s interface{}) (err error) {
 // following the copied values.
 func Scan(src []interface{}, dest ...interface{}) ([]interface{}, error) {
 	if len(src) < len(dest) {
-		return nil, errors.New("redigo: Scan multibulk short")
+		return nil, &ProtocolError{"Not enough multi-bulk entries to copy"}
 	}
 	var err error
 	for i, d := range dest {
@@ -254,7 +254,7 @@ func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *st
 					//case "omitempty":
 					//  fs.omitempty = true
 					default:
-						panic(errors.New("redigo: unknown field flag " + s + " for type " + t.Name()))
+						panic(errors.New("Unknown field flag " + s + " for type " + t.Name()))
 					}
 				}
 			}
@@ -333,19 +333,19 @@ func structSpecForType(t reflect.Type) *structSpec {
 func ScanStruct(src []interface{}, dest interface{}) error {
 	d := reflect.ValueOf(dest)
 	if d.Kind() != reflect.Ptr || d.IsNil() {
-		return errors.New("redigo: ScanStruct value must be non-nil pointer")
+		return &ScanStructError{"ScanStruct value must be non-nil pointer"}
 	}
 	d = d.Elem()
 	ss := structSpecForType(d.Type())
 
 	if len(src)%2 != 0 {
-		return errors.New("redigo: ScanStruct expects even number of values in values")
+		return &ScanStructError{"ScanStruct expects even number of values in values"}
 	}
 
 	for i := 0; i < len(src); i += 2 {
 		name, ok := src[i].([]byte)
 		if !ok {
-			return errors.New("redigo: ScanStruct key not a bulk value")
+			return &ScanStructError{"ScanStruct key not a bulk value"}
 		}
 		fs := ss.fieldSpec(name)
 		if fs == nil {
