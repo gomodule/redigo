@@ -20,7 +20,7 @@ type ConnectionError struct {
 }
 
 func (err *ConnectionError) Error() string {
-	return err.message
+	return "redigo: " + err.message
 }
 
 // Returned when Redis returns an invalid reply.
@@ -29,7 +29,7 @@ type ProtocolError struct {
 }
 
 func (err *ProtocolError) Error() string {
-	return err.message
+	return "redigo: " + err.message
 }
 
 // Returned when the pool is used in an invalid way (connections are exhausted,
@@ -39,7 +39,7 @@ type ConnectionPoolError struct {
 }
 
 func (err *ConnectionPoolError) Error() string {
-	return err.message
+	return "redigo: " + err.message
 }
 
 // Returned when there is an error scanning a multi-bulk reply.
@@ -48,7 +48,7 @@ type ScanStructError struct {
 }
 
 func (err *ScanStructError) Error() string {
-	return err.message
+	return "redigo: " + err.message
 }
 
 // Returned when expecting a non-nil value but getting nil, anyways.
@@ -57,5 +57,5 @@ type NilError struct {
 }
 
 func (err *NilError) Error() string {
-	return err.message
+	return "redigo: " + err.message
 }
