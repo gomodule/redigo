@@ -24,7 +24,8 @@ type Conn interface {
 	// Close closes the connection.
 	Close() error
 
-	// Err returns the permanent error for this connection.
+	// Err returns a non-nil value if the connection has failed because of a
+	// protocol error or an error from the underlying network connection.
 	Err() error
 
 	// Do sends a command to the server and returns the received reply.
