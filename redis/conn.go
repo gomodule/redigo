@@ -55,7 +55,7 @@ type conn struct {
 func Dial(network, address string) (Conn, error) {
 	c, err := net.Dial(network, address)
 	if err != nil {
-		return nil, errors.New("Could not connect to Redis server: " + err.Error())
+		return nil, err
 	}
 	return NewConn(c, 0, 0), nil
 }
@@ -71,7 +71,7 @@ func DialTimeout(network, address string, connectTimeout, readTimeout, writeTime
 		c, err = net.Dial(network, address)
 	}
 	if err != nil {
-		return nil, errors.New("Could not connect to Redis server: " + err.Error())
+		return nil, err
 	}
 	return NewConn(c, readTimeout, writeTimeout), nil
 }
