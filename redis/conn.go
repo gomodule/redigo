@@ -88,12 +88,13 @@ func NewConn(netConn net.Conn, readTimeout, writeTimeout time.Duration) Conn {
 }
 
 func (c *conn) Close() error {
-	err := c.conn.Close()
-	if err != nil {
-		c.fatal(err)
-	} else {
-		c.fatal(errors.New("redigo: closed"))
+	c.mu.Lock()
+	err := c.err
+	if c.err == nil {
+		c.err = errors.New("redigo: closed")
+		err = c.conn.Close()
 	}
+	c.mu.Unlock()
 	return err
 }
 
@@ -101,6 +102,9 @@ func (c *conn) fatal(err error) error {
 	c.mu.Lock()
 	if c.err == nil {
 		c.err = err
+		// Close connection to force errors on subsequent calls and to unblock
+		// other reader or writer.
+		c.conn.Close()
 	}
 	c.mu.Unlock()
 	return err

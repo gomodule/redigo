@@ -16,9 +16,14 @@ package redis
 
 import (
 	"bufio"
+	"net"
 )
+
+type dummyClose struct{ net.Conn }
+
+func (dummyClose) Close() error { return nil }
 
 // NewConnBufio is a hook for tests.
 func NewConnBufio(rw bufio.ReadWriter) Conn {
-	return &conn{br: rw.Reader, bw: rw.Writer}
+	return &conn{br: rw.Reader, bw: rw.Writer, conn: dummyClose{}}
 }

@@ -401,54 +401,6 @@ func TestReadDeadline(t *testing.T) {
 	}
 }
 
-func TestCloseHandling(t *testing.T) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("net.Listen returned %v", err)
-	}
-	defer l.Close()
-
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			c.Close()
-		}
-	}()
-
-	c1, err := redis.DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
-	if err != nil {
-		t.Fatalf("redis.Dial returned %v", err)
-	}
-	defer c1.Close()
-
-	_, err = c1.Do("PING")
-	if err == nil {
-		t.Fatalf("c1.Do() returned nil, expect error")
-	}
-	if c1.Err() == nil {
-		t.Fatalf("c1.Err() = nil, expect error")
-	}
-
-	c2, err := redis.DialTimeout(l.Addr().Network(), l.Addr().String(), 0, time.Millisecond, 0)
-	if err != nil {
-		t.Fatalf("redis.Dial returned %v", err)
-	}
-	defer c2.Close()
-
-	c2.Send("PING")
-	c2.Flush()
-	_, err = c2.Receive()
-	if err == nil {
-		t.Fatalf("c2.Receive() returned nil, expect error")
-	}
-	if c2.Err() == nil {
-		t.Fatalf("c2.Err() = nil, expect error")
-	}
-}
-
 // Connect to local instance of Redis running on the default port.
 func ExampleDial(x int) {
 	c, err := redis.Dial("tcp", ":6379")
