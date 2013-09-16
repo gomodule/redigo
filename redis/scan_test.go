@@ -183,6 +183,27 @@ func TestScanStruct(t *testing.T) {
 	}
 }
 
+func TestBadScanStructArgs(t *testing.T) {
+	x := []interface{}{"A", "b"}
+	test := func(v interface{}) {
+		if err := redis.ScanStruct(x, v); err == nil {
+			t.Errorf("Expect error for ScanStruct(%T, %T)", x, v)
+		}
+	}
+
+	test(nil)
+
+	var v0 *struct{}
+	test(v0)
+
+	var v1 int
+	test(&v1)
+
+	x = x[:1]
+	v2 := struct{ A string }{}
+	test(&v2)
+}
+
 var argsTests = []struct {
 	title    string
 	actual   redis.Args

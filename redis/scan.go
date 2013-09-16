@@ -314,6 +314,8 @@ func structSpecForType(t reflect.Type) *structSpec {
 	return ss
 }
 
+var scanStructValueError = errors.New("redigo: ScanStruct value must be non-nil pointer to a struct.")
+
 // ScanStruct scans a multi-bulk src containing alternating names and values to
 // a struct. The HGETALL and CONFIG GET commands return replies in this format.
 //
@@ -333,9 +335,12 @@ func structSpecForType(t reflect.Type) *structSpec {
 func ScanStruct(src []interface{}, dest interface{}) error {
 	d := reflect.ValueOf(dest)
 	if d.Kind() != reflect.Ptr || d.IsNil() {
-		return errors.New("redigo: ScanStruct value must be non-nil pointer")
+		return scanStructValueError
 	}
 	d = d.Elem()
+	if d.Kind() != reflect.Struct {
+		return scanStructValueError
+	}
 	ss := structSpecForType(d.Type())
 
 	if len(src)%2 != 0 {
