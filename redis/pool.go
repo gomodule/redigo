@@ -46,7 +46,7 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //                  if err != nil {
 //                      return nil, err
 //                  }
-//                  if err := c.Do("AUTH", password); err != nil {
+//                  if _, err := c.Do("AUTH", password); err != nil {
 //                      c.Close()
 //                      return nil, err
 //                  }
