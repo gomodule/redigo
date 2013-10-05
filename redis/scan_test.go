@@ -56,18 +56,6 @@ var scanConversionTests = []struct {
 	{[]interface{}{[]byte("1")}, []bool{true}},
 }
 
-var scanConversionErrorTests = []struct {
-	src  interface{}
-	dest interface{}
-}{
-	{[]byte("1234"), byte(0)},
-	{int64(1234), byte(0)},
-	{[]byte("-1"), byte(0)},
-	{int64(-1), byte(0)},
-	{[]byte("junk"), false},
-	{redis.Error("blah"), false},
-}
-
 func TestScanConversion(t *testing.T) {
 	for _, tt := range scanConversionTests {
 		values := []interface{}{tt.src}
@@ -81,6 +69,18 @@ func TestScanConversion(t *testing.T) {
 			t.Errorf("Scan(%v) returned %v, want %v", tt, dest.Elem().Interface(), tt.dest)
 		}
 	}
+}
+
+var scanConversionErrorTests = []struct {
+	src  interface{}
+	dest interface{}
+}{
+	{[]byte("1234"), byte(0)},
+	{int64(1234), byte(0)},
+	{[]byte("-1"), byte(0)},
+	{int64(-1), byte(0)},
+	{[]byte("junk"), false},
+	{redis.Error("blah"), false},
 }
 
 func TestScanConversionError(t *testing.T) {
@@ -202,6 +202,118 @@ func TestBadScanStructArgs(t *testing.T) {
 	x = x[:1]
 	v2 := struct{ A string }{}
 	test(&v2)
+}
+
+var scanSliceTests = []struct {
+	src        []interface{}
+	fieldNames []string
+	ok         bool
+	dest       interface{}
+}{
+	{
+		[]interface{}{[]byte("1"), nil, []byte("-1")},
+		nil,
+		true,
+		[]int{1, 0, -1},
+	},
+	{
+		[]interface{}{[]byte("1"), nil, []byte("2")},
+		nil,
+		true,
+		[]uint{1, 0, 2},
+	},
+	{
+		[]interface{}{[]byte("-1")},
+		nil,
+		false,
+		[]uint{1},
+	},
+	{
+		[]interface{}{[]byte("hello"), nil, []byte("world")},
+		nil,
+		true,
+		[][]byte{[]byte("hello"), nil, []byte("world")},
+	},
+	{
+		[]interface{}{[]byte("hello"), nil, []byte("world")},
+		nil,
+		true,
+		[]string{"hello", "", "world"},
+	},
+	{
+		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
+		nil,
+		true,
+		[]struct{ A, B string }{{"a1", "b1"}, {"a2", "b2"}},
+	},
+	{
+		[]interface{}{[]byte("a1"), []byte("b1")},
+		nil,
+		false,
+		[]struct{ A, B, C string }{{"a1", "b1", ""}},
+	},
+	{
+		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
+		nil,
+		true,
+		[]*struct{ A, B string }{{"a1", "b1"}, {"a2", "b2"}},
+	},
+	{
+		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
+		[]string{"A", "B"},
+		true,
+		[]struct{ A, C, B string }{{"a1", "", "b1"}, {"a2", "", "b2"}},
+	},
+}
+
+func TestScanSlice(t *testing.T) {
+	for _, tt := range scanSliceTests {
+
+		typ := reflect.ValueOf(tt.dest).Type()
+		dest := reflect.New(typ)
+
+		err := redis.ScanSlice(tt.src, dest.Interface(), tt.fieldNames...)
+		if tt.ok != (err == nil) {
+			t.Errorf("ScanSlice(%v, []%s, %v) returned error %v", tt.src, typ, tt.fieldNames, err)
+			continue
+		}
+		if tt.ok && !reflect.DeepEqual(dest.Elem().Interface(), tt.dest) {
+			t.Errorf("ScanSlice(src, []%s) returned %#v, want %#v", typ, dest.Elem().Interface(), tt.dest)
+		}
+	}
+}
+
+func ExampleScanSlice() {
+	c, err := dial()
+	if err != nil {
+		panic(err)
+	}
+	defer c.Close()
+
+	c.Send("HMSET", "album:1", "title", "Red", "rating", 5)
+	c.Send("HMSET", "album:2", "title", "Earthbound", "rating", 1)
+	c.Send("HMSET", "album:3", "title", "Beat", "rating", 4)
+	c.Send("LPUSH", "albums", "1")
+	c.Send("LPUSH", "albums", "2")
+	c.Send("LPUSH", "albums", "3")
+	values, err := redis.Values(c.Do("SORT", "albums",
+		"BY", "album:*->rating",
+		"GET", "album:*->title",
+		"GET", "album:*->rating"))
+	if err != nil {
+		panic(err)
+	}
+
+	var albums []struct {
+		Title  string
+		Rating int
+	}
+	if err := redis.ScanSlice(values, &albums); err != nil {
+		panic(err)
+	}
+	fmt.Printf("%v\n", albums)
+	// Output:
+	// [{Earthbound 1} {Beat 4} {Red 5}]
 }
 
 var argsTests = []struct {

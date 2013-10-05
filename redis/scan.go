@@ -23,6 +23,14 @@ import (
 	"sync"
 )
 
+func ensureLen(d reflect.Value, n int) {
+	if n > d.Cap() {
+		d.Set(reflect.MakeSlice(d.Type(), n, n))
+	} else {
+		d.SetLen(n)
+	}
+}
+
 func cannotConvert(d reflect.Value, s interface{}) error {
 	return fmt.Errorf("redigo: Scan cannot convert from %s to %s",
 		reflect.TypeOf(s), d.Type())
@@ -91,11 +99,7 @@ func convertAssignValues(d reflect.Value, s []interface{}) (err error) {
 	if d.Type().Kind() != reflect.Slice {
 		return cannotConvert(d, s)
 	}
-	if len(s) > d.Cap() {
-		d.Set(reflect.MakeSlice(d.Type(), len(s), len(s)))
-	} else {
-		d.SetLen(len(s))
-	}
+	ensureLen(d, len(s))
 	for i := 0; i < len(s); i++ {
 		switch s := s[i].(type) {
 		case []byte:
@@ -370,6 +374,95 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 		}
 		if err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+var (
+	scanSliceValueError = errors.New("redigo: ScanSlice dest must be non-nil pointer to a struct.")
+	scanSliceSrcError   = errors.New("redigo: ScanSlice src element must be bulk or nil.")
+)
+
+// ScanSlice scans multi-bulk src to the slice pointed to by dest. The elements
+// the dest slice must be integer, float, boolean, string, struct or pointer to
+// struct values.
+//
+// Struct fields must be integer, float, boolean or string values. All struct
+// fields are used unless a subset is specified using fieldNames.
+func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error {
+	d := reflect.ValueOf(dest)
+	if d.Kind() != reflect.Ptr || d.IsNil() {
+		return scanSliceValueError
+	}
+	d = d.Elem()
+	if d.Kind() != reflect.Slice {
+		return scanSliceValueError
+	}
+
+	isPtr := false
+	t := d.Type().Elem()
+	if t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Struct {
+		isPtr = true
+		t = t.Elem()
+	}
+
+	if t.Kind() != reflect.Struct {
+		ensureLen(d, len(src))
+		for i, s := range src {
+			if s == nil {
+				continue
+			}
+			s, ok := s.([]byte)
+			if !ok {
+				return scanSliceSrcError
+			}
+			if err := convertAssignBytes(d.Index(i), s); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	ss := structSpecForType(t)
+	fss := ss.l
+	if len(fieldNames) > 0 {
+		fss = make([]*fieldSpec, len(fieldNames))
+		for i, name := range fieldNames {
+			fss[i] = ss.m[name]
+			if fss[i] == nil {
+				return errors.New("redigo: bad field name " + name)
+			}
+		}
+	}
+
+	n := len(src) / len(fss)
+	if n*len(fss) != len(src) {
+		return errors.New("redigo: length of ScanSlice not a multiple of struct field count.")
+	}
+
+	ensureLen(d, n)
+	for i := 0; i < n; i++ {
+		d := d.Index(i)
+		if isPtr {
+			if d.IsNil() {
+				d.Set(reflect.New(t))
+			}
+			d = d.Elem()
+		}
+		for j, fs := range fss {
+			s := src[i*len(fss)+j]
+			if s == nil {
+				continue
+			}
+			sb, ok := s.([]byte)
+			if !ok {
+				return scanSliceSrcError
+			}
+			d := d.FieldByIndex(fs.index)
+			if err := convertAssignBytes(d, sb); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
