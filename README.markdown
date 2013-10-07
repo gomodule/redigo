@@ -16,8 +16,8 @@ Features
 Documentation
 -------------
 
-The Redigo API reference is available on
-[godoc.org](http://godoc.org/github.com/garyburd/redigo/redis). GoDoc.org uses Redigo and Redis for storage.
+- [API Reference](http://godoc.org/github.com/garyburd/redigo/redis)
+- [FAQ](https://github.com/garyburd/redigo/wiki/FAQ)
 
 Installation
 ------------

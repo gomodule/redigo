@@ -12,8 +12,10 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-// Package redis is a client for the Redis database. Package redis supports
-// Redis version 1.2.0 and above. All commands are supported.
+// Package redis is a client for the Redis database.
+//
+// The Redigo FAQ (https://github.com/garyburd/redigo/wiki/FAQ) contains more
+// documentation about this package.
 //
 // Connections
 //
@@ -31,21 +33,33 @@
 //
 //  Do(commandName string, args ...interface{}) (reply interface{}, err error)
 //
-// Arguments of type string and []byte are sent to the server as is. The value
-// false is converted to "0" and the value true is converted to "1". The value
-// nil is converted to "". All other values are converted to a string using the
-// fmt.Fprint function. Command replies are represented using the following Go
-// types:
+// The Redis command reference (http://redis.io/commands) lists the available
+// commands. An example of using the Redis APPEND command is:
 //
-//  Redis type          Go type
-//  error               redis.Error
-//  integer             int64
-//  status              string
-//  bulk                []byte or nil if value not present.
-//  multi-bulk          []interface{} or nil if value not present.
+//  n, err := conn.Do("APPEND", "key", "value")
 //
-// The Redis command reference (http://redis.io/commands) documents the Redis
-// type returned for each command. Use type assertions to convert from
+// The Do method converts command arguments to binary strings for transmission
+// to the server as follows:
+//
+//  Go Type                 Conversion
+//  []byte                  Sent as is
+//  string                  Sent as is
+//  int, int64              strconv.FormatInt(v)
+//  float64                 strconv.FormatFloat(v, 'g', -1, 64)
+//  bool                    true -> "1", false -> "0"
+//  nil                     ""
+//  all other types         fmt.Print(v)
+//
+// Redis command reply types are represented using the following Go types:
+//
+//  Redis type              Go type
+//  error                   redis.Error
+//  integer                 int64
+//  status                  string
+//  bulk                    []byte or nil if value not present.
+//  multi-bulk              []interface{} or nil if value not present.
+//
+// Use type assertions or the reply helper functions to convert from
 // interface{} to the specific Go type for the command result.
 //
 // Pipelining
