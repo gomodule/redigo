@@ -431,14 +431,18 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 		for i, name := range fieldNames {
 			fss[i] = ss.m[name]
 			if fss[i] == nil {
-				return errors.New("redigo: bad field name " + name)
+				return errors.New("redigo: ScanSlice bad field name " + name)
 			}
 		}
 	}
 
+	if len(fss) == 0 {
+		return errors.New("redigo: ScanSlice no struct fields.")
+	}
+
 	n := len(src) / len(fss)
 	if n*len(fss) != len(src) {
-		return errors.New("redigo: length of ScanSlice not a multiple of struct field count.")
+		return errors.New("redigo: ScanSlice length not a multiple of struct field count.")
 	}
 
 	ensureLen(d, n)

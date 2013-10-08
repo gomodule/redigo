@@ -264,6 +264,12 @@ var scanSliceTests = []struct {
 		true,
 		[]struct{ A, C, B string }{{"a1", "", "b1"}, {"a2", "", "b2"}},
 	},
+	{
+		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
+		nil,
+		false,
+		[]struct{}{},
+	},
 }
 
 func TestScanSlice(t *testing.T) {
