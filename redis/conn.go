@@ -390,11 +390,11 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	if cmd == "" {
 		reply := make([]interface{}, pending)
 		for i := range reply {
-			if r, e := c.readReply(); e != nil {
+			r, e := c.readReply()
+			if e != nil {
 				return nil, c.fatal(e)
-			} else {
-				reply[i] = r
 			}
+			reply[i] = r
 		}
 		return reply, nil
 	}

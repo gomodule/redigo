@@ -193,7 +193,7 @@ func dial() (redis.Conn, error) {
 	}
 
 	if n != 0 {
-		return nil, errors.New("Database #9 is not empty, test can not continue")
+		return nil, errors.New("database #9 is not empty, test can not continue")
 	}
 
 	return testConn{c}, nil

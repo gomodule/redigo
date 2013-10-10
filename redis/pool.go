@@ -23,7 +23,10 @@ import (
 
 var nowFunc = time.Now // for testing
 
+// ErrPoolExhausted is returned from pool connection methods when the maximum
+// number of database connections in the pool has been reached.
 var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
+
 var errPoolClosed = errors.New("redigo: connection pool closed")
 
 // Pool maintains a pool of connections. The application calls the Get method

@@ -18,7 +18,7 @@ import (
 	"errors"
 )
 
-// Subscribe represents a subscribe or unsubscribe notification.
+// Subscription represents a subscribe or unsubscribe notification.
 type Subscription struct {
 
 	// Kind is "subscribe", "unsubscribe", "psubscribe" or "punsubscribe"

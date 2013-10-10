@@ -43,7 +43,7 @@ func ExamplePubSubConn() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	psc := redis.PubSubConn{c}
+	psc := redis.PubSubConn{Conn: c}
 
 	// This goroutine receives and prints pushed notifications from the server.
 	// The goroutine exits when the connection is unsubscribed from all
@@ -119,20 +119,20 @@ func TestPushed(t *testing.T) {
 	defer nc.Close()
 	nc.SetReadDeadline(time.Now().Add(4 * time.Second))
 
-	c := redis.PubSubConn{redis.NewConn(nc, 0, 0)}
+	c := redis.PubSubConn{Conn: redis.NewConn(nc, 0, 0)}
 
 	c.Subscribe("c1")
-	expectPushed(t, c, "Subscribe(c1)", redis.Subscription{"subscribe", "c1", 1})
+	expectPushed(t, c, "Subscribe(c1)", redis.Subscription{Kind: "subscribe", Channel: "c1", Count: 1})
 	c.Subscribe("c2")
-	expectPushed(t, c, "Subscribe(c2)", redis.Subscription{"subscribe", "c2", 2})
+	expectPushed(t, c, "Subscribe(c2)", redis.Subscription{Kind: "subscribe", Channel: "c2", Count: 2})
 	c.PSubscribe("p1")
-	expectPushed(t, c, "PSubscribe(p1)", redis.Subscription{"psubscribe", "p1", 3})
+	expectPushed(t, c, "PSubscribe(p1)", redis.Subscription{Kind: "psubscribe", Channel: "p1", Count: 3})
 	c.PSubscribe("p2")
-	expectPushed(t, c, "PSubscribe(p2)", redis.Subscription{"psubscribe", "p2", 4})
+	expectPushed(t, c, "PSubscribe(p2)", redis.Subscription{Kind: "psubscribe", Channel: "p2", Count: 4})
 	c.PUnsubscribe()
-	expectPushed(t, c, "Punsubscribe(p1)", redis.Subscription{"punsubscribe", "p1", 3})
-	expectPushed(t, c, "Punsubscribe()", redis.Subscription{"punsubscribe", "p2", 2})
+	expectPushed(t, c, "Punsubscribe(p1)", redis.Subscription{Kind: "punsubscribe", Channel: "p1", Count: 3})
+	expectPushed(t, c, "Punsubscribe()", redis.Subscription{Kind: "punsubscribe", Channel: "p2", Count: 2})
 
 	pc.Do("PUBLISH", "c1", "hello")
-	expectPushed(t, c, "PUBLISH c1 hello", redis.Message{"c1", []byte("hello")})
+	expectPushed(t, c, "PUBLISH c1 hello", redis.Message{Channel: "c1", Data: []byte("hello")})
 }

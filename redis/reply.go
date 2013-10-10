@@ -20,6 +20,7 @@ import (
 	"strconv"
 )
 
+// ErrNil indicates that a reply value is nil.
 var ErrNil = errors.New("redigo: nil returned")
 
 // Int is a helper that converts a command reply to an integer. If err is not

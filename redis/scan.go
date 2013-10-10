@@ -318,7 +318,7 @@ func structSpecForType(t reflect.Type) *structSpec {
 	return ss
 }
 
-var scanStructValueError = errors.New("redigo: ScanStruct value must be non-nil pointer to a struct.")
+var errScanStructValue = errors.New("redigo: ScanStruct value must be non-nil pointer to a struct")
 
 // ScanStruct scans a multi-bulk src containing alternating names and values to
 // a struct. The HGETALL and CONFIG GET commands return replies in this format.
@@ -339,11 +339,11 @@ var scanStructValueError = errors.New("redigo: ScanStruct value must be non-nil 
 func ScanStruct(src []interface{}, dest interface{}) error {
 	d := reflect.ValueOf(dest)
 	if d.Kind() != reflect.Ptr || d.IsNil() {
-		return scanStructValueError
+		return errScanStructValue
 	}
 	d = d.Elem()
 	if d.Kind() != reflect.Struct {
-		return scanStructValueError
+		return errScanStructValue
 	}
 	ss := structSpecForType(d.Type())
 
@@ -380,8 +380,8 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 }
 
 var (
-	scanSliceValueError = errors.New("redigo: ScanSlice dest must be non-nil pointer to a struct.")
-	scanSliceSrcError   = errors.New("redigo: ScanSlice src element must be bulk or nil.")
+	errScanSliceValue = errors.New("redigo: ScanSlice dest must be non-nil pointer to a struct")
+	errScanSliceSrc   = errors.New("redigo: ScanSlice src element must be bulk or nil")
 )
 
 // ScanSlice scans multi-bulk src to the slice pointed to by dest. The elements
@@ -393,11 +393,11 @@ var (
 func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error {
 	d := reflect.ValueOf(dest)
 	if d.Kind() != reflect.Ptr || d.IsNil() {
-		return scanSliceValueError
+		return errScanSliceValue
 	}
 	d = d.Elem()
 	if d.Kind() != reflect.Slice {
-		return scanSliceValueError
+		return errScanSliceValue
 	}
 
 	isPtr := false
@@ -415,7 +415,7 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 			}
 			s, ok := s.([]byte)
 			if !ok {
-				return scanSliceSrcError
+				return errScanSliceSrc
 			}
 			if err := convertAssignBytes(d.Index(i), s); err != nil {
 				return err
@@ -437,12 +437,12 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 	}
 
 	if len(fss) == 0 {
-		return errors.New("redigo: ScanSlice no struct fields.")
+		return errors.New("redigo: ScanSlice no struct fields")
 	}
 
 	n := len(src) / len(fss)
 	if n*len(fss) != len(src) {
-		return errors.New("redigo: ScanSlice length not a multiple of struct field count.")
+		return errors.New("redigo: ScanSlice length not a multiple of struct field count")
 	}
 
 	ensureLen(d, n)
@@ -461,7 +461,7 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 			}
 			sb, ok := s.([]byte)
 			if !ok {
-				return scanSliceSrcError
+				return errScanSliceSrc
 			}
 			d := d.FieldByIndex(fs.index)
 			if err := convertAssignBytes(d, sb); err != nil {
