@@ -223,7 +223,7 @@ func Strings(reply interface{}, err error) ([]string, error) {
 			if reply[i] == nil {
 				continue
 			}
-			p, ok := reply[i].([]byte)
+			p, ok := reply[i].(string)
 			if !ok {
 				return nil, fmt.Errorf("redigo: unexpected element type for Strings, got type %T", reply[i])
 			}
