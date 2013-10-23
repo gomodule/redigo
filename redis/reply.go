@@ -111,7 +111,7 @@ func Float64(reply interface{}, err error) (float64, error) {
 //
 //  Reply type      Result
 //  bulk            string(reply), nil
-//  string          reply, nil
+//  status          reply, nil
 //  nil             "",  ErrNil
 //  other           "",  error
 func String(reply interface{}, err error) (string, error) {
@@ -137,7 +137,7 @@ func String(reply interface{}, err error) (string, error) {
 //
 //  Reply type      Result
 //  bulk            reply, nil
-//  string          []byte(reply), nil
+//  status          []byte(reply), nil
 //  nil             nil, ErrNil
 //  other           nil, error
 func Bytes(reply interface{}, err error) ([]byte, error) {
