@@ -85,7 +85,9 @@
 // buffer. Next, the Do method receives all pending replies including the reply
 // for the command just sent by Do. If any of the received replies is an error,
 // then Do returns the error. If there are no errors, then Do returns the last
-// reply.
+// reply. If the command argument to the Do method is "", then the Do method
+// will flush the output buffer and receive pending replies without sending a
+// command.
 //
 // Use the Send and Do methods to implement pipelined transactions.
 //
