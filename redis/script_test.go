@@ -62,12 +62,12 @@ func TestScript(t *testing.T) {
 
 	err = c.Flush()
 	if err != nil {
-		t.Errorf("s.Flush() returned %v", err)
+		t.Errorf("c.Flush() returned %v", err)
 	}
 
 	v, err = c.Receive()
 	if !reflect.DeepEqual(v, reply) {
-		t.Errorf("s.SendHash(c, ..); s.Recevie() = %v, want %v", v, reply)
+		t.Errorf("s.SendHash(c, ..); c.Receive() = %v, want %v", v, reply)
 	}
 
 	err = s.Send(c, "key1", "key2", "arg1", "arg2")
@@ -77,12 +77,12 @@ func TestScript(t *testing.T) {
 
 	err = c.Flush()
 	if err != nil {
-		t.Errorf("s.Flush() returned %v", err)
+		t.Errorf("c.Flush() returned %v", err)
 	}
 
 	v, err = c.Receive()
 	if !reflect.DeepEqual(v, reply) {
-		t.Errorf("s.Send(c, ..); s.Recevie() = %v, want %v", v, reply)
+		t.Errorf("s.Send(c, ..); c.Receive() = %v, want %v", v, reply)
 	}
 
 }
