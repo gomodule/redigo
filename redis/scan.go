@@ -323,7 +323,7 @@ var errScanStructValue = errors.New("redigo: ScanStruct value must be non-nil po
 // ScanStruct scans a multi-bulk src containing alternating names and values to
 // a struct. The HGETALL and CONFIG GET commands return replies in this format.
 //
-// ScanStruct uses the struct field name to match values in the response. Use
+// ScanStruct uses exported field names to match values in the response. Use
 // 'redis' field tag to override the name:
 //
 //      Field int `redis:"myName"`
@@ -486,10 +486,10 @@ func (args Args) Add(value interface{}) Args {
 //
 // Slices are flattened by appending the slice elements to args.
 //
-// Structs are flattened by appending the alternating field names and field
-// values to args. If v is a nil struct pointer, then nothing is appended. The
-// 'redis' field tag overrides struct field names. See ScanStruct for more
-// information on the use of the 'redis' field tag.
+// Structs are flattened by appending the alternating names and values of
+// exported fields to args. If v is a nil struct pointer, then nothing is
+// appended. The 'redis' field tag overrides struct field names. See ScanStruct
+// for more information on the use of the 'redis' field tag.
 //
 // Other types are appended to args as is.
 func (args Args) AddFlat(v interface{}) Args {
