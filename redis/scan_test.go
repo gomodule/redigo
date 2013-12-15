@@ -48,10 +48,13 @@ var scanConversionTests = []struct {
 	{[]byte("t"), true},
 	{[]byte("hello"), "hello"},
 	{[]byte("world"), []byte("world")},
+	{[]interface{}{[]byte("foo")}, []interface{}{[]byte("foo")}},
 	{[]interface{}{[]byte("foo")}, []string{"foo"}},
+	{[]interface{}{[]byte("hello"), []byte("world")}, []string{"hello", "world"}},
 	{[]interface{}{[]byte("bar")}, [][]byte{[]byte("bar")}},
 	{[]interface{}{[]byte("1")}, []int{1}},
 	{[]interface{}{[]byte("1"), []byte("2")}, []int{1, 2}},
+	{[]interface{}{[]byte("1"), []byte("2")}, []float64{1, 2}},
 	{[]interface{}{[]byte("1")}, []byte{1}},
 	{[]interface{}{[]byte("1")}, []bool{true}},
 }
