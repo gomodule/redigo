@@ -136,6 +136,7 @@
 //          fmt.Printf("%s: %s %d\n", v.Channel, v.Kind, v.Count)
 //      case error:
 //          return v
+//      }
 //  }
 //
 // Reply Helpers
