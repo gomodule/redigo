@@ -131,6 +131,7 @@
 //  for {
 //      switch v := psc.Receive().(type) {
 //      case redis.Message:
+//      case redis.PMessage:
 //          fmt.Printf("%s: message: %s\n", v.Channel, v.Data)
 //      case redis.Subscription:
 //          fmt.Printf("%s: %s %d\n", v.Channel, v.Kind, v.Count)
