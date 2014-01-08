@@ -290,7 +290,7 @@ func (c *conn) readReply() (interface{}, error) {
 		return parseInt(line[1:])
 	case '$':
 		n, err := parseLen(line[1:])
-		if n < 0 {
+		if n < 0 || err != nil {
 			return nil, err
 		}
 		p := make([]byte, n)
@@ -306,7 +306,7 @@ func (c *conn) readReply() (interface{}, error) {
 		return p, nil
 	case '*':
 		n, err := parseLen(line[1:])
-		if n < 0 {
+		if n < 0 || err != nil {
 			return nil, err
 		}
 		r := make([]interface{}, n)
