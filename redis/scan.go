@@ -476,8 +476,8 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 type Args []interface{}
 
 // Add returns the result of appending value to args.
-func (args Args) Add(value interface{}) Args {
-	return append(args, value)
+func (args Args) Add(value ...interface{}) Args {
+	return append(args, value...)
 }
 
 // AddFlat returns the result of appending the flattened value of v to args.
