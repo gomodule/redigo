@@ -210,8 +210,8 @@ func (p *Pool) get() (Conn, error) {
 	return c, err
 }
 
-func (p *Pool) put(c Conn) error {
-	if c.Err() == nil {
+func (p *Pool) put(c Conn, forceClose bool) error {
+	if c.Err() == nil && !forceClose {
 		p.mu.Lock()
 		if !p.closed {
 			p.idle.PushFront(idleConn{t: nowFunc(), c: c})
@@ -233,9 +233,10 @@ func (p *Pool) put(c Conn) error {
 }
 
 type pooledConnection struct {
-	c   Conn
-	err error
-	p   *Pool
+	c     Conn
+	err   error
+	p     *Pool
+	state int
 }
 
 func (c *pooledConnection) get() error {
@@ -247,8 +248,18 @@ func (c *pooledConnection) get() error {
 
 func (c *pooledConnection) Close() (err error) {
 	if c.c != nil {
+		if c.state&multiState != 0 {
+			c.c.Send("DISCARD")
+			c.state &^= (multiState | watchState)
+		} else if c.state&watchState != 0 {
+			c.c.Send("UNWATCH")
+			c.state &^= watchState
+		}
+		// TODO: Clear subscription state by executing PUNSUBSCRIBE,
+		// UNSUBSCRIBE and ECHO sentinel and receiving until the sentinel is
+		// found. The sentinel is a random string generated once at runtime.
 		c.c.Do("")
-		c.p.put(c.c)
+		c.p.put(c.c, c.state != 0)
 		c.c = nil
 		c.err = errPoolClosed
 	}
@@ -266,6 +277,8 @@ func (c *pooledConnection) Do(commandName string, args ...interface{}) (reply in
 	if err := c.get(); err != nil {
 		return nil, err
 	}
+	ci := lookupCommandInfo(commandName)
+	c.state = (c.state | ci.set) &^ ci.clear
 	return c.c.Do(commandName, args...)
 }
 
@@ -273,6 +286,8 @@ func (c *pooledConnection) Send(commandName string, args ...interface{}) error {
 	if err := c.get(); err != nil {
 		return err
 	}
+	ci := lookupCommandInfo(commandName)
+	c.state = (c.state | ci.set) &^ ci.clear
 	return c.c.Send(commandName, args...)
 }
 
