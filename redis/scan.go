@@ -188,22 +188,21 @@ func convertAssign(d interface{}, s interface{}) (err error) {
 	return
 }
 
-// Scan copies from the multi-bulk src to the values pointed at by dest.
+// Scan copies from src to the values pointed at by dest.
 //
 // The values pointed at by dest must be an integer, float, boolean, string,
 // []byte, interface{} or slices of these types. Scan uses the standard strconv
-// package to convert bulk values to numeric and boolean types.
+// package to convert bulk strings to numeric and boolean types.
 //
 // If a dest value is nil, then the corresponding src value is skipped.
 //
-// If the multi-bulk value is nil, then the corresponding dest value is not
-// modified.
+// If a src element is nil, then the corresponding dest value is not modified.
 //
 // To enable easy use of Scan in a loop, Scan returns the slice of src
 // following the copied values.
 func Scan(src []interface{}, dest ...interface{}) ([]interface{}, error) {
 	if len(src) < len(dest) {
-		return nil, errors.New("redigo: Scan multibulk short")
+		return nil, errors.New("redigo: Scan array short")
 	}
 	var err error
 	for i, d := range dest {
@@ -320,8 +319,8 @@ func structSpecForType(t reflect.Type) *structSpec {
 
 var errScanStructValue = errors.New("redigo: ScanStruct value must be non-nil pointer to a struct")
 
-// ScanStruct scans a multi-bulk src containing alternating names and values to
-// a struct. The HGETALL and CONFIG GET commands return replies in this format.
+// ScanStruct scans alternating names and values from src to a struct. The
+// HGETALL and CONFIG GET commands return replies in this format.
 //
 // ScanStruct uses exported field names to match values in the response. Use
 // 'redis' field tag to override the name:
@@ -330,12 +329,11 @@ var errScanStructValue = errors.New("redigo: ScanStruct value must be non-nil po
 //
 // Fields with the tag redis:"-" are ignored.
 //
-// Integer, float boolean string and []byte fields are supported. Scan uses
-// the standard strconv package to convert bulk values to numeric and boolean
-// types.
+// Integer, float boolean string and []byte fields are supported. Scan uses the
+// standard strconv package to convert bulk string values to numeric and
+// boolean types.
 //
-// If the multi-bulk value is nil, then the corresponding field is not
-// modified.
+// If a src element is nil, then the corresponding field is not modified.
 func ScanStruct(src []interface{}, dest interface{}) error {
 	d := reflect.ValueOf(dest)
 	if d.Kind() != reflect.Ptr || d.IsNil() {
@@ -354,7 +352,7 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 	for i := 0; i < len(src); i += 2 {
 		name, ok := src[i].([]byte)
 		if !ok {
-			return errors.New("redigo: ScanStruct key not a bulk value")
+			return errors.New("redigo: ScanStruct key not a bulk string value")
 		}
 		fs := ss.fieldSpec(name)
 		if fs == nil {
@@ -381,12 +379,12 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 
 var (
 	errScanSliceValue = errors.New("redigo: ScanSlice dest must be non-nil pointer to a struct")
-	errScanSliceSrc   = errors.New("redigo: ScanSlice src element must be bulk or nil")
+	errScanSliceSrc   = errors.New("redigo: ScanSlice src element must be bulk string or nil")
 )
 
-// ScanSlice scans multi-bulk src to the slice pointed to by dest. The elements
-// the dest slice must be integer, float, boolean, string, struct or pointer to
-// struct values.
+// ScanSlice scans src to the slice pointed to by dest. The elements the dest
+// slice must be integer, float, boolean, string, struct or pointer to struct
+// values.
 //
 // Struct fields must be integer, float, boolean or string values. All struct
 // fields are used unless a subset is specified using fieldNames.

@@ -206,7 +206,7 @@ func (c *conn) readLine() ([]byte, error) {
 	return p[:i], nil
 }
 
-// parseLen parses bulk and multi-bulk lengths.
+// parseLen parses bulk string and array lengths.
 func parseLen(p []byte) (int, error) {
 	if len(p) == 0 {
 		return -1, errors.New("redigo: malformed length")
@@ -301,7 +301,7 @@ func (c *conn) readReply() (interface{}, error) {
 		if line, err := c.readLine(); err != nil {
 			return nil, err
 		} else if len(line) != 0 {
-			return nil, errors.New("redigo: bad bulk format")
+			return nil, errors.New("redigo: bad bulk string format")
 		}
 		return p, nil
 	case '*':
