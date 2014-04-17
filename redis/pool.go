@@ -23,8 +23,9 @@ import (
 
 var nowFunc = time.Now // for testing
 
-// ErrPoolExhausted is returned from pool connection methods when the maximum
-// number of database connections in the pool has been reached.
+// ErrPoolExhausted is returned from a pool connection method (Do, Send,
+// Receive, Flush, Err) when the maximum number of database connections in the
+// pool has been reached.
 var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
 
 var errPoolClosed = errors.New("redigo: connection pool closed")
@@ -123,7 +124,11 @@ func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 	return &Pool{Dial: newFn, MaxIdle: maxIdle}
 }
 
-// Get gets a connection from the pool.
+// Get gets a connection. The application must close the returned connection.
+// The connection acquires an underlying connection on the first call to the
+// connection Do, Send, Receive, Flush or Err methods. An application can force
+// the connection to acquire an underlying connection without executing a Redis
+// command by calling the Err method.
 func (p *Pool) Get() Conn {
 	return &pooledConnection{p: p}
 }
