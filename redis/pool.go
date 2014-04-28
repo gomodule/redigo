@@ -229,11 +229,7 @@ func (p *Pool) put(c Conn, forceClose bool) error {
 		p.mu.Lock()
 		if !p.closed {
 			p.idle.PushFront(idleConn{t: nowFunc(), c: c})
-			if p.idle.Len() > p.MaxIdle {
-				c = p.idle.Remove(p.idle.Back()).(idleConn).c
-			} else {
-				c = nil
-			}
+			c = nil
 		}
 		p.mu.Unlock()
 	}
