@@ -67,7 +67,7 @@ var errPoolClosed = errors.New("redigo: connection pool closed")
 //  )
 //
 //  func main() {
-//      floag.Parse()
+//      flag.Parse()
 //      pool = newPool(*redisServer, *redisPassword)
 //      ...
 //  }
