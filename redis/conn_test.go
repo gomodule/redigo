@@ -17,7 +17,6 @@ package redis_test
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"math"
 	"net"
 	"reflect"
@@ -160,53 +159,6 @@ func TestRead(t *testing.T) {
 	}
 }
 
-type testConn struct {
-	redis.Conn
-}
-
-func (t testConn) Close() error {
-	_, err := t.Conn.Do("SELECT", "9")
-	if err != nil {
-		return nil
-	}
-	_, err = t.Conn.Do("FLUSHDB")
-	if err != nil {
-		return err
-	}
-	return t.Conn.Close()
-}
-
-func dial() (redis.Conn, error) {
-	c, err := redis.DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = c.Do("SELECT", "9")
-	if err != nil {
-		return nil, err
-	}
-
-	n, err := redis.Int(c.Do("DBSIZE"))
-	if err != nil {
-		return nil, err
-	}
-
-	if n != 0 {
-		return nil, errors.New("database #9 is not empty, test can not continue")
-	}
-
-	return testConn{c}, nil
-}
-
-func dialt(t *testing.T) redis.Conn {
-	c, err := dial()
-	if err != nil {
-		t.Fatalf("error connection to database, %v", err)
-	}
-	return c
-}
-
 var testCommands = []struct {
 	args     []interface{}
 	expected interface{}
@@ -269,7 +221,10 @@ var testCommands = []struct {
 }
 
 func TestDoCommands(t *testing.T) {
-	c := dialt(t)
+	c, err := redis.DialTest()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
 	defer c.Close()
 
 	for _, cmd := range testCommands {
@@ -285,7 +240,10 @@ func TestDoCommands(t *testing.T) {
 }
 
 func TestPipelineCommands(t *testing.T) {
-	c := dialt(t)
+	c, err := redis.DialTest()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
 	defer c.Close()
 
 	for _, cmd := range testCommands {
@@ -308,7 +266,10 @@ func TestPipelineCommands(t *testing.T) {
 }
 
 func TestBlankCommmand(t *testing.T) {
-	c := dialt(t)
+	c, err := redis.DialTest()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
 	defer c.Close()
 
 	for _, cmd := range testCommands {
@@ -332,11 +293,14 @@ func TestBlankCommmand(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	c := dialt(t)
+	c, err := redis.DialTest()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
 	defer c.Close()
 
 	c.Do("SET", "key", "val")
-	_, err := c.Do("HSET", "key", "fld", "val")
+	_, err = c.Do("HSET", "key", "fld", "val")
 	if err == nil {
 		t.Errorf("Expected err for HSET on string key.")
 	}

@@ -15,8 +15,13 @@
 package redis
 
 import (
+	"bytes"
 	"container/list"
+	"crypto/rand"
+	"crypto/sha1"
 	"errors"
+	"io"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -260,6 +265,23 @@ func (c *pooledConnection) get() error {
 	return c.err
 }
 
+var (
+	sentinel     []byte
+	sentinelOnce sync.Once
+)
+
+func initSentinel() {
+	p := make([]byte, 64)
+	if _, err := rand.Read(p); err == nil {
+		sentinel = p
+	} else {
+		h := sha1.New()
+		io.WriteString(h, "Oops, rand failed. Use time instead.")
+		io.WriteString(h, strconv.FormatInt(time.Now().UnixNano(), 10))
+		sentinel = h.Sum(nil)
+	}
+}
+
 func (c *pooledConnection) Close() (err error) {
 	if c.c != nil {
 		if c.state&multiState != 0 {
@@ -269,9 +291,26 @@ func (c *pooledConnection) Close() (err error) {
 			c.c.Send("UNWATCH")
 			c.state &^= watchState
 		}
-		// TODO: Clear subscription state by executing PUNSUBSCRIBE,
-		// UNSUBSCRIBE and ECHO sentinel and receiving until the sentinel is
-		// found. The sentinel is a random string generated once at runtime.
+		if c.state&subscribeState != 0 {
+			c.c.Send("UNSUBSCRIBE")
+			c.c.Send("PUNSUBSCRIBE")
+			// To detect the end of the message stream, ask the server to echo
+			// a sentinel value and read until we see that value.
+			sentinelOnce.Do(initSentinel)
+			c.c.Send("ECHO", sentinel)
+			c.c.Flush()
+			//for i := 0; i < 10; i++ {
+			for {
+				p, err := c.c.Receive()
+				if err != nil {
+					break
+				}
+				if p, ok := p.([]byte); ok && bytes.Equal(p, sentinel) {
+					c.state &^= subscribeState
+					break
+				}
+			}
+		}
 		c.c.Do("")
 		c.p.put(c.c, c.state != 0)
 		c.c = nil

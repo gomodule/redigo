@@ -80,6 +80,10 @@ func TestReply(t *testing.T) {
 	}
 }
 
+func dial() (redis.Conn, error) {
+	return redis.DialTest()
+}
+
 func ExampleBool() {
 	c, err := dial()
 	if err != nil {

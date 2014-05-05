@@ -24,6 +24,7 @@ import (
 type poolTestConn struct {
 	d   *poolDialer
 	err error
+	Conn
 }
 
 func (c *poolTestConn) Close() error { c.d.open -= 1; return nil }
@@ -36,20 +37,12 @@ func (c *poolTestConn) Do(commandName string, args ...interface{}) (reply interf
 	if commandName != "" {
 		c.d.commands = append(c.d.commands, commandName)
 	}
-	return nil, nil
+	return c.Conn.Do(commandName, args...)
 }
 
 func (c *poolTestConn) Send(commandName string, args ...interface{}) error {
 	c.d.commands = append(c.d.commands, commandName)
-	return nil
-}
-
-func (c *poolTestConn) Flush() error {
-	return nil
-}
-
-func (c *poolTestConn) Receive() (reply interface{}, err error) {
-	return nil, nil
+	return c.Conn.Send(commandName, args...)
 }
 
 type poolDialer struct {
@@ -61,7 +54,11 @@ type poolDialer struct {
 func (d *poolDialer) dial() (Conn, error) {
 	d.open += 1
 	d.dialed += 1
-	return &poolTestConn{d: d}, nil
+	c, err := DialTest()
+	if err != nil {
+		return nil, err
+	}
+	return &poolTestConn{d: d, Conn: c}, nil
 }
 
 func (d *poolDialer) check(message string, p *Pool, dialed, open int) {
@@ -255,7 +252,7 @@ func TestMaxActive(t *testing.T) {
 	d.check("4", p, 2, 2)
 }
 
-func TestPoolPubSubMonitorCleanup(t *testing.T) {
+func TestMonitorCleanup(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &Pool{
 		MaxIdle:   2,
@@ -263,18 +260,39 @@ func TestPoolPubSubMonitorCleanup(t *testing.T) {
 		Dial:      d.dial,
 	}
 	c := p.Get()
-	c.Send("SUBSCRIBE", "x")
-	c.Close()
-
-	c = p.Get()
-	c.Send("PSUBSCRIBE", "x")
-	c.Close()
-
-	c = p.Get()
 	c.Send("MONITOR")
 	c.Close()
 
-	d.check("", p, 3, 0)
+	d.check("", p, 1, 0)
+}
+
+func TestPubSubCleanup(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &Pool{
+		MaxIdle:   2,
+		MaxActive: 2,
+		Dial:      d.dial,
+	}
+
+	c := p.Get()
+	c.Send("SUBSCRIBE", "x")
+	c.Close()
+
+	want := []string{"SUBSCRIBE", "UNSUBSCRIBE", "PUNSUBSCRIBE", "ECHO"}
+	if !reflect.DeepEqual(d.commands, want) {
+		t.Errorf("got commands %v, want %v", d.commands, want)
+	}
+	d.commands = nil
+
+	c = p.Get()
+	c.Send("PSUBSCRIBE", "x*")
+	c.Close()
+
+	want = []string{"PSUBSCRIBE", "UNSUBSCRIBE", "PUNSUBSCRIBE", "ECHO"}
+	if !reflect.DeepEqual(d.commands, want) {
+		t.Errorf("got commands %v, want %v", d.commands, want)
+	}
+	d.commands = nil
 }
 
 func TestTransactionCleanup(t *testing.T) {

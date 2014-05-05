@@ -16,8 +16,49 @@ package redis
 
 import (
 	"bufio"
+	"errors"
 	"net"
+	"time"
 )
+
+type testConn struct {
+	Conn
+}
+
+func (t testConn) Close() error {
+	_, err := t.Conn.Do("SELECT", "9")
+	if err != nil {
+		return nil
+	}
+	_, err = t.Conn.Do("FLUSHDB")
+	if err != nil {
+		return err
+	}
+	return t.Conn.Close()
+}
+
+func DialTest() (Conn, error) {
+	c, err := DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = c.Do("SELECT", "9")
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := Int(c.Do("DBSIZE"))
+	if err != nil {
+		return nil, err
+	}
+
+	if n != 0 {
+		return nil, errors.New("database #9 is not empty, test can not continue")
+	}
+
+	return testConn{c}, nil
+}
 
 type dummyClose struct{ net.Conn }
 

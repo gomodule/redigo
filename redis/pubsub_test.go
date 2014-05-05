@@ -109,7 +109,10 @@ func expectPushed(t *testing.T, c redis.PubSubConn, message string, expected int
 }
 
 func TestPushed(t *testing.T) {
-	pc := dialt(t)
+	pc, err := redis.DialTest()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
 	defer pc.Close()
 
 	nc, err := net.Dial("tcp", ":6379")
