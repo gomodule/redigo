@@ -37,7 +37,10 @@ func (t testConn) Close() error {
 	return t.Conn.Close()
 }
 
-func DialTest() (Conn, error) {
+// DialTestDB dials the local Redis server and selects database 9. To prevent
+// stomping on real data, DialTestDB fails if database 9 contains data. The
+// returned connection flushes database 9 on close.
+func DialTestDB() (Conn, error) {
 	c, err := DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
 	if err != nil {
 		return nil, err

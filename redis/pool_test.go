@@ -54,7 +54,7 @@ type poolDialer struct {
 func (d *poolDialer) dial() (Conn, error) {
 	d.open += 1
 	d.dialed += 1
-	c, err := DialTest()
+	c, err := DialTestDB()
 	if err != nil {
 		return nil, err
 	}

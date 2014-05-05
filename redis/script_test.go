@@ -33,7 +33,7 @@ func ExampleScript(c redis.Conn, reply interface{}, err error) {
 }
 
 func TestScript(t *testing.T) {
-	c, err := redis.DialTest()
+	c, err := redis.DialTestDB()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}

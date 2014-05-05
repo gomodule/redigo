@@ -221,7 +221,7 @@ var testCommands = []struct {
 }
 
 func TestDoCommands(t *testing.T) {
-	c, err := redis.DialTest()
+	c, err := redis.DialTestDB()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -240,7 +240,7 @@ func TestDoCommands(t *testing.T) {
 }
 
 func TestPipelineCommands(t *testing.T) {
-	c, err := redis.DialTest()
+	c, err := redis.DialTestDB()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -266,7 +266,7 @@ func TestPipelineCommands(t *testing.T) {
 }
 
 func TestBlankCommmand(t *testing.T) {
-	c, err := redis.DialTest()
+	c, err := redis.DialTestDB()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -293,7 +293,7 @@ func TestBlankCommmand(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	c, err := redis.DialTest()
+	c, err := redis.DialTestDB()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}

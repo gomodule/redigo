@@ -80,8 +80,9 @@ func TestReply(t *testing.T) {
 	}
 }
 
+// dial wraps DialTestDB() with a more suitable function name for examples.
 func dial() (redis.Conn, error) {
-	return redis.DialTest()
+	return redis.DialTestDB()
 }
 
 func ExampleBool() {
