@@ -299,7 +299,6 @@ func (c *pooledConnection) Close() (err error) {
 			sentinelOnce.Do(initSentinel)
 			c.c.Send("ECHO", sentinel)
 			c.c.Flush()
-			//for i := 0; i < 10; i++ {
 			for {
 				p, err := c.c.Receive()
 				if err != nil {
