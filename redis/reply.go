@@ -210,7 +210,7 @@ func Values(reply interface{}, err error) ([]interface{}, error) {
 }
 
 // Strings is a helper that converts an array command reply to a []string. If
-// err is not equal to nil, then Strings returns nil, err. If one if the array
+// err is not equal to nil, then Strings returns nil, err. If one of the array
 // items is not a bulk string or nil, then Strings returns an error.
 func Strings(reply interface{}, err error) ([]string, error) {
 	if err != nil {
