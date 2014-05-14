@@ -329,7 +329,7 @@ var errScanStructValue = errors.New("redigo: ScanStruct value must be non-nil po
 //
 // Fields with the tag redis:"-" are ignored.
 //
-// Integer, float boolean string and []byte fields are supported. Scan uses the
+// Integer, float, boolean, string and []byte fields are supported. Scan uses the
 // standard strconv package to convert bulk string values to numeric and
 // boolean types.
 //
