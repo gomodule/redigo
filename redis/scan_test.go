@@ -20,6 +20,11 @@ import (
 	"math"
 	"reflect"
 	"testing"
+	"time"
+)
+
+var (
+	baseTime = time.Now()
 )
 
 var scanConversionTests = []struct {
@@ -57,6 +62,7 @@ var scanConversionTests = []struct {
 	{[]interface{}{[]byte("1"), []byte("2")}, []float64{1, 2}},
 	{[]interface{}{[]byte("1")}, []byte{1}},
 	{[]interface{}{[]byte("1")}, []bool{true}},
+	{[]byte(baseTime.String()), baseTime},
 }
 
 func TestScanConversion(t *testing.T) {

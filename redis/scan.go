@@ -21,6 +21,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+)
+
+const (
+	timeFormat = "2006-01-02 15:04:05.999999999 -0700 MST"
 )
 
 func ensureLen(d reflect.Value, n int) {
@@ -61,6 +66,12 @@ func convertAssignBytes(d reflect.Value, s []byte) (err error) {
 			err = cannotConvert(d, s)
 		} else {
 			d.SetBytes(s)
+		}
+	case reflect.Struct:
+		if d.Type() == reflect.TypeOf(time.Time{}) {
+			var x time.Time
+			x, err = time.Parse(timeFormat, string(s))
+			d.Set(reflect.ValueOf(x))
 		}
 	default:
 		err = cannotConvert(d, s)
