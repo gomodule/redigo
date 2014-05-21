@@ -95,25 +95,29 @@ func convertAssignInt(d reflect.Value, s int64) (err error) {
 	return
 }
 
-func convertAssignValues(d reflect.Value, s []interface{}) (err error) {
+func convertAssignValue(d reflect.Value, s interface{}) (err error) {
+	switch s := s.(type) {
+	case []byte:
+		err = convertAssignBytes(d, s)
+	case int64:
+		err = convertAssignInt(d, s)
+	default:
+		err = cannotConvert(d, s)
+	}
+	return err
+}
+
+func convertAssignValues(d reflect.Value, s []interface{}) error {
 	if d.Type().Kind() != reflect.Slice {
 		return cannotConvert(d, s)
 	}
 	ensureLen(d, len(s))
 	for i := 0; i < len(s); i++ {
-		switch s := s[i].(type) {
-		case []byte:
-			err = convertAssignBytes(d.Index(i), s)
-		case int64:
-			err = convertAssignInt(d.Index(i), s)
-		default:
-			err = cannotConvert(d, s)
-		}
-		if err != nil {
-			break
+		if err := convertAssignValue(d.Index(i), s[i]); err != nil {
+			return err
 		}
 	}
-	return
+	return nil
 }
 
 func convertAssign(d interface{}, s interface{}) (err error) {
@@ -350,6 +354,10 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 	}
 
 	for i := 0; i < len(src); i += 2 {
+		s := src[i+1]
+		if s == nil {
+			continue
+		}
 		name, ok := src[i].([]byte)
 		if !ok {
 			return errors.New("redigo: ScanStruct key not a bulk string value")
@@ -358,19 +366,7 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 		if fs == nil {
 			continue
 		}
-		f := d.FieldByIndex(fs.index)
-		var err error
-		switch s := src[i+1].(type) {
-		case nil:
-			// ignore
-		case []byte:
-			err = convertAssignBytes(f, s)
-		case int64:
-			err = convertAssignInt(f, s)
-		default:
-			err = cannotConvert(f, s)
-		}
-		if err != nil {
+		if err := convertAssignValue(d.FieldByIndex(fs.index), s); err != nil {
 			return err
 		}
 	}
@@ -379,7 +375,6 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 
 var (
 	errScanSliceValue = errors.New("redigo: ScanSlice dest must be non-nil pointer to a struct")
-	errScanSliceSrc   = errors.New("redigo: ScanSlice src element must be bulk string or nil")
 )
 
 // ScanSlice scans src to the slice pointed to by dest. The elements the dest
@@ -411,11 +406,7 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 			if s == nil {
 				continue
 			}
-			s, ok := s.([]byte)
-			if !ok {
-				return errScanSliceSrc
-			}
-			if err := convertAssignBytes(d.Index(i), s); err != nil {
+			if err := convertAssignValue(d.Index(i), s); err != nil {
 				return err
 			}
 		}
@@ -457,12 +448,7 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 			if s == nil {
 				continue
 			}
-			sb, ok := s.([]byte)
-			if !ok {
-				return errScanSliceSrc
-			}
-			d := d.FieldByIndex(fs.index)
-			if err := convertAssignBytes(d, sb); err != nil {
+			if err := convertAssignValue(d.FieldByIndex(fs.index), s); err != nil {
 				return err
 			}
 		}
