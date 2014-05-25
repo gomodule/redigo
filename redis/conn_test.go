@@ -373,3 +373,33 @@ func ExampleDial(x int) {
 	}
 	defer c.Close()
 }
+
+func BenchmarkDoEmpty(b *testing.B) {
+	b.StopTimer()
+	c, err := redis.DialTestDB()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer c.Close()
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := c.Do(""); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDoPing(b *testing.B) {
+	b.StopTimer()
+	c, err := redis.DialTestDB()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer c.Close()
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := c.Do("PING"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
