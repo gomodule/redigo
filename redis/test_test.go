@@ -71,3 +71,7 @@ func (dummyClose) Close() error { return nil }
 func NewConnBufio(rw bufio.ReadWriter) Conn {
 	return &conn{br: rw.Reader, bw: rw.Writer, conn: dummyClose{}}
 }
+
+var (
+	ErrNegativeInt = errNegativeInt
+)

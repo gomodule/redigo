@@ -81,6 +81,38 @@ func Int64(reply interface{}, err error) (int64, error) {
 	return 0, fmt.Errorf("redigo: unexpected type for Int64, got type %T", reply)
 }
 
+var errNegativeInt = errors.New("redigo: unexpected value for Uint64")
+
+// Uint64 is a helper that converts a command reply to 64 bit integer. If err is
+// not equal to nil, then Int returns 0, err. Otherwise, Int64 converts the
+// reply to an int64 as follows:
+//
+//  Reply type    Result
+//  integer       reply, nil
+//  bulk string   parsed reply, nil
+//  nil           0, ErrNil
+//  other         0, error
+func Uint64(reply interface{}, err error) (uint64, error) {
+	if err != nil {
+		return 0, err
+	}
+	switch reply := reply.(type) {
+	case int64:
+		if reply < 0 {
+			return 0, errNegativeInt
+		}
+		return uint64(reply), nil
+	case []byte:
+		n, err := strconv.ParseUint(string(reply), 10, 64)
+		return n, err
+	case nil:
+		return 0, ErrNil
+	case Error:
+		return 0, reply
+	}
+	return 0, fmt.Errorf("redigo: unexpected type for Uint64, got type %T", reply)
+}
+
 // Float64 is a helper that converts a command reply to 64 bit float. If err is
 // not equal to nil, then Float64 returns 0, err. Otherwise, Float64 converts
 // the reply to an int as follows:

@@ -66,6 +66,16 @@ var replyTests = []struct {
 		ve(redis.Float64(nil, nil)),
 		ve(float64(0.0), redis.ErrNil),
 	},
+	{
+		"uint64(1)",
+		ve(redis.Uint64(int64(1), nil)),
+		ve(uint64(1), nil),
+	},
+	{
+		"uint64(-1)",
+		ve(redis.Uint64(int64(-1), nil)),
+		ve(uint64(0), redis.ErrNegativeInt),
+	},
 }
 
 func TestReply(t *testing.T) {
