@@ -111,6 +111,7 @@ func (c *Conn) Flush() error {
 	return e.error()
 }
 
+// Receive acts like a redis.Receive() and will return errors if expectations are not fulfilled
 func (c *Conn) Receive() (reply interface{}, err error) {
 	exp := c.next()
 	if exp == nil {
@@ -127,7 +128,7 @@ func (c *Conn) Receive() (reply interface{}, err error) {
 // ExpectDo tells the mock to expect a Do() with a given command next
 //
 // You can chain WithArgs(), WillReturnError(), WillReturnConnectionError() and
-// WillReturnReply on a Do expectation
+// WillReturnReply() on a Do expectation
 func (c *Conn) ExpectDo(command string) Mock {
 	exp := &doExpectation{}
 	exp.cmd = command
@@ -136,9 +137,23 @@ func (c *Conn) ExpectDo(command string) Mock {
 	return c
 }
 
+// ExpectSend tells the mock to expect a Send() with a given command next
+//
+// You can chain WithArgs(), WillReturnError(), WillReturnConnectionError() on a Send expectation
 func (c *Conn) ExpectSend(command string) Mock {
 	exp := &sendExpectation{}
 	exp.cmd = command
+	c.expectations = append(c.expectations, exp)
+	c.active = exp
+	return c
+}
+
+// ExpectReceive tells the mock to expect a Receive() next
+//
+// You can chain WillReturnError(), WillReturnConnectionError() and
+// WillReturnReply() on a Receive expectation
+func (c *Conn) ExpectReceive() Mock {
+	exp := &receiveExpectation{}
 	c.expectations = append(c.expectations, exp)
 	c.active = exp
 	return c

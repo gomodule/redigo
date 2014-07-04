@@ -5,7 +5,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
-func Example() {
+func ExampleConn_Do() {
 	// redismock.New()
 	c := New()
 
@@ -75,4 +75,36 @@ func Example() {
 	// error on command
 	// there is an unfulfilled expectation *redismock.doExpectation
 	// error on other arg
+}
+
+func ExampleConn_Receive() {
+	// redismock.New()
+	c := New()
+
+	c.ExpectSend("EXISTS").WithArgs("A")
+	c.ExpectFlush()
+	c.ExpectReceive().WillReturnReply("1")
+
+	// check if it implements redis.Conn
+	var conn redis.Conn
+	conn = c
+
+	err := conn.Send("EXISTS", "A")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = conn.Flush()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	ok, err := conn.Receive()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(ok)
+	// Output:
+	// 1
 }
