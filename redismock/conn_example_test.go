@@ -5,7 +5,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
-func ExampleConn_Do() {
+func ExampleConn() {
 	// redismock.New()
 	c := New()
 
@@ -62,8 +62,8 @@ func ExampleConn_Do() {
 		fmt.Println(err)
 	}
 
-	c.ExpectDo("SET").WithArgs("arg")
-	_, err = conn.Do("SET", "other")
+	c.ExpectDo("SET").WithArgs("ok", "arg")
+	_, err = conn.Do("SET", "ok", "other")
 	if err != nil {
 		// called with another arg, will fail
 		fmt.Println("error on other arg")

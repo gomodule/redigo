@@ -90,20 +90,30 @@ func (a *argsExpectation) argsMatches(args []interface{}) bool {
 		exp := reflect.ValueOf(a.a[k])
 		// always match any type expectation
 		if exp.Type().Name() == anyType.Name() {
-			return true
+			continue
 		}
 		switch val.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			return val.Int() == exp.Int()
+			if val.Int() != exp.Int() {
+				return false
+			}
 		case reflect.Float32, reflect.Float64:
-			return val.Float() == exp.Float()
+			if val.Float() != exp.Float() {
+				return false
+			}
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return val.Uint() == exp.Uint()
+			if val.Uint() != exp.Uint() {
+				return false
+			}
 		case reflect.String:
-			return val.String() == exp.String()
+			if val.String() != exp.String() {
+				return false
+			}
 		default:
 			// Others compare by type only
-			return val.Kind() == exp.Kind()
+			if val.Kind() != exp.Kind() {
+				return false
+			}
 		}
 	}
 	return true
