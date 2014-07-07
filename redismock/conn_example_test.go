@@ -30,7 +30,7 @@ func ExampleConn_Do() {
 
 	// SET command
 	c.ExpectDo("SET").
-		WithArgs("key", "value", "NX").
+		WithArgs("key", Any{}, "NX"). // Args with redismock.Any{} accepts any value
 		WillReturnReply("OK")
 	reply, err := conn.Do("SET", "key", "value", "NX")
 	if err != nil {

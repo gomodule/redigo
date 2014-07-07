@@ -88,6 +88,10 @@ func (a *argsExpectation) argsMatches(args []interface{}) bool {
 	for k, v := range args {
 		val := reflect.ValueOf(v)
 		exp := reflect.ValueOf(a.a[k])
+		// always match any type expectation
+		if exp.Type().Name() == anyType.Name() {
+			return true
+		}
 		switch val.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			return val.Int() == exp.Int()
