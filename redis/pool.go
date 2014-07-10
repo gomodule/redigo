@@ -125,8 +125,8 @@ type idleConn struct {
 }
 
 // NewPool is a convenience function for initializing a pool.
-func NewPool(newFn func() (Conn, error), maxIdle, maxconn int) *Pool {
-	return &Pool{Dial: newFn, MaxIdle: maxIdle, MaxActive: maxconn}
+func NewPool(newFn func() (Conn, error), idleTimeout time.Duration, maxIdle, maxconn int) *Pool {
+	return &Pool{Dial: newFn, MaxIdle: maxIdle, MaxActive: maxconn, IdleTimeout: idleTimeout}
 }
 
 // Get gets a connection. The application must close the returned connection.
@@ -144,6 +144,10 @@ func (p *Pool) ActiveCount() int {
 	active := p.active
 	p.mu.Unlock()
 	return active
+}
+
+func (p *Pool) Release(conn Conn) {
+	p.put(conn, false)
 }
 
 // Close releases the resources used by the pool.
