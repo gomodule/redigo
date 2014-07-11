@@ -124,7 +124,8 @@ type idleConn struct {
 	t time.Time
 }
 
-// NewPool is a convenience function for initializing a pool.
+// NewPool creates a new pool. This function is deprecated. Applications should
+// initialize the Pool fields directly as shown in example.
 func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 	return &Pool{Dial: newFn, MaxIdle: maxIdle}
 }
