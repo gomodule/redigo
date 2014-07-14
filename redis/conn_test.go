@@ -374,6 +374,86 @@ func ExampleDial(x int) {
 	defer c.Close()
 }
 
+// TextExecError tests handling of errors in a transaction. See
+// http://redis.io/topics/transactions for information on how Redis handles
+// errors in a transaction.
+func TestExecError(t *testing.T) {
+	c, err := redis.DialTestDB()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	defer c.Close()
+
+	// Execute commands that fail before EXEC is called.
+
+	c.Do("ZADD", "k0", 0, 0)
+	c.Send("MULTI")
+	c.Send("NOTACOMMAND", "k0", 0, 0)
+	c.Send("ZINCRBY", "k0", 0, 0)
+	v, err := c.Do("EXEC")
+	if err == nil {
+		t.Fatalf("EXEC returned values %v, expected error", v)
+	}
+
+	// Execute commands that fail after EXEC is called. The first command
+	// returns an error.
+
+	c.Do("ZADD", "k1", 0, 0)
+	c.Send("MULTI")
+	c.Send("HSET", "k1", 0, 0)
+	c.Send("ZINCRBY", "k1", 0, 0)
+	v, err = c.Do("EXEC")
+	if err != nil {
+		t.Fatalf("EXEC returned error %v", err)
+	}
+
+	vs, err := redis.Values(v, nil)
+	if err != nil {
+		t.Fatalf("Values(v) returned error %v", err)
+	}
+
+	if len(vs) != 2 {
+		t.Fatalf("len(vs) == %d, want 2", len(vs))
+	}
+
+	if _, ok := vs[0].(error); !ok {
+		t.Fatalf("first result is type %T, expected error", vs[0])
+	}
+
+	if _, ok := vs[1].([]byte); !ok {
+		t.Fatalf("second result is type %T, expected []byte", vs[2])
+	}
+
+	// Execute commands that fail after EXEC is called. The second command
+	// returns an error.
+
+	c.Do("ZADD", "k2", 0, 0)
+	c.Send("MULTI")
+	c.Send("ZINCRBY", "k2", 0, 0)
+	c.Send("HSET", "k2", 0, 0)
+	v, err = c.Do("EXEC")
+	if err != nil {
+		t.Fatalf("EXEC returned error %v", err)
+	}
+
+	vs, err = redis.Values(v, nil)
+	if err != nil {
+		t.Fatalf("Values(v) returned error %v", err)
+	}
+
+	if len(vs) != 2 {
+		t.Fatalf("len(vs) == %d, want 2", len(vs))
+	}
+
+	if _, ok := vs[0].([]byte); !ok {
+		t.Fatalf("first result is type %T, expected []byte", vs[0])
+	}
+
+	if _, ok := vs[1].(error); !ok {
+		t.Fatalf("second result is type %T, expected error", vs[2])
+	}
+}
+
 func BenchmarkDoEmpty(b *testing.B) {
 	b.StopTimer()
 	c, err := redis.DialTestDB()
