@@ -292,6 +292,27 @@ func TestBlankCommmand(t *testing.T) {
 	}
 }
 
+func TestRecvBeforeSend(t *testing.T) {
+	c, err := redis.DialTestDB()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	defer c.Close()
+	done := make(chan struct{})
+	go func() {
+		c.Receive()
+		close(done)
+	}()
+	time.Sleep(time.Millisecond)
+	c.Send("PING")
+	c.Flush()
+	<-done
+	_, err = c.Do("")
+	if err != nil {
+		t.Fatalf("error=%v", err)
+	}
+}
+
 func TestError(t *testing.T) {
 	c, err := redis.DialTestDB()
 	if err != nil {
