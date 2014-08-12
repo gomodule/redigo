@@ -206,7 +206,7 @@ func TestPoolTimeout(t *testing.T) {
 	p.Close()
 }
 
-func TestConcurrenSendReceive(t *testing.T) {
+func TestPoolConcurrenSendReceive(t *testing.T) {
 	p := &Pool{
 		Dial: DialTestDB,
 	}
@@ -230,7 +230,7 @@ func TestConcurrenSendReceive(t *testing.T) {
 	p.Close()
 }
 
-func TestBorrowCheck(t *testing.T) {
+func TestPoolBorrowCheck(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &Pool{
 		MaxIdle:      2,
@@ -247,7 +247,7 @@ func TestBorrowCheck(t *testing.T) {
 	p.Close()
 }
 
-func TestMaxActive(t *testing.T) {
+func TestPoolMaxActive(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &Pool{
 		MaxIdle:   2,
@@ -281,7 +281,7 @@ func TestMaxActive(t *testing.T) {
 	p.Close()
 }
 
-func TestMonitorCleanup(t *testing.T) {
+func TestPoolMonitorCleanup(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &Pool{
 		MaxIdle:   2,
@@ -296,7 +296,7 @@ func TestMonitorCleanup(t *testing.T) {
 	p.Close()
 }
 
-func TestPubSubCleanup(t *testing.T) {
+func TestPoolPubSubCleanup(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &Pool{
 		MaxIdle:   2,
@@ -327,7 +327,7 @@ func TestPubSubCleanup(t *testing.T) {
 	p.Close()
 }
 
-func TestTransactionCleanup(t *testing.T) {
+func TestPoolTransactionCleanup(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &Pool{
 		MaxIdle:   2,
