@@ -30,14 +30,14 @@ type commandInfo struct {
 }
 
 var commandInfos = map[string]commandInfo{
-	"WATCH":      commandInfo{set: watchState},
-	"UNWATCH":    commandInfo{clear: watchState},
-	"MULTI":      commandInfo{set: multiState},
-	"EXEC":       commandInfo{clear: watchState | multiState},
-	"DISCARD":    commandInfo{clear: watchState | multiState},
-	"PSUBSCRIBE": commandInfo{set: subscribeState},
-	"SUBSCRIBE":  commandInfo{set: subscribeState},
-	"MONITOR":    commandInfo{set: monitorState},
+	"WATCH":      {set: watchState},
+	"UNWATCH":    {clear: watchState},
+	"MULTI":      {set: multiState},
+	"EXEC":       {clear: watchState | multiState},
+	"DISCARD":    {clear: watchState | multiState},
+	"PSUBSCRIBE": {set: subscribeState},
+	"SUBSCRIBE":  {set: subscribeState},
+	"MONITOR":    {set: monitorState},
 }
 
 func lookupCommandInfo(commandName string) commandInfo {
