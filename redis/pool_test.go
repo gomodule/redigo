@@ -16,7 +16,9 @@ package redis
 
 import (
 	"io"
+	"net/textproto"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
@@ -451,4 +453,80 @@ func BenchmarkPoolGetPing(b *testing.B) {
 		}
 		c.Close()
 	}
+}
+
+const numConcurrent = 10
+
+func BenchmarkPipelineConcurrency(b *testing.B) {
+	b.StopTimer()
+	c, err := DialTestDB()
+	if err != nil {
+		b.Fatalf("error connection to database, %v", err)
+	}
+	defer c.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(numConcurrent)
+
+	var pipeline textproto.Pipeline
+
+	b.StartTimer()
+
+	for i := 0; i < numConcurrent; i++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < b.N; i++ {
+				id := pipeline.Next()
+				pipeline.StartRequest(id)
+				c.Send("PING")
+				c.Flush()
+				pipeline.EndRequest(id)
+				pipeline.StartResponse(id)
+				_, err := c.Receive()
+				if err != nil {
+					b.Fatal(err)
+				}
+				c.Flush()
+				pipeline.EndResponse(id)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func BenchmarkPoolConcurrency(b *testing.B) {
+	b.StopTimer()
+
+	p := Pool{Dial: DialTestDB, MaxIdle: numConcurrent}
+	defer p.Close()
+
+	// fill the pool
+	conns := make([]Conn, numConcurrent)
+	for i := range conns {
+		c := p.Get()
+		if err := c.Err(); err != nil {
+			b.Fatal(err)
+		}
+		conns[i] = c
+	}
+	for _, c := range conns {
+		c.Close()
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(numConcurrent)
+
+	b.StartTimer()
+
+	for i := 0; i < numConcurrent; i++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < b.N; i++ {
+				c := p.Get()
+				c.Do("PING")
+				c.Close()
+			}
+		}()
+	}
+	wg.Wait()
 }
