@@ -16,10 +16,12 @@ package redis_test
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 	"math"
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/hongzhen/redigo/redis"
 )
 
 var scanConversionTests = []struct {
@@ -141,7 +143,13 @@ type s0 struct {
 	X  int
 	Y  int `redis:"y"`
 	Bt bool
+	T  time.Time `redis:"t"`
 }
+
+var (
+	testTime          = time.Date(2014, 10, 1, 02, 03, 04, 05, time.Local)
+	testTimeEncodeGob = []byte{1, 0, 0, 0, 14, 203, 188, 231, 88, 0, 0, 0, 5, 1, 224}
+)
 
 type s1 struct {
 	X  int    `redis:"-"`
@@ -161,8 +169,8 @@ var scanStructTests = []struct {
 	value interface{}
 }{
 	{"basic",
-		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "X", "123", "y", "456"},
-		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, s0: s0{X: 123, Y: 456}},
+		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "X", "123", "y", "456", "t", string(testTimeEncodeGob)},
+		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, s0: s0{X: 123, Y: 456, T: testTime}},
 	},
 }
 

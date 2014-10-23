@@ -16,10 +16,11 @@ package redis_test
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/hongzhen/redigo/redis"
 )
 
 func ExampleScript(c redis.Conn, reply interface{}, err error) {
