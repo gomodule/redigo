@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/garyburd/redigo/redis"
+	"github.com/hongzhen/redigo/redis"
 )
 
 var writeTests = []struct {

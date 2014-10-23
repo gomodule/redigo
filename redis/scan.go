@@ -15,6 +15,7 @@
 package redis
 
 import (
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"reflect"
@@ -62,6 +63,19 @@ func convertAssignBytes(d reflect.Value, s []byte) (err error) {
 		} else {
 			d.SetBytes(s)
 		}
+	case reflect.Struct:
+		if buf := []byte(s); len(buf) == 0 {
+			err = nil
+			return
+		} else if d.CanAddr() {
+			if dc, ok := d.Addr().Interface().(gob.GobDecoder); ok {
+				if err = dc.GobDecode(buf); err == nil {
+					return nil
+				}
+			}
+		}
+
+		err = cannotConvert(d, s)
 	default:
 		err = cannotConvert(d, s)
 	}
@@ -366,6 +380,7 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 		if fs == nil {
 			continue
 		}
+
 		if err := convertAssignValue(d.FieldByIndex(fs.index), s); err != nil {
 			return err
 		}
@@ -507,6 +522,14 @@ func flattenStruct(args Args, v reflect.Value) Args {
 	ss := structSpecForType(v.Type())
 	for _, fs := range ss.l {
 		fv := v.FieldByIndex(fs.index)
+		if fv.CanAddr() {
+			if ec, ok := fv.Addr().Interface().(gob.GobEncoder); ok {
+				if buf, err := ec.GobEncode(); err == nil {
+					args = append(args, fs.name, buf)
+					return args
+				}
+			}
+		}
 		args = append(args, fs.name, fv.Interface())
 	}
 	return args

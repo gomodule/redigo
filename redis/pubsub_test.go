@@ -16,12 +16,13 @@ package redis_test
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 	"net"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/hongzhen/redigo/redis"
 )
 
 func publish(channel, value interface{}) {
