@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/garyburd/redigo/internal/redistest"
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -92,7 +93,7 @@ func TestReply(t *testing.T) {
 
 // dial wraps DialTestDB() with a more suitable function name for examples.
 func dial() (redis.Conn, error) {
-	return redis.DialTestDB()
+	return redistest.Dial()
 }
 
 func ExampleBool() {

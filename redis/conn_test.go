@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/garyburd/redigo/internal/redistest"
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -221,7 +222,7 @@ var testCommands = []struct {
 }
 
 func TestDoCommands(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -240,7 +241,7 @@ func TestDoCommands(t *testing.T) {
 }
 
 func TestPipelineCommands(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -266,7 +267,7 @@ func TestPipelineCommands(t *testing.T) {
 }
 
 func TestBlankCommmand(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -293,7 +294,7 @@ func TestBlankCommmand(t *testing.T) {
 }
 
 func TestRecvBeforeSend(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -314,7 +315,7 @@ func TestRecvBeforeSend(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -399,7 +400,7 @@ func ExampleDial(x int) {
 // http://redis.io/topics/transactions for information on how Redis handles
 // errors in a transaction.
 func TestExecError(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -477,7 +478,7 @@ func TestExecError(t *testing.T) {
 
 func BenchmarkDoEmpty(b *testing.B) {
 	b.StopTimer()
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -492,7 +493,7 @@ func BenchmarkDoEmpty(b *testing.B) {
 
 func BenchmarkDoPing(b *testing.B) {
 	b.StopTimer()
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		b.Fatal(err)
 	}
