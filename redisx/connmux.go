@@ -134,7 +134,7 @@ func (c *muxConn) Close() error {
 		return nil
 	}
 	c.Flush()
-	for range c.ids {
+	for _ = range c.ids {
 		_, err = c.Receive()
 	}
 	return err
