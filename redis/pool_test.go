@@ -16,9 +16,7 @@ package redis_test
 
 import (
 	"io"
-	"net/textproto"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
