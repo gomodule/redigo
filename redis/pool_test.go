@@ -15,6 +15,7 @@
 package redis_test
 
 import (
+	"errors"
 	"io"
 	"reflect"
 	"testing"
@@ -36,6 +37,7 @@ func (c *poolTestConn) Err() error   { return c.err }
 func (c *poolTestConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	if commandName == "ERR" {
 		c.err = args[0].(error)
+		commandName = "PING"
 	}
 	if commandName != "" {
 		c.d.commands = append(c.d.commands, commandName)
@@ -49,18 +51,23 @@ func (c *poolTestConn) Send(commandName string, args ...interface{}) error {
 }
 
 type poolDialer struct {
-	t            *testing.T
-	dialed, open int
-	commands     []string
+	t        *testing.T
+	dialed   int
+	open     int
+	commands []string
+	dialErr  error
 }
 
 func (d *poolDialer) dial() (redis.Conn, error) {
-	d.open += 1
 	d.dialed += 1
+	if d.dialErr != nil {
+		return nil, d.dialErr
+	}
 	c, err := redistest.Dial()
 	if err != nil {
 		return nil, err
 	}
+	d.open += 1
 	return &poolTestConn{d: d, Conn: c}, nil
 }
 
@@ -400,6 +407,155 @@ func TestPoolTransactionCleanup(t *testing.T) {
 	d.commands = nil
 
 	p.Close()
+}
+
+func startGoroutines(p *redis.Pool, cmd string, args ...interface{}) chan error {
+	errs := make(chan error, 10)
+	for i := 0; i < cap(errs); i++ {
+		go func() {
+			c := p.Get()
+			_, err := c.Do(cmd, args...)
+			errs <- err
+			c.Close()
+		}()
+	}
+
+	// Wait for goroutines to block.
+	time.Sleep(time.Second / 4)
+
+	return errs
+}
+
+func TestWaitPool(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   1,
+		MaxActive: 1,
+		Dial:      d.dial,
+		Wait:      true,
+	}
+	defer p.Close()
+	c := p.Get()
+	errs := startGoroutines(p, "PING")
+	d.check("before close", p, 1, 1)
+	c.Close()
+	timeout := time.After(2 * time.Second)
+	for i := 0; i < cap(errs); i++ {
+		select {
+		case err := <-errs:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for blocked goroutine %d", i)
+		}
+	}
+	d.check("done", p, 1, 1)
+}
+
+func TestWaitPoolClose(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   1,
+		MaxActive: 1,
+		Dial:      d.dial,
+		Wait:      true,
+	}
+	c := p.Get()
+	if _, err := c.Do("PING"); err != nil {
+		t.Fatal(err)
+	}
+	errs := startGoroutines(p, "PING")
+	d.check("before close", p, 1, 1)
+	p.Close()
+	timeout := time.After(2 * time.Second)
+	for i := 0; i < cap(errs); i++ {
+		select {
+		case err := <-errs:
+			switch err {
+			case nil:
+				t.Fatal("blocked goroutine did not get error")
+			case redis.ErrPoolExhausted:
+				t.Fatal("blocked goroutine got pool exhausted error")
+			}
+		case <-timeout:
+			t.Fatal("timeout waiting for blocked goroutine")
+		}
+	}
+	c.Close()
+	d.check("done", p, 1, 0)
+}
+
+func TestWaitPoolCommandError(t *testing.T) {
+	testErr := errors.New("test")
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   1,
+		MaxActive: 1,
+		Dial:      d.dial,
+		Wait:      true,
+	}
+	defer p.Close()
+	c := p.Get()
+	errs := startGoroutines(p, "ERR", testErr)
+	d.check("before close", p, 1, 1)
+	c.Close()
+	timeout := time.After(2 * time.Second)
+	for i := 0; i < cap(errs); i++ {
+		select {
+		case err := <-errs:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for blocked goroutine %d", i)
+		}
+	}
+	d.check("done", p, cap(errs), 0)
+}
+
+func TestWaitPoolDialError(t *testing.T) {
+	testErr := errors.New("test")
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   1,
+		MaxActive: 1,
+		Dial:      d.dial,
+		Wait:      true,
+	}
+	defer p.Close()
+	c := p.Get()
+	errs := startGoroutines(p, "ERR", testErr)
+	d.check("before close", p, 1, 1)
+
+	d.dialErr = errors.New("dial")
+	c.Close()
+
+	nilCount := 0
+	errCount := 0
+	timeout := time.After(2 * time.Second)
+	for i := 0; i < cap(errs); i++ {
+		select {
+		case err := <-errs:
+			switch err {
+			case nil:
+				nilCount++
+			case d.dialErr:
+				errCount++
+			default:
+				t.Fatalf("expected dial error or nil, got %v", err)
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for blocked goroutine %d", i)
+		}
+	}
+	if nilCount != 1 {
+		t.Errorf("expected one nil error, got %d", nilCount)
+	}
+	if errCount != cap(errs)-1 {
+		t.Errorf("expected %d dial erors, got %d", cap(errs)-1, errCount)
+	}
+	d.check("done", p, cap(errs), 0)
 }
 
 func BenchmarkPoolGet(b *testing.B) {

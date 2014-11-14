@@ -116,8 +116,13 @@ type Pool struct {
 	// the timeout to a value less than the server's timeout.
 	IdleTimeout time.Duration
 
+	// If Wait is true and the pool is at the MaxIdle limit, then Get() waits
+	// for a connection to be returned to the pool before returning.
+	Wait bool
+
 	// mu protects fields defined below.
 	mu     sync.Mutex
+	cond   *sync.Cond
 	closed bool
 	active int
 
@@ -164,6 +169,9 @@ func (p *Pool) Close() error {
 	p.idle.Init()
 	p.closed = true
 	p.active -= idle.Len()
+	if p.cond != nil {
+		p.cond.Broadcast()
+	}
 	p.mu.Unlock()
 	for e := idle.Front(); e != nil; e = e.Next() {
 		e.Value.(idleConn).c.Close()
@@ -171,15 +179,19 @@ func (p *Pool) Close() error {
 	return nil
 }
 
+// release decrements the active count and signals waiters. The caller must
+// hold p.mu during the call.
+func (p *Pool) release() {
+	p.active -= 1
+	if p.cond != nil {
+		p.cond.Signal()
+	}
+}
+
 // get prunes stale connections and returns a connection from the idle list or
 // creates a new connection.
 func (p *Pool) get() (Conn, error) {
 	p.mu.Lock()
-
-	if p.closed {
-		p.mu.Unlock()
-		return nil, errors.New("redigo: get on closed pool")
-	}
 
 	// Prune stale connections.
 
@@ -194,72 +206,92 @@ func (p *Pool) get() (Conn, error) {
 				break
 			}
 			p.idle.Remove(e)
-			p.active -= 1
+			p.release()
 			p.mu.Unlock()
 			ic.c.Close()
 			p.mu.Lock()
 		}
 	}
 
-	// Get idle connection.
+	for {
 
-	for i, n := 0, p.idle.Len(); i < n; i++ {
-		e := p.idle.Front()
-		if e == nil {
-			break
+		// Get idle connection.
+
+		for i, n := 0, p.idle.Len(); i < n; i++ {
+			e := p.idle.Front()
+			if e == nil {
+				break
+			}
+			ic := e.Value.(idleConn)
+			p.idle.Remove(e)
+			test := p.TestOnBorrow
+			p.mu.Unlock()
+			if test == nil || test(ic.c, ic.t) == nil {
+				return ic.c, nil
+			}
+			ic.c.Close()
+			p.mu.Lock()
+			p.release()
 		}
-		ic := e.Value.(idleConn)
-		p.idle.Remove(e)
-		test := p.TestOnBorrow
-		p.mu.Unlock()
-		if test == nil || test(ic.c, ic.t) == nil {
-			return ic.c, nil
+
+		// Check for pool closed before dialing a new connection.
+
+		if p.closed {
+			p.mu.Unlock()
+			return nil, errors.New("redigo: get on closed pool")
 		}
-		ic.c.Close()
-		p.mu.Lock()
-		p.active -= 1
-	}
 
-	if p.MaxActive > 0 && p.active >= p.MaxActive {
-		p.mu.Unlock()
-		return nil, ErrPoolExhausted
-	}
+		// Dial new connection if under limit.
 
-	// No idle connection, create new.
+		if p.MaxActive == 0 || p.active < p.MaxActive {
+			dial := p.Dial
+			p.active += 1
+			p.mu.Unlock()
+			c, err := dial()
+			if err != nil {
+				p.mu.Lock()
+				p.release()
+				p.mu.Unlock()
+				c = nil
+			}
+			return c, err
+		}
 
-	dial := p.Dial
-	p.active += 1
-	p.mu.Unlock()
-	c, err := dial()
-	if err != nil {
-		p.mu.Lock()
-		p.active -= 1
-		p.mu.Unlock()
-		c = nil
+		if !p.Wait {
+			p.mu.Unlock()
+			return nil, ErrPoolExhausted
+		}
+
+		if p.cond == nil {
+			p.cond = sync.NewCond(&p.mu)
+		}
+		p.cond.Wait()
 	}
-	return c, err
 }
 
 func (p *Pool) put(c Conn, forceClose bool) error {
-	if c.Err() == nil && !forceClose {
-		p.mu.Lock()
-		if !p.closed {
-			p.idle.PushFront(idleConn{t: nowFunc(), c: c})
-			if p.idle.Len() > p.MaxIdle {
-				c = p.idle.Remove(p.idle.Back()).(idleConn).c
-			} else {
-				c = nil
-			}
+	err := c.Err()
+	p.mu.Lock()
+	if !p.closed && err == nil && !forceClose {
+		p.idle.PushFront(idleConn{t: nowFunc(), c: c})
+		if p.idle.Len() > p.MaxIdle {
+			c = p.idle.Remove(p.idle.Back()).(idleConn).c
+		} else {
+			c = nil
+		}
+	}
+
+	if c == nil {
+		if p.cond != nil {
+			p.cond.Signal()
 		}
 		p.mu.Unlock()
+		return nil
 	}
-	if c != nil {
-		p.mu.Lock()
-		p.active -= 1
-		p.mu.Unlock()
-		return c.Close()
-	}
-	return nil
+
+	p.release()
+	p.mu.Unlock()
+	return c.Close()
 }
 
 type pooledConnection struct {
