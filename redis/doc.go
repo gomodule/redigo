@@ -128,7 +128,7 @@
 // send and flush a subscription management command. The receive method
 // converts a pushed message to convenient types for use in a type switch.
 //
-//  psc := PubSubConn{c}
+//  psc := redis.PubSubConn{c}
 //  psc.Subscribe("example")
 //  for {
 //      switch v := psc.Receive().(type) {
