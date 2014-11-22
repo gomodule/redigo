@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -556,6 +557,66 @@ func TestWaitPoolDialError(t *testing.T) {
 		t.Errorf("expected %d dial erors, got %d", cap(errs)-1, errCount)
 	}
 	d.check("done", p, cap(errs), 0)
+}
+
+// Borrowing requires us to iterate over the idle connections, unlock the pool,
+// and perform a blocking operation to check the connection still works. If
+// TestOnBorrow fails, we must reacquire the lock and continue iteration. This
+// test ensures that iteration will work correctly if multiple threads are
+// iterating simultaneously.
+func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
+        count := 100
+
+        // First we'll Create a pool where the pilfering of idle connections fails.
+        d := poolDialer{t: t}
+        p := &redis.Pool{
+                MaxIdle:   count,
+                MaxActive: count,
+                Dial:      d.dial,
+                TestOnBorrow: func(c redis.Conn, t time.Time) error {
+                        return errors.New("No way back into the real world.")
+                },
+        }
+        defer p.Close()
+
+        // Fill the pool with idle connections.
+        b1 := sync.WaitGroup{}
+        b1.Add(count)
+        b2 := sync.WaitGroup{}
+        b2.Add(count)
+        for i := 0; i < count; i++ {
+                go func() {
+                        c := p.Get()
+                        if c.Err() != nil {
+                                t.Errorf("pool get failed: %v", c.Err())
+                        }
+                        b1.Done()
+                        b1.Wait()
+                        c.Close()
+                        b2.Done()
+                }()
+        }
+        b2.Wait()
+        if d.dialed != count {
+                t.Errorf("Expected %d dials, got %d", count, d.dialed)
+        }
+
+	// Spawn a bunch of goroutines to thrash the pool.                                                                                                                                           
+	b2.Add(count)
+	for i := 0; i < count; i++ {
+		go func() {
+			c := p.Get()
+			if c.Err() != nil {
+				t.Errorf("pool get failed: %v", c.Err())
+			}
+			c.Close()
+			b2.Done()
+		}()
+	}
+	b2.Wait()
+	if d.dialed != count*2 {
+		t.Errorf("Expected %d dials, got %d", count*2, d.dialed)
+	}
 }
 
 func BenchmarkPoolGet(b *testing.B) {
