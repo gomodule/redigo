@@ -53,27 +53,54 @@ type conn struct {
 
 // Dial connects to the Redis server at the given network and address.
 func Dial(network, address string) (Conn, error) {
-	c, err := net.Dial(network, address)
-	if err != nil {
-		return nil, err
-	}
-	return NewConn(c, 0, 0), nil
+	dialer := Dialer{}
+	return dialer.Dial(network, address)
 }
 
 // DialTimeout acts like Dial but takes timeouts for establishing the
 // connection to the server, writing a command and reading a reply.
 func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration) (Conn, error) {
-	var c net.Conn
-	var err error
-	if connectTimeout > 0 {
-		c, err = net.DialTimeout(network, address, connectTimeout)
-	} else {
-		c, err = net.Dial(network, address)
+	netDialer := net.Dialer{Timeout: connectTimeout}
+	dialer := Dialer{
+		NetDial:      netDialer.Dial,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
 	}
+	return dialer.Dial(network, address)
+}
+
+// A Dialer specifies options for connecting to a Redis server.
+type Dialer struct {
+	// NetDial specifies the dial function for creating TCP connections. If
+	// NetDial is nil, then net.Dial is used.
+	NetDial func(network, addr string) (net.Conn, error)
+
+	// ReadTimeout specifies the timeout for reading a single command
+	// reply. If ReadTimeout is zero, then no timeout is used.
+	ReadTimeout time.Duration
+
+	// WriteTimeout specifies the timeout for writing a single command.  If
+	// WriteTimeout is zero, then no timeout is used.
+	WriteTimeout time.Duration
+}
+
+// Dial connects to the Redis server at address on the named network.
+func (d *Dialer) Dial(network, address string) (Conn, error) {
+	dial := d.NetDial
+	if dial == nil {
+		dial = net.Dial
+	}
+	netConn, err := dial(network, address)
 	if err != nil {
 		return nil, err
 	}
-	return NewConn(c, readTimeout, writeTimeout), nil
+	return &conn{
+		conn:         netConn,
+		bw:           bufio.NewWriter(netConn),
+		br:           bufio.NewReader(netConn),
+		readTimeout:  d.ReadTimeout,
+		writeTimeout: d.WriteTimeout,
+	}, nil
 }
 
 // NewConn returns a new Redigo connection for the given net connection.
