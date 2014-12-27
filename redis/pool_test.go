@@ -565,43 +565,43 @@ func TestWaitPoolDialError(t *testing.T) {
 // test ensures that iteration will work correctly if multiple threads are
 // iterating simultaneously.
 func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
-        count := 100
+	count := 100
 
-        // First we'll Create a pool where the pilfering of idle connections fails.
-        d := poolDialer{t: t}
-        p := &redis.Pool{
-                MaxIdle:   count,
-                MaxActive: count,
-                Dial:      d.dial,
-                TestOnBorrow: func(c redis.Conn, t time.Time) error {
-                        return errors.New("No way back into the real world.")
-                },
-        }
-        defer p.Close()
+	// First we'll Create a pool where the pilfering of idle connections fails.
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   count,
+		MaxActive: count,
+		Dial:      d.dial,
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			return errors.New("No way back into the real world.")
+		},
+	}
+	defer p.Close()
 
-        // Fill the pool with idle connections.
-        b1 := sync.WaitGroup{}
-        b1.Add(count)
-        b2 := sync.WaitGroup{}
-        b2.Add(count)
-        for i := 0; i < count; i++ {
-                go func() {
-                        c := p.Get()
-                        if c.Err() != nil {
-                                t.Errorf("pool get failed: %v", c.Err())
-                        }
-                        b1.Done()
-                        b1.Wait()
-                        c.Close()
-                        b2.Done()
-                }()
-        }
-        b2.Wait()
-        if d.dialed != count {
-                t.Errorf("Expected %d dials, got %d", count, d.dialed)
-        }
+	// Fill the pool with idle connections.
+	b1 := sync.WaitGroup{}
+	b1.Add(count)
+	b2 := sync.WaitGroup{}
+	b2.Add(count)
+	for i := 0; i < count; i++ {
+		go func() {
+			c := p.Get()
+			if c.Err() != nil {
+				t.Errorf("pool get failed: %v", c.Err())
+			}
+			b1.Done()
+			b1.Wait()
+			c.Close()
+			b2.Done()
+		}()
+	}
+	b2.Wait()
+	if d.dialed != count {
+		t.Errorf("Expected %d dials, got %d", count, d.dialed)
+	}
 
-	// Spawn a bunch of goroutines to thrash the pool.                                                                                                                                           
+	// Spawn a bunch of goroutines to thrash the pool.
 	b2.Add(count)
 	for i := 0; i < count; i++ {
 		go func() {
