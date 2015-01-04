@@ -53,7 +53,7 @@ type conn struct {
 
 // Dial connects to the Redis server at the given network and address.
 func Dial(network, address string) (Conn, error) {
-	dialer := Dialer{}
+	dialer := xDialer{}
 	return dialer.Dial(network, address)
 }
 
@@ -61,7 +61,7 @@ func Dial(network, address string) (Conn, error) {
 // connection to the server, writing a command and reading a reply.
 func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration) (Conn, error) {
 	netDialer := net.Dialer{Timeout: connectTimeout}
-	dialer := Dialer{
+	dialer := xDialer{
 		NetDial:      netDialer.Dial,
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
@@ -70,7 +70,7 @@ func DialTimeout(network, address string, connectTimeout, readTimeout, writeTime
 }
 
 // A Dialer specifies options for connecting to a Redis server.
-type Dialer struct {
+type xDialer struct {
 	// NetDial specifies the dial function for creating TCP connections. If
 	// NetDial is nil, then net.Dial is used.
 	NetDial func(network, addr string) (net.Conn, error)
@@ -85,7 +85,7 @@ type Dialer struct {
 }
 
 // Dial connects to the Redis server at address on the named network.
-func (d *Dialer) Dial(network, address string) (Conn, error) {
+func (d *xDialer) Dial(network, address string) (Conn, error) {
 	dial := d.NetDial
 	if dial == nil {
 		dial = net.Dial
