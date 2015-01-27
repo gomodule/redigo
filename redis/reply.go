@@ -270,3 +270,20 @@ func Strings(reply interface{}, err error) ([]string, error) {
 	}
 	return nil, fmt.Errorf("redigo: unexpected type for Strings, got type %T", reply)
 }
+
+// Ints is a helper that converts an array command reply to a []int. If
+// err is not equal to nil, then Ints returns nil, err.
+func Ints(reply interface{}, err error) ([]int, error) {
+	var ints []int
+	if reply == nil {
+		return ints, ErrNil
+	}
+	values, err := Values(reply, err)
+	if err != nil {
+		return ints, err
+	}
+	if err := ScanSlice(values, &ints); err != nil {
+		return ints, err
+	}
+	return ints, nil
+}
