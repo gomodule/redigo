@@ -287,3 +287,26 @@ func Ints(reply interface{}, err error) ([]int, error) {
 	}
 	return ints, nil
 }
+
+// StringMap is a helper that converts an array of strings (alternating key, value)
+// into a map[string]string. The HGETALL and CONFIG GET commands return replies in this format.
+// Requires an even number of values in result.
+func StringMap(result interface{}, err error) (map[string]string, error) {
+	values, err := Values(result, err)
+	if err != nil {
+		return nil, err
+	}
+	if len(values)%2 != 0 {
+		return nil, errors.New("redigo: StringMap expects even number of values result")
+	}
+	m := make(map[string]string, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		key, okKey := values[i].([]byte)
+		value, okValue := values[i+1].([]byte)
+		if !okKey || !okValue {
+			return nil, errors.New("redigo: ScanMap key not a bulk string value")
+		}
+		m[string(key)] = string(value)
+	}
+	return m, nil
+}
