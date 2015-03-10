@@ -1,6 +1,8 @@
 Redigo
 ======
 
+[![Join the chat at https://gitter.im/garyburd/redigo](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/garyburd/redigo?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) database.
 
 Features
