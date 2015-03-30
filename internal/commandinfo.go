@@ -12,34 +12,34 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package redis
+package internal // import "github.com/garyburd/redigo/internal"
 
 import (
 	"strings"
 )
 
 const (
-	watchState = 1 << iota
-	multiState
-	subscribeState
-	monitorState
+	WatchState = 1 << iota
+	MultiState
+	SubscribeState
+	MonitorState
 )
 
-type commandInfo struct {
-	set, clear int
+type CommandInfo struct {
+	Set, Clear int
 }
 
-var commandInfos = map[string]commandInfo{
-	"WATCH":      commandInfo{set: watchState},
-	"UNWATCH":    commandInfo{clear: watchState},
-	"MULTI":      commandInfo{set: multiState},
-	"EXEC":       commandInfo{clear: watchState | multiState},
-	"DISCARD":    commandInfo{clear: watchState | multiState},
-	"PSUBSCRIBE": commandInfo{set: subscribeState},
-	"SUBSCRIBE":  commandInfo{set: subscribeState},
-	"MONITOR":    commandInfo{set: monitorState},
+var commandInfos = map[string]CommandInfo{
+	"WATCH":      {Set: WatchState},
+	"UNWATCH":    {Clear: WatchState},
+	"MULTI":      {Set: MultiState},
+	"EXEC":       {Clear: WatchState | MultiState},
+	"DISCARD":    {Clear: WatchState | MultiState},
+	"PSUBSCRIBE": {Set: SubscribeState},
+	"SUBSCRIBE":  {Set: SubscribeState},
+	"MONITOR":    {Set: MonitorState},
 }
 
-func lookupCommandInfo(commandName string) commandInfo {
+func LookupCommandInfo(commandName string) CommandInfo {
 	return commandInfos[strings.ToUpper(commandName)]
 }

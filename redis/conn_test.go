@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/garyburd/redigo/internal/redistest"
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -32,36 +33,40 @@ var writeTests = []struct {
 	expected string
 }{
 	{
-		[]interface{}{"SET", "foo", "bar"},
-		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n",
+		[]interface{}{"SET", "key", "value"},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
 	},
 	{
-		[]interface{}{"SET", "foo", "bar"},
-		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n",
+		[]interface{}{"SET", "key", "value"},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
 	},
 	{
-		[]interface{}{"SET", "foo", byte(100)},
-		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n100\r\n",
+		[]interface{}{"SET", "key", byte(100)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$3\r\n100\r\n",
 	},
 	{
-		[]interface{}{"SET", "foo", 100},
-		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n100\r\n",
+		[]interface{}{"SET", "key", 100},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$3\r\n100\r\n",
 	},
 	{
-		[]interface{}{"SET", "foo", int64(math.MinInt64)},
-		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$20\r\n-9223372036854775808\r\n",
+		[]interface{}{"SET", "key", int64(math.MinInt64)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$20\r\n-9223372036854775808\r\n",
 	},
 	{
-		[]interface{}{"SET", "foo", float64(1349673917.939762)},
-		"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$21\r\n1.349673917939762e+09\r\n",
+		[]interface{}{"SET", "key", float64(1349673917.939762)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$21\r\n1.349673917939762e+09\r\n",
 	},
 	{
-		[]interface{}{"SET", "", []byte("foo")},
-		"*3\r\n$3\r\nSET\r\n$0\r\n\r\n$3\r\nfoo\r\n",
+		[]interface{}{"SET", "key", ""},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$0\r\n\r\n",
 	},
 	{
-		[]interface{}{"SET", nil, []byte("foo")},
-		"*3\r\n$3\r\nSET\r\n$0\r\n\r\n$3\r\nfoo\r\n",
+		[]interface{}{"SET", "key", nil},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$0\r\n\r\n",
+	},
+	{
+		[]interface{}{"ECHO", true, false},
+		"*3\r\n$4\r\nECHO\r\n$1\r\n1\r\n$1\r\n0\r\n",
 	},
 }
 
@@ -132,6 +137,37 @@ var readTests = []struct {
 	{
 		"*3\r\n$3\r\nfoo\r\n$-1\r\n$3\r\nbar\r\n",
 		[]interface{}{[]byte("foo"), nil, []byte("bar")},
+	},
+
+	{
+		// "x" is not a valid length
+		"$x\r\nfoobar\r\n",
+		errorSentinel,
+	},
+	{
+		// -2 is not a valid length
+		"$-2\r\n",
+		errorSentinel,
+	},
+	{
+		// "x"  is not a valid integer
+		":x\r\n",
+		errorSentinel,
+	},
+	{
+		// missing \r\n following value
+		"$6\r\nfoobar",
+		errorSentinel,
+	},
+	{
+		// short value
+		"$6\r\nxx",
+		errorSentinel,
+	},
+	{
+		// long value
+		"$6\r\nfoobarx\r\n",
+		errorSentinel,
 	},
 }
 
@@ -221,7 +257,7 @@ var testCommands = []struct {
 }
 
 func TestDoCommands(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -240,7 +276,7 @@ func TestDoCommands(t *testing.T) {
 }
 
 func TestPipelineCommands(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -266,7 +302,7 @@ func TestPipelineCommands(t *testing.T) {
 }
 
 func TestBlankCommmand(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -292,8 +328,29 @@ func TestBlankCommmand(t *testing.T) {
 	}
 }
 
+func TestRecvBeforeSend(t *testing.T) {
+	c, err := redistest.Dial()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	defer c.Close()
+	done := make(chan struct{})
+	go func() {
+		c.Receive()
+		close(done)
+	}()
+	time.Sleep(time.Millisecond)
+	c.Send("PING")
+	c.Flush()
+	<-done
+	_, err = c.Do("")
+	if err != nil {
+		t.Fatalf("error=%v", err)
+	}
+}
+
 func TestError(t *testing.T) {
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
 	}
@@ -374,9 +431,89 @@ func ExampleDial(x int) {
 	defer c.Close()
 }
 
+// TextExecError tests handling of errors in a transaction. See
+// http://redis.io/topics/transactions for information on how Redis handles
+// errors in a transaction.
+func TestExecError(t *testing.T) {
+	c, err := redistest.Dial()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	defer c.Close()
+
+	// Execute commands that fail before EXEC is called.
+
+	c.Do("ZADD", "k0", 0, 0)
+	c.Send("MULTI")
+	c.Send("NOTACOMMAND", "k0", 0, 0)
+	c.Send("ZINCRBY", "k0", 0, 0)
+	v, err := c.Do("EXEC")
+	if err == nil {
+		t.Fatalf("EXEC returned values %v, expected error", v)
+	}
+
+	// Execute commands that fail after EXEC is called. The first command
+	// returns an error.
+
+	c.Do("ZADD", "k1", 0, 0)
+	c.Send("MULTI")
+	c.Send("HSET", "k1", 0, 0)
+	c.Send("ZINCRBY", "k1", 0, 0)
+	v, err = c.Do("EXEC")
+	if err != nil {
+		t.Fatalf("EXEC returned error %v", err)
+	}
+
+	vs, err := redis.Values(v, nil)
+	if err != nil {
+		t.Fatalf("Values(v) returned error %v", err)
+	}
+
+	if len(vs) != 2 {
+		t.Fatalf("len(vs) == %d, want 2", len(vs))
+	}
+
+	if _, ok := vs[0].(error); !ok {
+		t.Fatalf("first result is type %T, expected error", vs[0])
+	}
+
+	if _, ok := vs[1].([]byte); !ok {
+		t.Fatalf("second result is type %T, expected []byte", vs[2])
+	}
+
+	// Execute commands that fail after EXEC is called. The second command
+	// returns an error.
+
+	c.Do("ZADD", "k2", 0, 0)
+	c.Send("MULTI")
+	c.Send("ZINCRBY", "k2", 0, 0)
+	c.Send("HSET", "k2", 0, 0)
+	v, err = c.Do("EXEC")
+	if err != nil {
+		t.Fatalf("EXEC returned error %v", err)
+	}
+
+	vs, err = redis.Values(v, nil)
+	if err != nil {
+		t.Fatalf("Values(v) returned error %v", err)
+	}
+
+	if len(vs) != 2 {
+		t.Fatalf("len(vs) == %d, want 2", len(vs))
+	}
+
+	if _, ok := vs[0].([]byte); !ok {
+		t.Fatalf("first result is type %T, expected []byte", vs[0])
+	}
+
+	if _, ok := vs[1].(error); !ok {
+		t.Fatalf("second result is type %T, expected error", vs[2])
+	}
+}
+
 func BenchmarkDoEmpty(b *testing.B) {
 	b.StopTimer()
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -391,7 +528,7 @@ func BenchmarkDoEmpty(b *testing.B) {
 
 func BenchmarkDoPing(b *testing.B) {
 	b.StopTimer()
-	c, err := redis.DialTestDB()
+	c, err := redistest.Dial()
 	if err != nil {
 		b.Fatal(err)
 	}

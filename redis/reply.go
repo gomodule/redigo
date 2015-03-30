@@ -242,8 +242,9 @@ func Values(reply interface{}, err error) ([]interface{}, error) {
 }
 
 // Strings is a helper that converts an array command reply to a []string. If
-// err is not equal to nil, then Strings returns nil, err. If one of the array
-// items is not a bulk string or nil, then Strings returns an error.
+// err is not equal to nil, then Strings returns nil, err. Nil array items are
+// converted to "" in the output slice. Strings returns an error if an array
+// item is not a bulk string or nil.
 func Strings(reply interface{}, err error) ([]string, error) {
 	if err != nil {
 		return nil, err
@@ -268,4 +269,44 @@ func Strings(reply interface{}, err error) ([]string, error) {
 		return nil, reply
 	}
 	return nil, fmt.Errorf("redigo: unexpected type for Strings, got type %T", reply)
+}
+
+// Ints is a helper that converts an array command reply to a []int. If
+// err is not equal to nil, then Ints returns nil, err.
+func Ints(reply interface{}, err error) ([]int, error) {
+	var ints []int
+	if reply == nil {
+		return ints, ErrNil
+	}
+	values, err := Values(reply, err)
+	if err != nil {
+		return ints, err
+	}
+	if err := ScanSlice(values, &ints); err != nil {
+		return ints, err
+	}
+	return ints, nil
+}
+
+// StringMap is a helper that converts an array of strings (alternating key, value)
+// into a map[string]string. The HGETALL and CONFIG GET commands return replies in this format.
+// Requires an even number of values in result.
+func StringMap(result interface{}, err error) (map[string]string, error) {
+	values, err := Values(result, err)
+	if err != nil {
+		return nil, err
+	}
+	if len(values)%2 != 0 {
+		return nil, errors.New("redigo: StringMap expects even number of values result")
+	}
+	m := make(map[string]string, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		key, okKey := values[i].([]byte)
+		value, okValue := values[i+1].([]byte)
+		if !okKey || !okValue {
+			return nil, errors.New("redigo: ScanMap key not a bulk string value")
+		}
+		m[string(key)] = string(value)
+	}
+	return m, nil
 }
