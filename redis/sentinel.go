@@ -131,6 +131,6 @@ func (sc *SentinelClient) do(addrs []string, cmd string, args ...interface{}) (i
 // QueryConfForMaster looks up the configuration for a named monitored instance set
 // and returns the master's configuration.
 func (sc *SentinelClient) QueryConfForMaster(name string) (string, error) {
-  res, err := String(sc.Do("SENTINEL", "get-master-addr-by-name", name))
+  res, err := Strings(sc.Do("SENTINEL", "get-master-addr-by-name", name))
   return res, err
 }
