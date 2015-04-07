@@ -137,37 +137,21 @@ func (sc *SentinelClient) QueryConfForMaster(name string) (string, error) {
   return masterAddr, err
 }
 
-type SlaveDef struct {
-  Name  string
-  IP    string
-  Port  uint16
-  Runid string
-  Flags string
-  PendingCommands int
-  LastPingSent  int
-  LastOkPingReply int
-  LastPingReply int
-  DownAfterMilliseconds int
-  InfoRefresh int
-  RoleReported string
-  RoleReportedTime int
-  MasterLinkDownTime int
-  MasterLinkStatus string
-  MasterHost string
-  MasterPort uint16
-  SlavePriority int
-  SlaveReplOffset int
-}
-
 // QueryConfForSlaves looks up the configuration for a named monitored instance set
 // and returns all the slaves.
-func (sc *SentinelClient) QueryConfForSlaves(name string) ([]SlaveDef, error) {
-  res, err := sc.Do("SENTINEL", "slaves", name)
+func (sc *SentinelClient) QueryConfForSlaves(name string) ([]map[string]string, error) {
+  res, err := Values(sc.Do("SENTINEL", "slaves", name))
   if err != nil {
     return nil, err
   }
-  var slaves []SlaveDef
-  err = ScanSlice(res.([]interface{}), slaves)
+  slaves := make([]map[string]string, 0)
+  for _,a := range(res) {
+    sm, err := StringMap(a, err)
+    if err != nil {
+      return slaves, err
+    }
+    slaves = append(slaves, sm)
+  }
   return slaves, err
 }
 
