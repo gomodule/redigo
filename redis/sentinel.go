@@ -157,7 +157,7 @@ func (sc *SentinelClient) QueryConfForSlaves(name string) ([]map[string]string, 
 
 // A convenience function which formats only the relevant parts of a single slave
 // map[string]string into an address ip:port pair.
-func SlaveAddr(slaveMap map[string]string) {
+func SlaveAddr(slaveMap map[string]string) string {
   return fmt.Sprintf("%s:%s", slaveMap["ip"], slaveMap["port"])
 }
 
