@@ -198,10 +198,12 @@ func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
     index := rand.Int31n(int32(len(slaves)))
     flags := SlaveReadFlags(slaves[index])
     if slaves[index]["master-link-status"] == "ok" && !(flags["disconnected"] || flags["sdown"] || flags["odown"]){
-      return Dial(sc.net, SlaveAddr(slaves[index]))
-    } else {
-      slaves = append(slaves[:index], slaves[index+1:]...)
+      conn, err := Dial(sc.net, SlaveAddr(slaves[index]))
+      if err == nil {
+        return conn, err
+      }
     }
+    slaves = append(slaves[:index], slaves[index+1:]...)
   }
   return nil, errors.New("No connected slaves with active master-link available")
 }
