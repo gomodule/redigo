@@ -161,6 +161,17 @@ func SlaveAddr(slaveMap map[string]string) string {
   return fmt.Sprintf("%s:%s", slaveMap["ip"], slaveMap["port"])
 }
 
+// A convenience function that turns the comma-separated list of string flags
+// into a map[string]bool for easy testing.
+func SlaveReadFlags(slaveMap map[string]string) map[string]bool {
+  keys := strings.Split(slaveMap["flags"], ",")
+  res := make(map[string]bool)
+  for _,k := range(keys) {
+    res[k] = true
+  }
+  return res
+}
+
 // DialMaster returns a connection to the master of the named monitored instance set
 // Assumes the same network will be used to contact the master as the one used for
 // contacting the sentinels.
@@ -175,7 +186,8 @@ func (sc *SentinelClient) DialMaster(name string) (Conn, error) {
 }
 
 // DialSlave returns a connection to a slave. This routine mandates that the slave
-// have an active link to the master, and randomly selects a slave from the list.
+// have an active link to the master, and not be currently flagged as disconnected.
+// Then a slave is randomly selected from the list.
 // To change this behavior, implement a dialer using QueryConfForSlaves.
 func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
   slaves, err := sc.QueryConfForSlaves(name)
@@ -184,13 +196,14 @@ func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
   }
   for len(slaves) > 0 {
     index := rand.Int31n(int32(len(slaves)))
-    if slaves[index]["master-link-status"] == "ok" {
+    flags := SlaveReadFlags(slaves[index])
+    if slaves[index]["master-link-status"] == "ok" && !(flags["disconnected"] || flags["sdown"] || flags["odown"]){
       return Dial(sc.net, SlaveAddr(slaves[index]))
     } else {
       slaves = append(slaves[:index], slaves[index+1:]...)
     }
   }
-  return nil, errors.New("No slaves with active master-link available")
+  return nil, errors.New("No connected slaves with active master-link available")
 }
 
 
