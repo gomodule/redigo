@@ -137,6 +137,40 @@ func (sc *SentinelClient) QueryConfForMaster(name string) (string, error) {
   return masterAddr, err
 }
 
+type SlaveDef struct {
+  Name  string
+  IP    string
+  Port  uint16
+  Runid string
+  Flags string
+  PendingCommands int
+  LastPingSent  int
+  LastOkPingReply int
+  LastPingReply int
+  DownAfterMilliseconds int
+  InfoRefresh int
+  RoleReported string
+  RoleReportedTime int
+  MasterLinkDownTime int
+  MasterLinkStatus string
+  MasterHost string
+  MasterPort uint16
+  SlavePriority int
+  SlaveReplOffset int
+}
+
+// QueryConfForSlaves looks up the configuration for a named monitored instance set
+// and returns all the slaves.
+func (sc *SentinelClient) QueryConfForSlaves(name string) ([]SlaveDef, error) {
+  res, err := sc.Do("SENTINEL", "slaves", name)
+  if err != nil {
+    return nil, err
+  }
+  var slaves []SlaveDef
+  err = ScanSlice(res.([]interface{}), slaves)
+  return slaves, err
+}
+
 // DialMaster returns a connection to the master of the named monitored instance set
 // Assumes the same network will be used to contact the master as the one used for
 // contacting the sentinels.
@@ -149,3 +183,7 @@ func (sc *SentinelClient) DialMaster(name string) (Conn, error) {
 
   return Dial(sc.net, masterAddr)
 }
+
+// DialSlave returns a connection to any slave of the named monitored instance set.
+//func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
+//}
