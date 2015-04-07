@@ -5,6 +5,7 @@ import (
   "fmt"
   "math/rand"
   "time"
+  "strings"
 )
 
 type SentinelClient struct {
@@ -132,5 +133,19 @@ func (sc *SentinelClient) do(addrs []string, cmd string, args ...interface{}) (i
 // and returns the master's configuration.
 func (sc *SentinelClient) QueryConfForMaster(name string) (string, error) {
   res, err := Strings(sc.Do("SENTINEL", "get-master-addr-by-name", name))
-  return res, err
+  masterAddr := strings.Join(res, ":")
+  return masterAddr, err
+}
+
+// DialMaster returns a connection to the master of the named monitored instance set
+// Assumes the same network will be used to contact the master as the one used for
+// contacting the sentinels.
+func (sc *SentinelClient) DialMaster(name string) (Conn, error) {
+  masterAddr, err := sc.QueryConfForMaster(name)
+
+  if err != nil {
+    return nil, err
+  }
+
+  return Dial(sc.net, masterAddr)
 }
