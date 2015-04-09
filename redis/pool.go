@@ -294,6 +294,31 @@ func (p *Pool) put(c Conn, forceClose bool) error {
 	return c.Close()
 }
 
+// The SentinelAwarePool is identical to the normal Pool implementation except
+// the configuration of the monitorered master is retained through a set of
+// methods. Change in this configuration causes a purge of all stored idle
+// connections. 
+// Example: TODO Flesh this out.
+// Dial -> should check master config, update it, then proceed to dial it or
+// DialSlave.
+type SentinelAwarePool struct {
+  Pool
+  MasterAddr string
+  Purge chan bool
+}
+
+func (sap *SentinelAwarePool) UpdateMaster(addr string) {
+  if addr != sap.MasterAddr {
+    sap.MasterAddr = addr
+    go func() {
+      // Once the lock opens up, purge all connections
+      sap.mu.Lock()
+    }
+  }
+}
+
+
+
 type pooledConnection struct {
 	p     *Pool
 	c     Conn
