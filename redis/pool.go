@@ -164,10 +164,16 @@ func (p *Pool) ActiveCount() int {
 
 // Close releases the resources used by the pool.
 func (p *Pool) Close() error {
+	p.closed = true
+  p.closeAll()
+	return nil
+}
+
+// Close all connections.
+func (p *Pool) closeAll() {
 	p.mu.Lock()
 	idle := p.idle
 	p.idle.Init()
-	p.closed = true
 	p.active -= idle.Len()
 	if p.cond != nil {
 		p.cond.Broadcast()
@@ -176,7 +182,6 @@ func (p *Pool) Close() error {
 	for e := idle.Front(); e != nil; e = e.Next() {
 		e.Value.(idleConn).c.Close()
 	}
-	return nil
 }
 
 // release decrements the active count and signals waiters. The caller must
@@ -269,8 +274,15 @@ func (p *Pool) get() (Conn, error) {
 	}
 }
 
+
 func (p *Pool) put(c Conn, forceClose bool) error {
 	err := c.Err()
+  return p.putCommon(err, c, forceClose)
+}
+
+// putCommon contains operations in common with the Pool and the 
+// SentinelAwarePool. 
+func (p *Pool) putCommon(err error, c Conn, forceClose bool) error {
 	p.mu.Lock()
 	if !p.closed && err == nil && !forceClose {
 		p.idle.PushFront(idleConn{t: nowFunc(), c: c})
@@ -295,32 +307,60 @@ func (p *Pool) put(c Conn, forceClose bool) error {
 }
 
 // The SentinelAwarePool is identical to the normal Pool implementation except
-// the configuration of the monitorered master is retained through a set of
-// methods. Change in this configuration causes a purge of all stored idle
-// connections. 
+// the configuration of the monitored master is retained. Change in this 
+// configuration causes a purge of all stored idle connections. 
+// A TestOnReturn function entry point is also supplied. Users are encouraged
+// to put a role test in TestOnReturn to prevent connections that persist 
+// through unexpected role changes without fatal errors from making it back
+// into the pool.
 // Example: TODO Flesh this out.
 // Dial -> should check master config, update it, then proceed to dial it or
 // DialSlave.
+// Active connections will not be impacted by the purge. The user is expected
+// to be aware of this and be able to handle interruptions to the redis 
+// connection in the event of a failover.
 type SentinelAwarePool struct {
   Pool
-  MasterAddr string
-  Purge chan bool
+  // TestOnReturn is a user-supplied function to test a connection before
+  // returning it to the pool. Like TestOnBorrow, TestOnReturn will close the
+  // connection if an error is observed. It is strongly suggested to test the
+  // role of a connection on return, especially if the sentinels in use are
+  // older than 2.8.12.
+  TestOnReturn func(c Conn) error
+
+  masterAddr string
 }
 
 func (sap *SentinelAwarePool) UpdateMaster(addr string) {
-  if addr != sap.MasterAddr {
-    sap.MasterAddr = addr
+  if addr != sap.masterAddr {
+    sap.masterAddr = addr
     go func() {
-      // Once the lock opens up, purge all connections
-      sap.mu.Lock()
-    }
+      sap.closeAll()
+    }()
   }
 }
 
+// Entrypoint for TestOnReturn, any error here causaes the connection to be
+// closed instead of being returned to the pool.
+func (sap *SentinelAwarePool) testConn(c Conn) error {
+  err := c.Err()
+  if err != nil {
+    return err
+  }
+  return sap.TestOnReturn(c)
+}
 
+func (sap *SentinelAwarePool) put(c Conn, forceClose bool) error {
+	err := sap.testConn(c)
+  return sap.putCommon(err, c, forceClose)
+}
+
+type connToPool interface {
+  put (Conn, bool) error
+}
 
 type pooledConnection struct {
-	p     *Pool
+	p     connToPool
 	c     Conn
 	state int
 }
@@ -341,6 +381,7 @@ func initSentinel() {
 		sentinel = h.Sum(nil)
 	}
 }
+
 
 func (pc *pooledConnection) Close() error {
 	c := pc.c
