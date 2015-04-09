@@ -69,7 +69,11 @@ type NoSentinelsLeft struct {
 }
 
 func (ns NoSentinelsLeft) Error() string {
-  return fmt.Sprintf("redigo: no configured sentinels successfully connected; last error: %s", ns.lastError.Error())
+  if ns.lastError != nil {
+    return fmt.Sprintf("redigo: no configured sentinels successfully connected; last error: %s", ns.lastError.Error())
+  } else {
+    return fmt.Sprintf("redigo: no configured sentinels successfully connected.")
+  }
 }
 
 // Dial connects to the sentinel, NOT the members of a monitored instance 
@@ -98,6 +102,7 @@ func (sc *SentinelClient) dial(addrs []string) (error, []string) {
       sc.Conn = conn
       return nil, subSentList
     }
+    lastError = err
   }
 
   return NoSentinelsLeft{lastError : lastErr}, []string{}
