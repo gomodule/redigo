@@ -227,11 +227,12 @@ func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
 // changes.
 func GetRole(c Conn) (string, error) {
   res, err := c.Do("ROLE")
-  if err != nil || len(res) == 0 {
-    return GetReplicationRole(c)
-  } else {
-    return String(res[0]), nil
+
+  rres, ok := res.([]interface{})
+  if err == nil && ok {
+    return String(rres[0], nil)
   }
+  return GetReplicationRole(c)
 }
 
 // Queries the role of a connected redis instance by checking the output of the
