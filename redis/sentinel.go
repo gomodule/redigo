@@ -226,11 +226,11 @@ func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
 // the pool) should involve periodic role testing to protect against unexpected
 // changes.
 func GetRole(c Conn) (string, error) {
-  res, err := Strings(c.Do("ROLE"))
+  res, err := c.Do("ROLE")
   if err != nil || len(res) == 0 {
     return GetReplicationRole(c)
   } else {
-    return res[0], nil
+    return String(res[0]), nil
   }
 }
 
@@ -238,9 +238,10 @@ func GetRole(c Conn) (string, error) {
 // INFO replication section. GetRole should be used if the redis instance
 // is sufficiently new to support it.
 func GetReplicationRole(c Conn) (string, error) {
-  res, err := Strings(c.Do("INFO", "replication"))
+  res, err := String(c.Do("INFO", "replication"))
   if err == nil {
-    for _,s := range(res) {
+    sres := strings.Split(res, "\n")
+    for _,s := range(sres) {
       si := strings.Split(s,":")
       if si[0] == "role" {
         return si[1], nil
