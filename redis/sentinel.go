@@ -241,7 +241,7 @@ func GetRole(c Conn) (string, error) {
 func GetReplicationRole(c Conn) (string, error) {
   res, err := String(c.Do("INFO", "replication"))
   if err == nil {
-    sres := strings.Split(res, "\n")
+    sres := strings.Split(res, "\r\n")
     for _,s := range(sres) {
       si := strings.Split(s,":")
       if si[0] == "role" {
