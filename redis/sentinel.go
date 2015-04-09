@@ -117,7 +117,7 @@ func (sc *SentinelClient) do(addrs []string, cmd string, args ...interface{}) (i
   res, err := sc.Conn.Do(cmd, args...)
   if err != nil && res == nil { // indicates connection error of some sort
     sc.Conn.Close()
-    err, leftovers = sc.dial(addrs)
+    err, leftovers := sc.dial(addrs)
     if err != nil {
       return nil, err
     } else {
