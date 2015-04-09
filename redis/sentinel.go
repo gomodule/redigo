@@ -102,7 +102,7 @@ func (sc *SentinelClient) dial(addrs []string) (error, []string) {
       sc.Conn = conn
       return nil, subSentList
     }
-    lastError = err
+    lastErr = err
   }
 
   return NoSentinelsLeft{lastError : lastErr}, []string{}
@@ -117,7 +117,8 @@ func (sc *SentinelClient) Do(cmd string, args ...interface{}) (interface{}, erro
 
 // A wrapped version of the underlying conn.Do that attempts to restablish
 // the sentinel connection on failure, and tries until all sentinels have
-// been tried.
+// been tried. Note that the most likely scenario is that dial() will exhaust
+// sentinels until a working one is found.
 func (sc *SentinelClient) do(addrs []string, cmd string, args ...interface{}) (interface{}, error) {
   res, err := sc.Conn.Do(cmd, args...)
   if err != nil && res == nil { // indicates connection error of some sort
@@ -218,6 +219,52 @@ func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
     slaves = append(slaves[:index], slaves[index+1:]...)
   }
   return nil, NoSlavesRemaining
+}
+
+// Exposes the Close of the underlying Conn
+func (sc *SentinelClient) Close() error {
+  return sc.Conn.Close()
+}
+
+// Exposes the Err of the underlying Conn
+func (sc *SentinelClient) Err() error {
+  return sc.Conn.Err()
+}
+
+// Recursive Send, like Do, performs a Send() on the underlying Conn, trying
+// all configured sentinels if the current connection fails.
+func (sc *SentinelClient) Send(commandName string, args ...interface{}) error {
+  return sc.send(sc.SentinelAddrs, commandName, args...)
+}
+
+func (sc *SentinelClient) send(addrs []string, commandName string, args ...interface{}) error {
+  err := sc.Conn.Send(commandName, args...)
+  if err != nil {
+    sc.Conn.Close()
+    err, leftovers := sc.dial(addrs)
+    if err != nil {
+      return err
+    } else {
+      return sc.send(leftovers, commandName, args...)
+    }
+  }
+  return nil
+}
+
+// Flushes the underlying connection.
+// Users should be aware that the underlying connection can change through
+// subsequent calls to Send or Do, or through intermediate calls to Dial,
+// if fallback behavior is required due to a broken connection.
+func (sc *SentinelClient) Flush() error {
+  return sc.Conn.Flush()
+}
+
+// Receives a single reply from the underlying redis connection.
+// If the underlying connection is broken, the method does not attempt to
+// reestablish the connection to another sentinel, as the desired response
+// is no longer accessible.
+func (sc *SentinelClient) Receive() (reply interface{}, err error) {
+  return sc.Conn.Receive()
 }
 
 // GetRole is a convenience function supplied to query an instance (master or 
