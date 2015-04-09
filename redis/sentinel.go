@@ -175,6 +175,7 @@ func SlaveReadFlags(slaveMap map[string]string) map[string]bool {
 // DialMaster returns a connection to the master of the named monitored instance set
 // Assumes the same network will be used to contact the master as the one used for
 // contacting the sentinels.
+// DialMaster returns immediately on failure.
 func (sc *SentinelClient) DialMaster(name string) (Conn, error) {
   masterAddr, err := sc.QueryConfForMaster(name)
 
@@ -185,9 +186,14 @@ func (sc *SentinelClient) DialMaster(name string) (Conn, error) {
   return Dial(sc.net, masterAddr)
 }
 
+var NoSlavesRemaining error = errors.New("No connected slaves with active master-link available")
+
 // DialSlave returns a connection to a slave. This routine mandates that the slave
 // have an active link to the master, and not be currently flagged as disconnected.
 // Then a slave is randomly selected from the list.
+// On failure, this method tries again through all slaves that meet the aforementioned
+// criteria until success or all available options are exhausted, at which point
+// NoSlavesRemaining is returned.
 // To change this behavior, implement a dialer using QueryConfForSlaves.
 func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
   slaves, err := sc.QueryConfForSlaves(name)
@@ -197,7 +203,7 @@ func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
   for len(slaves) > 0 {
     index := rand.Int31n(int32(len(slaves)))
     flags := SlaveReadFlags(slaves[index])
-    if slaves[index]["master-link-status"] == "ok" && !(flags["disconnected"] || flags["sdown"] || flags["odown"]){
+    if slaves[index]["master-link-status"] == "ok" && !(flags["disconnected"] || flags["sdown"]){
       conn, err := Dial(sc.net, SlaveAddr(slaves[index]))
       if err == nil {
         return conn, err
@@ -205,7 +211,52 @@ func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
     }
     slaves = append(slaves[:index], slaves[index+1:]...)
   }
-  return nil, errors.New("No connected slaves with active master-link available")
+  return nil, NoSlavesRemaining
 }
 
+// GetRole is a convenience function supplied to query an instance (master or slave)
+// for its role. It attempts to use the ROLE command introduced in redis 2.8.12.
+// Failing this, the INFO replication command is used instead.
+// If it is known that the cluster is older than 2.8.12, GetReplicationRole should
+// be used instead, as this bypasses an extraneous ROLE command.
+// It is recommended by the redis client guidelines to test the role of any newly 
+// established connection before use. Additionally, if sentinels in use are older
+// than 2.8.12, they will not force clients to reconnect on role change; use of
+// long-lived connections in an environment like this (for example, when using
+// the pool) should involve periodic role testing to protect against unexpected
+// changes.
+func GetRole(c Conn) (string, error) {
+  res, err := Strings(c.Do("ROLE"))
+  if err != nil || len(res) == 0 {
+    return GetReplicationRole(c)
+  } else {
+    return res[0], nil
+  }
+}
 
+// Queries the role of a connected redis instance by checking the output of the
+// INFO replication section. GetRole should be used if the redis instance
+// is sufficiently new to support it.
+func GetReplicationRole(c Conn) (string, error) {
+  res, err := Strings(c.Do("INFO", "replication"))
+  if err == nil {
+    for _,s := range(res) {
+      si := strings.Split(s,":")
+      if si[0] == "role" {
+        return si[1], nil
+      }
+    }
+  }
+  return "", err
+}
+
+// TestRole wraps GetRole in a test to verify if the role matches an expected role
+// string. If there was any error in querying the supplied connection, the function
+// returns false.
+func TestRole(c Conn, expectedRole string) bool {
+  role, err := GetRole(c)
+  if err != nil || role != expectedRole {
+    return false
+  }
+  return true
+}
