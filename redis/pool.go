@@ -335,7 +335,6 @@ func (sap *SentinelAwarePool) UpdateMaster(addr string) {
   if addr != sap.masterAddr {
     sap.masterAddr = addr
     sap.closeAll()
-    }
   }
 }
 
