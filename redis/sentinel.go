@@ -307,7 +307,7 @@ func GetReplicationRole(c Conn) (string, error) {
 }
 
 // TestRole wraps GetRole in a test to verify if the role matches an expected 
-// role string. If there was any error in querying the supplied connection, o
+// role string. If there was any error in querying the supplied connection, 
 // the function returns false.
 func TestRole(c Conn, expectedRole string) bool {
   role, err := GetRole(c)

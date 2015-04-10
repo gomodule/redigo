@@ -334,9 +334,8 @@ type SentinelAwarePool struct {
 func (sap *SentinelAwarePool) UpdateMaster(addr string) {
   if addr != sap.masterAddr {
     sap.masterAddr = addr
-    go func() {
-      sap.closeAll()
-    }()
+    sap.closeAll()
+    }
   }
 }
 
