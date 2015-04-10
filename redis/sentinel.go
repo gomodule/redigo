@@ -21,11 +21,14 @@ type SentinelClient struct {
 
 // Returns a SentinelClient with an active connection to at least 
 // one currently active master.
+// 
 // ElectSentinel expects a function that dictates the behavior for dialing
 // (see ElectSentinel, below). If nil, the sentinel will use a simple
 // fallback scheme, trying each address until one works.
+// 
 // As per the redis-sentinel client guidelines, a timeout is mandatory
-// while connecting to sentinels.
+// while connecting to sentinels, and should not be set to 0.
+// 
 // Note that in a worst-case scenario, the timeout for performing an
 // operation with a SentinelClient wrapper method may take (# sentinels) *
 // timeout to test and connect to the various configured addresses.
@@ -55,7 +58,7 @@ func fallbackElectSentinel(addrs []string) int {
   return 0
 }
 
-// For convenience, supply a purely random sentinel elector
+// For convenience, a purely random ElectSentinel implementation.
 func RandomElectSentinel(addrs []string) int {
   return int(rand.Int31n(int32(len(addrs))))
 }
@@ -97,7 +100,8 @@ func (sc *SentinelClient) dial(addrs []string) (error, []string) {
     i := sc.ElectSentinel(subSentList)
     addr := subSentList[i]
     subSentList = append(subSentList[:i], subSentList[i+1:]...)
-    conn, err := DialTimeout(sc.net, addr, sc.connectTimeout, sc.readTimeout, sc.writeTimeout)
+    conn, err := DialTimeout(sc.net, addr, sc.connectTimeout, sc.readTimeout,
+      sc.writeTimeout)
     if err == nil {
       sc.Conn = conn
       return nil, subSentList
@@ -134,16 +138,18 @@ func (sc *SentinelClient) do(addrs []string, cmd string, args ...interface{}) (i
   }
 }
 
-// QueryConfForMaster looks up the configuration for a named monitored instance set
-// and returns the master's configuration.
+// QueryConfForMaster looks up the configuration for a named monitored instance
+// set and returns the master's configuration.
 func (sc *SentinelClient) QueryConfForMaster(name string) (string, error) {
   res, err := Strings(sc.Do("SENTINEL", "get-master-addr-by-name", name))
   masterAddr := strings.Join(res, ":")
   return masterAddr, err
 }
 
-// QueryConfForSlaves looks up the configuration for a named monitored instance set
-// and returns all the slaves.
+// QueryConfForSlaves looks up the configuration for a named monitored 
+// instance set and returns all the slave configuration. Note that the return is
+// a []map[string]string, and will most likely need to be interpreted by
+// SlaveAddr to be usable.
 func (sc *SentinelClient) QueryConfForSlaves(name string) ([]map[string]string, error) {
   res, err := Values(sc.Do("SENTINEL", "slaves", name))
   if err != nil {
@@ -160,14 +166,14 @@ func (sc *SentinelClient) QueryConfForSlaves(name string) ([]map[string]string, 
   return slaves, err
 }
 
-// A convenience function which formats only the relevant parts of a single slave
-// map[string]string into an address ip:port pair.
+// A convenience function which formats only the relevant parts of a single 
+// slave map[string]string into an address ip:port pair.
 func SlaveAddr(slaveMap map[string]string) string {
   return fmt.Sprintf("%s:%s", slaveMap["ip"], slaveMap["port"])
 }
 
 // A convenience function that turns the comma-separated list of string flags
-// into a map[string]bool for easy testing.
+// from a slave's map[string]string into a map[string]bool for easy testing.
 func SlaveReadFlags(slaveMap map[string]string) map[string]bool {
   keys := strings.Split(slaveMap["flags"], ",")
   res := make(map[string]bool)
@@ -179,8 +185,10 @@ func SlaveReadFlags(slaveMap map[string]string) map[string]bool {
 
 // DialMaster returns a connection to the master of the named monitored 
 // instance set. 
+// 
 // Assumes the same network will be used to contact the master as the one used 
 // for contacting the sentinels.
+//
 // DialMaster returns immediately on failure.
 func (sc *SentinelClient) DialMaster(name string) (Conn, error) {
   masterAddr, err := sc.QueryConfForMaster(name)
@@ -196,11 +204,12 @@ var NoSlavesRemaining error = errors.New("No connected slaves with active master
 
 // DialSlave returns a connection to a slave. This routine mandates that the 
 // slave have an active link to the master, and not be currently flagged as 
-// disconnected.
-// Then a slave is randomly selected from the list.
+// disconnected. Then a slave is randomly selected from the list.
+//
 // On failure, this method tries again through all slaves that meet the 
 // aforementioned criteria until success or all available options are 
 // exhausted, at which point NoSlavesRemaining is returned.
+//
 // To change this behavior, implement a dialer using QueryConfForSlaves.
 func (sc *SentinelClient) DialSlave(name string) (Conn, error) {
   slaves, err := sc.QueryConfForSlaves(name)
@@ -252,6 +261,7 @@ func (sc *SentinelClient) send(addrs []string, commandName string, args ...inter
 }
 
 // Flushes the underlying connection.
+//
 // Users should be aware that the underlying connection can change through
 // subsequent calls to Send or Do, or through intermediate calls to Dial,
 // if fallback behavior is required due to a broken connection.
@@ -260,25 +270,32 @@ func (sc *SentinelClient) Flush() error {
 }
 
 // Receives a single reply from the underlying redis connection.
+//
 // If the underlying connection is broken, the method does not attempt to
 // reestablish the connection to another sentinel, as the desired response
 // is no longer accessible.
+//
+// Most likely, use of Do() is more appropriate than Send + Receive, since
+// Do will guarantee that the sending and receiving steps occur on the
+// same connection.
 func (sc *SentinelClient) Receive() (reply interface{}, err error) {
   return sc.Conn.Receive()
 }
 
 // GetRole is a convenience function supplied to query an instance (master or 
 // slave) for its role. It attempts to use the ROLE command introduced in 
-// redis 2.8.12.
-// Failing this, the INFO replication command is used instead.
+// redis 2.8.12. Failing this, the INFO replication command is used instead.
+//
 // If it is known that the cluster is older than 2.8.12, GetReplicationRole 
 // should be used instead, as this bypasses an extraneous ROLE command.
+//
 // It is recommended by the redis client guidelines to test the role of any
 // newly established connection before use. Additionally, if sentinels in use 
 // are older than 2.8.12, they will not force clients to reconnect on role 
 // change; use of long-lived connections in an environment like this (for 
 // example, when using the pool) should involve periodic role testing to 
-// protect against unexpected changes.
+// protect against unexpected changes. See the SentinelAwarePool example for
+// details.
 func GetRole(c Conn) (string, error) {
   res, err := c.Do("ROLE")
 
