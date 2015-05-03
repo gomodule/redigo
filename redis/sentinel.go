@@ -94,8 +94,9 @@ func (sc *SentinelClient) Dial() error {
 
 func (sc *SentinelClient) dial(addrs []string) (error, []string) {
 	var lastErr error
+	var subSentList []string = make([]string, len(addrs))
 
-	for subSentList := addrs; len(subSentList) > 0; {
+	for copy(subSentList, addrs); len(subSentList) > 0; {
 		i := sc.ElectSentinel(subSentList)
 		addr := subSentList[i]
 		subSentList = append(subSentList[:i], subSentList[i+1:]...)
