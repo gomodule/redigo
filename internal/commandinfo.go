@@ -29,17 +29,49 @@ type CommandInfo struct {
 	Set, Clear int
 }
 
+var (
+	watch      = CommandInfo{Set: WatchState}
+	unwatch    = CommandInfo{Clear: WatchState}
+	multi      = CommandInfo{Set: MultiState}
+	exec       = CommandInfo{Clear: WatchState | MultiState}
+	discard    = CommandInfo{Clear: WatchState | MultiState}
+	psubscribe = CommandInfo{Set: SubscribeState}
+	subscribe  = CommandInfo{Set: SubscribeState}
+	monitor    = CommandInfo{Set: MonitorState}
+)
+
 var commandInfos = map[string]CommandInfo{
-	"WATCH":      {Set: WatchState},
-	"UNWATCH":    {Clear: WatchState},
-	"MULTI":      {Set: MultiState},
-	"EXEC":       {Clear: WatchState | MultiState},
-	"DISCARD":    {Clear: WatchState | MultiState},
-	"PSUBSCRIBE": {Set: SubscribeState},
-	"SUBSCRIBE":  {Set: SubscribeState},
-	"MONITOR":    {Set: MonitorState},
+	"WATCH":      watch,
+	"UNWATCH":    unwatch,
+	"MULTI":      multi,
+	"EXEC":       exec,
+	"DISCARD":    discard,
+	"PSUBSCRIBE": psubscribe,
+	"SUBSCRIBE":  subscribe,
+	"MONITOR":    monitor,
 }
 
 func LookupCommandInfo(commandName string) CommandInfo {
-	return commandInfos[strings.ToUpper(commandName)]
+
+	// optimize for correctly cased strings
+	switch commandName {
+	case "MULTI", "multi":
+		return multi
+	case "EXEC", "exec":
+		return exec
+	case "WATCH", "watch":
+		return watch
+	case "UNWATCH", "unwatch":
+		return unwatch
+	case "PSUBSCRIBE", "psubcribe":
+		return psubscribe
+	case "SUBSCRIBE", "subscribe":
+		return subscribe
+	case "MONITOR", "monitor":
+		return monitor
+	default:
+		// if it's mixed case or unknown, fallback to our map which is
+		// slower.
+		return commandInfos[strings.ToUpper(commandName)]
+	}
 }
