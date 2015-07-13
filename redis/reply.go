@@ -256,11 +256,14 @@ func Strings(reply interface{}, err error) ([]string, error) {
 			if reply[i] == nil {
 				continue
 			}
-			p, ok := reply[i].([]byte)
-			if !ok {
+			switch reply[i].(type) {
+			case []byte:
+				result[i] = string(p)
+			case string:
+				result[i] = string(p)
+			default:
 				return nil, fmt.Errorf("redigo: unexpected element type for Strings, got type %T", reply[i])
 			}
-			result[i] = string(p)
 		}
 		return result, nil
 	case nil:
