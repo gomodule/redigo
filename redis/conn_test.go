@@ -17,6 +17,7 @@ package redis_test
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"math"
 	"net"
 	"reflect"
@@ -422,6 +423,101 @@ func TestReadDeadline(t *testing.T) {
 	}
 }
 
+var dialErrors = []struct {
+	rawurl        string
+	expectedError string
+}{
+	{
+		":",
+		"parse",
+	},
+	{
+		"localhost",
+		"invalid redis URL scheme",
+	},
+	{
+		"redis://weird url",
+		"no such host",
+	},
+	{
+		"redis://foo:bar:baz",
+		"invalid address host",
+	},
+	{
+		"http://www.google.com",
+		"invalid redis URL scheme: http",
+	},
+	{
+		"redis://x:abc123@localhost",
+		"invalid password: abc123",
+	},
+	{
+		"redis://localhost:6379/abc123",
+		"invalid database: abc123",
+	},
+}
+
+func TestDialer(t *testing.T) {
+	for _, d := range dialErrors {
+		_, err := redis.NewDialer(d.rawurl).Dial()
+		if err == nil || !strings.Contains(err.Error(), d.expectedError) {
+			t.Errorf("NewDialer did not throw correct error (expected %v to contain %s)", err, d.expectedError)
+		}
+	}
+
+	checkPort := func(network, address string) (net.Conn, error) {
+		if address != "localhost:6379" {
+			t.Errorf("NewDialer did not set port to 6379 by default (got %v)", address)
+		}
+		return net.Dial(network, address)
+	}
+	d := redis.NewDialerNetDial("redis://localhost", checkPort)
+	c, err := d.Dial()
+	if err != nil {
+		t.Error("dial error:", err)
+	}
+	c.Close()
+
+	checkHost := func(network, address string) (net.Conn, error) {
+		if address != "localhost:6379" {
+			t.Errorf("NewDialer did not set host to localhost by default (got %v)", address)
+		}
+		return net.Dial(network, address)
+	}
+	d = redis.NewDialerNetDial("redis://:6379", checkHost)
+	c, err = d.Dial()
+	if err != nil {
+		t.Error("dial error:", err)
+	}
+	c.Close()
+
+	// Check that the database is set correctly
+	c1, err := redis.NewDialer("redis://:6379/8").Dial()
+	defer c1.Close()
+	if err != nil {
+		t.Error("Dial error:", err)
+	}
+	c1.Do("SET", "var", "val")
+
+	c2, err := redis.Dial("tcp", ":6379")
+	defer c2.Close()
+	if err != nil {
+		t.Error("dial error:", err)
+	}
+	_, err = c2.Do("SELECT", "8")
+	if err != nil {
+		t.Error(err)
+	}
+	got, err := redis.String(c2.Do("GET", "var"))
+	if err != nil {
+		t.Error(err)
+	}
+	if got != "val" {
+		t.Error("NewDialer did not correctly set the db.")
+	}
+	_, err = c2.Do("DEL", "var")
+}
+
 // Connect to local instance of Redis running on the default port.
 func ExampleDial(x int) {
 	c, err := redis.Dial("tcp", ":6379")
@@ -429,6 +525,18 @@ func ExampleDial(x int) {
 		// handle error
 	}
 	defer c.Close()
+}
+
+// Connect to a remote instance of Redis using a redis:// scheme.
+func ExampleDialer() {
+	d := redis.NewDialer("redis://x:abc123@1.2.3.4:6379/3")
+	c, err := d.Dial()
+	if err != nil {
+		// connection failed, handle error
+		fmt.Println("Dial error:", err)
+	}
+	defer c.Close()
+
 }
 
 // TextExecError tests handling of errors in a transaction. See

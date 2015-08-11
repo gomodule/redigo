@@ -21,7 +21,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -53,54 +56,157 @@ type conn struct {
 
 // Dial connects to the Redis server at the given network and address.
 func Dial(network, address string) (Conn, error) {
-	dialer := xDialer{}
-	return dialer.Dial(network, address)
+	dialer := dialer{network: network, address: address}
+	return dialer.Dial()
 }
 
 // DialTimeout acts like Dial but takes timeouts for establishing the
 // connection to the server, writing a command and reading a reply.
 func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration) (Conn, error) {
-	netDialer := net.Dialer{Timeout: connectTimeout}
-	dialer := xDialer{
-		NetDial:      netDialer.Dial,
-		ReadTimeout:  readTimeout,
-		WriteTimeout: writeTimeout,
+	netDial := net.Dialer{Timeout: connectTimeout}
+	dialer := dialer{
+		readTimeout:  readTimeout,
+		writeTimeout: writeTimeout,
+		network:      network,
+		address:      address,
+		netDial:      netDial.Dial,
 	}
-	return dialer.Dial(network, address)
+	return dialer.Dial()
 }
 
 // A Dialer specifies options for connecting to a Redis server.
-type xDialer struct {
-	// NetDial specifies the dial function for creating TCP connections. If
-	// NetDial is nil, then net.Dial is used.
-	NetDial func(network, addr string) (net.Conn, error)
-
-	// ReadTimeout specifies the timeout for reading a single command
-	// reply. If ReadTimeout is zero, then no timeout is used.
-	ReadTimeout time.Duration
-
-	// WriteTimeout specifies the timeout for writing a single command.  If
-	// WriteTimeout is zero, then no timeout is used.
-	WriteTimeout time.Duration
+type Dialer interface {
+	// Dial connects to the Redis server, handling authentication and
+	// DB choice as necessary.
+	Dial() (Conn, error)
 }
 
-// Dial connects to the Redis server at address on the named network.
-func (d *xDialer) Dial(network, address string) (Conn, error) {
-	dial := d.NetDial
+// NewDialer returns a Dialer for the redis url rawurl.
+func NewDialer(rawurl string) *dialer {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return &dialer{err: err}
+	}
+	if u.Scheme != "redis" {
+		return &dialer{
+			err: fmt.Errorf("invalid redis URL scheme: %s", u.Scheme),
+		}
+	}
+
+	// As per the IANA draft spec, the host defaults to localhost and
+	// the port defaults to 6379
+	hostParts := strings.Split(u.Host, ":")
+	switch len(hostParts) {
+	case 0:
+		hostParts = []string{"localhost", "6379"}
+	case 1:
+		hostParts = append(hostParts, "6379")
+	case 2:
+		if hostParts[0] == "" {
+			hostParts[0] = "localhost"
+		}
+	default:
+		return &dialer{
+			err: fmt.Errorf("invalid address host: %s", u.Host),
+		}
+	}
+	address := strings.Join(hostParts, ":")
+
+	var password string
+	if u.User != nil {
+		password, _ = u.User.Password()
+	}
+
+	var db string
+	match := regexp.MustCompile(`/(\d)\z`).FindStringSubmatch(u.Path)
+	if len(match) == 2 {
+		db = match[1]
+	} else if u.Path != "" {
+		return &dialer{
+			err: fmt.Errorf("invalid database: %s", u.Path[1:]),
+		}
+	}
+	return &dialer{
+		network:  "tcp",
+		address:  address,
+		password: password,
+		db:       db,
+	}
+}
+
+// NewDialerTimeout returns a Dialer for address rawurl with timeouts
+// for establishing the connection to the server, writing a command,
+// and reading a reply. For all timeout durations, a value of 0 means
+// that there is no timeout.
+func NewDialerTimeout(rawurl string, connectTimeout, readTimeout, writeTimeout time.Duration) Dialer {
+	d := NewDialer(rawurl)
+	netDial := net.Dialer{Timeout: connectTimeout}
+	d.netDial = netDial.Dial
+	d.readTimeout = readTimeout
+	d.writeTimeout = writeTimeout
+
+	return d
+}
+
+// NewDialerNetDial returns a Dialer for address rawurl with a custom
+// function for network dialing. netDial should behave like net.Dial.
+func NewDialerNetDial(rawurl string, netDial func(network, addr string) (net.Conn, error)) Dialer {
+	d := NewDialer(rawurl)
+	d.netDial = netDial
+
+	return d
+}
+
+// dialer is the internal implementation of the Dialer interface.
+type dialer struct {
+	// netDial specifies the dial function for creating TCP connections. If
+	// netDial is nil, then net.Dial is used.
+	netDial func(network, addr string) (net.Conn, error)
+
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+	network      string
+	address      string
+	password     string
+	db           string
+	err          error
+}
+
+func (d *dialer) Dial() (Conn, error) {
+	if d.err != nil {
+		return nil, d.err
+	}
+	dial := d.netDial
 	if dial == nil {
 		dial = net.Dial
 	}
-	netConn, err := dial(network, address)
+	netConn, err := dial(d.network, d.address)
 	if err != nil {
 		return nil, err
 	}
-	return &conn{
+	c := &conn{
 		conn:         netConn,
 		bw:           bufio.NewWriter(netConn),
 		br:           bufio.NewReader(netConn),
-		readTimeout:  d.ReadTimeout,
-		writeTimeout: d.WriteTimeout,
-	}, nil
+		readTimeout:  d.readTimeout,
+		writeTimeout: d.writeTimeout,
+	}
+
+	if d.password != "" {
+		if _, err := c.Do("AUTH", d.password); err != nil {
+			c.Close()
+			return nil, fmt.Errorf("invalid password: %s (redis error: %v)", d.password, err)
+		}
+	}
+
+	if d.db != "" {
+		if _, err := c.Do("SELECT", d.db); err != nil {
+			c.Close()
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 // NewConn returns a new Redigo connection for the given net connection.
