@@ -35,8 +35,15 @@ var nowFunc = time.Now // for testing
 // pool has been reached.
 var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
 
+// ErrTimeout is returned from a pool connection method when the wait to get a
+// connection from the pool times out.
+var ErrTimeout = errors.New("redigo: get connection from pool timed out")
+
+// ErrPoolClosed is returned from a pool connection method when the pool was
+// closed while waiting to get a connection from the pool.
+var ErrPoolClosed = errors.New("redigo: pool closed while waiting on get")
+
 var (
-	errPoolClosed = errors.New("redigo: connection pool closed")
 	errConnClosed = errors.New("redigo: connection closed")
 )
 
@@ -120,9 +127,11 @@ type Pool struct {
 	// for a connection to be returned to the pool before returning.
 	Wait bool
 
+	// Channel used to synchronize goroutines waiting to get a pool connection.
+	waitCh chan int
+
 	// mu protects fields defined below.
 	mu     sync.Mutex
-	cond   *sync.Cond
 	closed bool
 	active int
 
@@ -147,7 +156,15 @@ func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 // getting an underlying connection, then the connection Err, Do, Send, Flush
 // and Receive methods return that error.
 func (p *Pool) Get() Conn {
-	c, err := p.get()
+	return p.GetWait(0)
+}
+
+// GetWait gets a connection from the pool. It's meant to be used when the
+// options Wait and MaxActive have been used when creating the pool. Unlike
+// Get, GetWait times out if it's not possible to get a connection from the
+// pool before the timeout duration provided.
+func (p *Pool) GetWait(timeout time.Duration) Conn {
+	c, err := p.get(timeout)
 	if err != nil {
 		return errorConnection{err}
 	}
@@ -169,8 +186,8 @@ func (p *Pool) Close() error {
 	p.idle.Init()
 	p.closed = true
 	p.active -= idle.Len()
-	if p.cond != nil {
-		p.cond.Broadcast()
+	if p.waitCh != nil {
+		close(p.waitCh)
 	}
 	p.mu.Unlock()
 	for e := idle.Front(); e != nil; e = e.Next() {
@@ -183,14 +200,12 @@ func (p *Pool) Close() error {
 // hold p.mu during the call.
 func (p *Pool) release() {
 	p.active -= 1
-	if p.cond != nil {
-		p.cond.Signal()
-	}
+	p.signalWaiting()
 }
 
 // get prunes stale connections and returns a connection from the idle list or
 // creates a new connection.
-func (p *Pool) get() (Conn, error) {
+func (p *Pool) get(timeout time.Duration) (Conn, error) {
 	p.mu.Lock()
 
 	// Prune stale connections.
@@ -262,10 +277,26 @@ func (p *Pool) get() (Conn, error) {
 			return nil, ErrPoolExhausted
 		}
 
-		if p.cond == nil {
-			p.cond = sync.NewCond(&p.mu)
+		if p.waitCh == nil {
+			p.waitCh = make(chan int)
 		}
-		p.cond.Wait()
+
+		p.mu.Unlock()
+		if timeout > 0 {
+			select {
+			case _, ok := <-p.waitCh:
+				if !ok {
+					return nil, ErrPoolClosed
+				}
+			case <-time.After(timeout):
+				return nil, ErrTimeout
+			}
+		} else {
+			if _, ok := <-p.waitCh; !ok {
+				return nil, ErrPoolClosed
+			}
+		}
+		p.mu.Lock()
 	}
 }
 
@@ -282,9 +313,7 @@ func (p *Pool) put(c Conn, forceClose bool) error {
 	}
 
 	if c == nil {
-		if p.cond != nil {
-			p.cond.Signal()
-		}
+		p.signalWaiting()
 		p.mu.Unlock()
 		return nil
 	}
@@ -292,6 +321,15 @@ func (p *Pool) put(c Conn, forceClose bool) error {
 	p.release()
 	p.mu.Unlock()
 	return c.Close()
+}
+
+func (p *Pool) signalWaiting() {
+	if !p.closed {
+		select {
+		case p.waitCh <- 1:
+		default:
+		}
+	}
 }
 
 type pooledConnection struct {
