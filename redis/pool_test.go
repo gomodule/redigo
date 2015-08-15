@@ -30,12 +30,28 @@ type poolTestConn struct {
 	d   *poolDialer
 	err error
 	redis.Conn
+	mu sync.RWMutex
 }
 
-func (c *poolTestConn) Close() error { c.d.open -= 1; return nil }
-func (c *poolTestConn) Err() error   { return c.err }
+func (c *poolTestConn) Close() error {
+	c.d.mu.Lock()
+	defer c.d.mu.Unlock()
+
+	c.d.open -= 1
+	return nil
+}
+
+func (c *poolTestConn) Err() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.err
+}
 
 func (c *poolTestConn) Do(commandName string, args ...interface{}) (interface{}, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if commandName == "ERR" {
 		c.err = args[0].(error)
 		commandName = "PING"
@@ -47,6 +63,9 @@ func (c *poolTestConn) Do(commandName string, args ...interface{}) (interface{},
 }
 
 func (c *poolTestConn) Send(commandName string, args ...interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.d.commands = append(c.d.commands, commandName)
 	return c.Conn.Send(commandName, args...)
 }
@@ -57,9 +76,13 @@ type poolDialer struct {
 	open     int
 	commands []string
 	dialErr  error
+	mu       sync.Mutex
 }
 
 func (d *poolDialer) dial() (redis.Conn, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	d.dialed += 1
 	if d.dialErr != nil {
 		return nil, d.dialErr
@@ -73,6 +96,9 @@ func (d *poolDialer) dial() (redis.Conn, error) {
 }
 
 func (d *poolDialer) check(message string, p *redis.Pool, dialed, open int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.dialed != dialed {
 		d.t.Errorf("%s: dialed=%d, want %d", message, d.dialed, dialed)
 	}
@@ -410,14 +436,19 @@ func TestPoolTransactionCleanup(t *testing.T) {
 	p.Close()
 }
 
-func startGoroutines(p *redis.Pool, cmd string, args ...interface{}) chan error {
+func startGoroutines(p *redis.Pool, timeout time.Duration, cmd string, args ...interface{}) chan error {
 	errs := make(chan error, 10)
 	for i := 0; i < cap(errs); i++ {
 		go func() {
-			c := p.Get()
+			var c redis.Conn
+			if timeout > 0 {
+				c = p.GetWait(timeout)
+			} else {
+				c = p.Get()
+			}
 			_, err := c.Do(cmd, args...)
-			errs <- err
 			c.Close()
+			errs <- err
 		}()
 	}
 
@@ -437,7 +468,7 @@ func TestWaitPool(t *testing.T) {
 	}
 	defer p.Close()
 	c := p.Get()
-	errs := startGoroutines(p, "PING")
+	errs := startGoroutines(p, 0, "PING")
 	d.check("before close", p, 1, 1)
 	c.Close()
 	timeout := time.After(2 * time.Second)
@@ -454,6 +485,31 @@ func TestWaitPool(t *testing.T) {
 	d.check("done", p, 1, 1)
 }
 
+func TestWaitPoolTimeout(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   1,
+		MaxActive: 1,
+		Dial:      d.dial,
+		Wait:      true,
+	}
+	defer p.Close()
+	c := p.Get()
+	defer c.Close()
+	timeout := time.After(2 * time.Second)
+	errs := startGoroutines(p, 1*time.Millisecond, "PING")
+	for i := 0; i < cap(errs); i++ {
+		select {
+		case err := <-errs:
+			if err != redis.ErrTimeout {
+				t.Fatal(err)
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for blocked goroutine %d", i)
+		}
+	}
+}
+
 func TestWaitPoolClose(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
@@ -466,7 +522,7 @@ func TestWaitPoolClose(t *testing.T) {
 	if _, err := c.Do("PING"); err != nil {
 		t.Fatal(err)
 	}
-	errs := startGoroutines(p, "PING")
+	errs := startGoroutines(p, 0, "PING")
 	d.check("before close", p, 1, 1)
 	p.Close()
 	timeout := time.After(2 * time.Second)
@@ -498,7 +554,7 @@ func TestWaitPoolCommandError(t *testing.T) {
 	}
 	defer p.Close()
 	c := p.Get()
-	errs := startGoroutines(p, "ERR", testErr)
+	errs := startGoroutines(p, 0, "ERR", testErr)
 	d.check("before close", p, 1, 1)
 	c.Close()
 	timeout := time.After(2 * time.Second)
@@ -526,7 +582,7 @@ func TestWaitPoolDialError(t *testing.T) {
 	}
 	defer p.Close()
 	c := p.Get()
-	errs := startGoroutines(p, "ERR", testErr)
+	errs := startGoroutines(p, 0, "ERR", testErr)
 	d.check("before close", p, 1, 1)
 
 	d.dialErr = errors.New("dial")

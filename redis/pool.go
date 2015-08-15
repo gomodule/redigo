@@ -28,6 +28,8 @@ import (
 	"github.com/garyburd/redigo/internal"
 )
 
+const defaultMaxActive = 65000
+
 var nowFunc = time.Now // for testing
 
 // ErrPoolExhausted is returned from a pool connection method (Do, Send,
@@ -35,8 +37,15 @@ var nowFunc = time.Now // for testing
 // pool has been reached.
 var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
 
+// ErrTimeout is returned from a pool connection method when the wait to get a
+// connection from the pool times out.
+var ErrTimeout = errors.New("redigo: get connection from pool timed out")
+
+// ErrPoolClosed is returned from a pool connection method when the pool was
+// closed while waiting to get a connection from the pool.
+var ErrPoolClosed = errors.New("redigo: pool closed while waiting on get")
+
 var (
-	errPoolClosed = errors.New("redigo: connection pool closed")
 	errConnClosed = errors.New("redigo: connection closed")
 )
 
@@ -122,7 +131,7 @@ type Pool struct {
 
 	// mu protects fields defined below.
 	mu     sync.Mutex
-	cond   *sync.Cond
+	sem    *semaphore
 	closed bool
 	active int
 
@@ -147,7 +156,15 @@ func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 // getting an underlying connection, then the connection Err, Do, Send, Flush
 // and Receive methods return that error.
 func (p *Pool) Get() Conn {
-	c, err := p.get()
+	return p.GetWait(0)
+}
+
+// GetWait gets a connection from the pool. It's meant to be used when the
+// options Wait and MaxActive have been used when creating the pool. Unlike
+// Get, GetWait times out if it's not possible to get a connection from the
+// pool before the timeout duration provided.
+func (p *Pool) GetWait(timeout time.Duration) Conn {
+	c, err := p.get(timeout)
 	if err != nil {
 		return errorConnection{err}
 	}
@@ -169,8 +186,8 @@ func (p *Pool) Close() error {
 	p.idle.Init()
 	p.closed = true
 	p.active -= idle.Len()
-	if p.cond != nil {
-		p.cond.Broadcast()
+	if p.sem != nil {
+		p.sem.broadcast()
 	}
 	p.mu.Unlock()
 	for e := idle.Front(); e != nil; e = e.Next() {
@@ -183,26 +200,26 @@ func (p *Pool) Close() error {
 // hold p.mu during the call.
 func (p *Pool) release() {
 	p.active -= 1
-	if p.cond != nil {
-		p.cond.Signal()
+	if p.sem != nil {
+		p.sem.signal()
 	}
 }
 
 // get prunes stale connections and returns a connection from the idle list or
 // creates a new connection.
-func (p *Pool) get() (Conn, error) {
+func (p *Pool) get(timeout time.Duration) (Conn, error) {
 	p.mu.Lock()
 
 	// Prune stale connections.
 
-	if timeout := p.IdleTimeout; timeout > 0 {
+	if idleTimeout := p.IdleTimeout; idleTimeout > 0 {
 		for i, n := 0, p.idle.Len(); i < n; i++ {
 			e := p.idle.Back()
 			if e == nil {
 				break
 			}
 			ic := e.Value.(idleConn)
-			if ic.t.Add(timeout).After(nowFunc()) {
+			if ic.t.Add(idleTimeout).After(nowFunc()) {
 				break
 			}
 			p.idle.Remove(e)
@@ -238,7 +255,7 @@ func (p *Pool) get() (Conn, error) {
 
 		if p.closed {
 			p.mu.Unlock()
-			return nil, errors.New("redigo: get on closed pool")
+			return nil, ErrPoolClosed
 		}
 
 		// Dial new connection if under limit.
@@ -262,10 +279,19 @@ func (p *Pool) get() (Conn, error) {
 			return nil, ErrPoolExhausted
 		}
 
-		if p.cond == nil {
-			p.cond = sync.NewCond(&p.mu)
+		if p.sem == nil {
+			if p.MaxActive > 0 {
+				p.sem = newSemaphore(p.active, p.MaxActive)
+			} else {
+				p.sem = newSemaphore(p.active, defaultMaxActive)
+			}
 		}
-		p.cond.Wait()
+
+		p.mu.Unlock()
+		if err := p.sem.wait(timeout); err != nil {
+			return nil, err
+		}
+		p.mu.Lock()
 	}
 }
 
@@ -282,8 +308,8 @@ func (p *Pool) put(c Conn, forceClose bool) error {
 	}
 
 	if c == nil {
-		if p.cond != nil {
-			p.cond.Signal()
+		if p.sem != nil {
+			p.sem.signal()
 		}
 		p.mu.Unlock()
 		return nil
@@ -387,3 +413,47 @@ func (ec errorConnection) Err() error                                     { retu
 func (ec errorConnection) Close() error                                   { return ec.err }
 func (ec errorConnection) Flush() error                                   { return ec.err }
 func (ec errorConnection) Receive() (interface{}, error)                  { return nil, ec.err }
+
+type semaphore struct {
+	counter chan struct{}
+	done    chan struct{}
+}
+
+func newSemaphore(used, max int) *semaphore {
+	s := &semaphore{
+		counter: make(chan struct{}, max),
+		done:    make(chan struct{}),
+	}
+
+	for i := 0; i < used; i++ {
+		s.counter <- struct{}{}
+	}
+
+	return s
+}
+
+func (s semaphore) signal() {
+	<-s.counter
+}
+
+func (s semaphore) wait(timeout time.Duration) error {
+	if timeout > 0 {
+		select {
+		case s.counter <- struct{}{}:
+		case <-s.done:
+		case <-time.After(timeout):
+			return ErrTimeout
+		}
+	} else {
+		select {
+		case s.counter <- struct{}{}:
+		case <-s.done:
+		}
+	}
+
+	return nil
+}
+
+func (s semaphore) broadcast() {
+	close(s.done)
+}
