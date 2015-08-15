@@ -48,7 +48,7 @@ func (c *poolTestConn) Err() error {
 	return c.err
 }
 
-func (c *poolTestConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+func (c *poolTestConn) Do(commandName string, args ...interface{}) (interface{}, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
