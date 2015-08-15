@@ -281,9 +281,9 @@ func (p *Pool) get(timeout time.Duration) (Conn, error) {
 
 		if p.sem == nil {
 			if p.MaxActive > 0 {
-				p.sem = newSemaphore(p.MaxActive)
+				p.sem = newSemaphore(p.active, p.MaxActive)
 			} else {
-				p.sem = newSemaphore(defaultMaxActive)
+				p.sem = newSemaphore(p.active, defaultMaxActive)
 			}
 		}
 
@@ -419,11 +419,17 @@ type semaphore struct {
 	done    chan struct{}
 }
 
-func newSemaphore(n int) *semaphore {
-	return &semaphore{
-		counter: make(chan struct{}, n),
+func newSemaphore(used, max int) *semaphore {
+	s := &semaphore{
+		counter: make(chan struct{}, max),
 		done:    make(chan struct{}),
 	}
+
+	for i := 0; i < used; i++ {
+		s.counter <- struct{}{}
+	}
+
+	return s
 }
 
 func (s semaphore) signal() {
