@@ -367,7 +367,7 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 			continue
 		}
 		if err := convertAssignValue(d.FieldByIndex(fs.index), s); err != nil {
-			return err
+			return errors.New("redigo: error converting '" + string(name) + "' in ScanStruct: " + err.Error())
 		}
 	}
 	return nil
@@ -407,7 +407,7 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 				continue
 			}
 			if err := convertAssignValue(d.Index(i), s); err != nil {
-				return err
+				return errors.New("redigo: error converting slice value: " + err.Error())
 			}
 		}
 		return nil
@@ -449,7 +449,7 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 				continue
 			}
 			if err := convertAssignValue(d.FieldByIndex(fs.index), s); err != nil {
-				return err
+				return errors.New("redigo: error converting slice value: " + err.Error())
 			}
 		}
 	}
