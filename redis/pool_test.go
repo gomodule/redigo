@@ -59,7 +59,7 @@ type poolDialer struct {
 	dialErr  error
 }
 
-func (d *poolDialer) dial() (redis.Conn, error) {
+func (d *poolDialer) Dial() (redis.Conn, error) {
 	d.dialed += 1
 	if d.dialErr != nil {
 		return nil, d.dialErr
@@ -88,7 +88,7 @@ func TestPoolReuse(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
 		MaxIdle: 2,
-		Dial:    d.dial,
+		Dialer:  &d,
 	}
 
 	for i := 0; i < 10; i++ {
@@ -109,7 +109,7 @@ func TestPoolMaxIdle(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
 		MaxIdle: 2,
-		Dial:    d.dial,
+		Dialer:  &d,
 	}
 	for i := 0; i < 10; i++ {
 		c1 := p.Get()
@@ -131,7 +131,7 @@ func TestPoolError(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
 		MaxIdle: 2,
-		Dial:    d.dial,
+		Dialer:  &d,
 	}
 
 	c := p.Get()
@@ -152,7 +152,7 @@ func TestPoolClose(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
 		MaxIdle: 2,
-		Dial:    d.dial,
+		Dialer:  &d,
 	}
 
 	c1 := p.Get()
@@ -193,7 +193,7 @@ func TestPoolTimeout(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:     2,
 		IdleTimeout: 300 * time.Second,
-		Dial:        d.dial,
+		Dialer:      &d,
 	}
 
 	now := time.Now()
@@ -245,7 +245,7 @@ func TestPoolBorrowCheck(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
 		MaxIdle:      2,
-		Dial:         d.dial,
+		Dialer:       &d,
 		TestOnBorrow: func(redis.Conn, time.Time) error { return redis.Error("BLAH") },
 	}
 
@@ -263,7 +263,7 @@ func TestPoolMaxActive(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   2,
 		MaxActive: 2,
-		Dial:      d.dial,
+		Dialer:    &d,
 	}
 	c1 := p.Get()
 	c1.Do("PING")
@@ -297,7 +297,7 @@ func TestPoolMonitorCleanup(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   2,
 		MaxActive: 2,
-		Dial:      d.dial,
+		Dialer:    &d,
 	}
 	c := p.Get()
 	c.Send("MONITOR")
@@ -312,7 +312,7 @@ func TestPoolPubSubCleanup(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   2,
 		MaxActive: 2,
-		Dial:      d.dial,
+		Dialer:    &d,
 	}
 
 	c := p.Get()
@@ -343,7 +343,7 @@ func TestPoolTransactionCleanup(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   2,
 		MaxActive: 2,
-		Dial:      d.dial,
+		Dialer:    &d,
 	}
 
 	c := p.Get()
@@ -432,7 +432,7 @@ func TestWaitPool(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   1,
 		MaxActive: 1,
-		Dial:      d.dial,
+		Dialer:    &d,
 		Wait:      true,
 	}
 	defer p.Close()
@@ -459,7 +459,7 @@ func TestWaitPoolClose(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   1,
 		MaxActive: 1,
-		Dial:      d.dial,
+		Dialer:    &d,
 		Wait:      true,
 	}
 	c := p.Get()
@@ -493,7 +493,7 @@ func TestWaitPoolCommandError(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   1,
 		MaxActive: 1,
-		Dial:      d.dial,
+		Dialer:    &d,
 		Wait:      true,
 	}
 	defer p.Close()
@@ -521,7 +521,7 @@ func TestWaitPoolDialError(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   1,
 		MaxActive: 1,
-		Dial:      d.dial,
+		Dialer:    &d,
 		Wait:      true,
 	}
 	defer p.Close()
@@ -572,7 +572,7 @@ func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
 	p := &redis.Pool{
 		MaxIdle:   count,
 		MaxActive: count,
-		Dial:      d.dial,
+		Dialer:    &d,
 		TestOnBorrow: func(c redis.Conn, t time.Time) error {
 			return errors.New("No way back into the real world.")
 		},

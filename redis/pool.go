@@ -92,9 +92,13 @@ var (
 //  }
 //
 type Pool struct {
+	// Dialer is a Dialer object responsible for creating and
+	// configuring a connection. It will be only be used if Dial is
+	// not set.
+	Dialer Dialer
 
 	// Dial is an application supplied function for creating and configuring a
-	// connection
+	// connection. If not set, Dialer.Dial will be used instead.
 	Dial func() (Conn, error)
 
 	// TestOnBorrow is an optional application supplied function for checking
@@ -244,7 +248,13 @@ func (p *Pool) get() (Conn, error) {
 		// Dial new connection if under limit.
 
 		if p.MaxActive == 0 || p.active < p.MaxActive {
-			dial := p.Dial
+			dial := func() (Conn, error) {
+				if p.Dial != nil {
+					return p.Dial()
+				} else {
+					return p.Dialer.Dial()
+				}
+			}
 			p.active += 1
 			p.mu.Unlock()
 			c, err := dial()
