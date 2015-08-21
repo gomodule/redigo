@@ -216,7 +216,6 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 			err = c.writeBytes(buf.Bytes())
 		}
 	}
-
 	return err
 }
 
