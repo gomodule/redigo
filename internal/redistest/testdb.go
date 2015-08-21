@@ -39,9 +39,16 @@ func (t testConn) Close() error {
 }
 
 // Dial dials the local Redis server and selects database 9. To prevent
-// stomping on real data, DialTestDB fails if database 9 contains data. The
+// stomping on real data, Dial fails if database 9 contains data. The
 // returned connection flushes database 9 on close.
 func Dial() (redis.Conn, error) {
+	return DialAndCheckDBSize(true)
+}
+
+// DialAndCheckDBSize dials the local Redis server and selects database 9. If
+// checkDBSize is true, the method fails if database 9 contains data. If it's
+// false, that check is skipped. The returned connection flushes database 9 on close.
+func DialAndCheckDBSize(checkDBSize bool) (redis.Conn, error) {
 	c, err := redis.DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
 	if err != nil {
 		return nil, err
@@ -52,13 +59,15 @@ func Dial() (redis.Conn, error) {
 		return nil, err
 	}
 
-	n, err := redis.Int(c.Do("DBSIZE"))
-	if err != nil {
-		return nil, err
-	}
+	if checkDBSize {
+		n, err := redis.Int(c.Do("DBSIZE"))
+		if err != nil {
+			return nil, err
+		}
 
-	if n != 0 {
-		return nil, errors.New("database #9 is not empty, test can not continue")
+		if n != 0 {
+			return nil, errors.New("database #9 is not empty, test can not continue")
+		}
 	}
 
 	return testConn{c}, nil
