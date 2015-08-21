@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"math"
 	"net"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -254,6 +255,49 @@ var testCommands = []struct {
 			"PONG",
 		},
 	},
+}
+
+func TestShutDownCommand(t *testing.T) {
+
+	c, err := redistest.Dial()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+
+	defer func() {
+		// If c.Do("SHUTDOWN") returns an error, we'll need this
+		if c != nil {
+			c.Close()
+		} else {
+			// There is not a lot we can do if this command fails
+			// Besides that, it will fail if redis is still up, so
+			// that's why we ignore err here
+			cmd := exec.Command("redis-server")
+			cmd.Start()
+			time.Sleep(50 * time.Millisecond)
+
+			flushConnection, err := redistest.DialAndCheckDBSize(false)
+			if err != nil {
+				t.Fatalf("error connection to database, %v", err)
+			}
+			// This will clean the DB
+			flushConnection.Close()
+		}
+	}()
+
+	actual, err := c.Do("SHUTDOWN")
+	if err != nil {
+		t.Errorf("Do(SHUTDOWN) returned error %v", err)
+		return
+	}
+
+	if actual != nil {
+		t.Errorf("Do(SHUTDOWN) = %v, want nil", actual)
+	}
+
+	// The connection is already shut down
+	// and we want to avoid the defered code
+	c = nil
 }
 
 func TestDoCommands(t *testing.T) {

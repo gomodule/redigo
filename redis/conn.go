@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -215,6 +216,7 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 			err = c.writeBytes(buf.Bytes())
 		}
 	}
+
 	return err
 }
 
@@ -424,6 +426,10 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 
 	if err := c.bw.Flush(); err != nil {
 		return nil, c.fatal(err)
+	}
+
+	if strings.ToLower(cmd) == "shutdown" {
+		return nil, nil
 	}
 
 	if c.readTimeout != 0 {
