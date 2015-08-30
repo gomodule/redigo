@@ -97,6 +97,15 @@ func DialConnectTimeout(d time.Duration) DialOption {
 	}}
 }
 
+// DialNetDial specifies a custom dial function for creating TCP
+// connections. If this option is left out, then net.Dial is
+// used. DialNetDial overrides DialConnectTimeout.
+func DialNetDial(dial func(network, addr string) (net.Conn, error)) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.dial = dial
+	}}
+}
+
 // DialDatabase specifies the database to select when dialing a connection.
 func DialDatabase(db int) DialOption {
 	return DialOption{func(do *dialOptions) {
