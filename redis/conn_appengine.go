@@ -1,4 +1,4 @@
-// +build !appengine
+// +build appengine
 // Copyright 2012 Gary Burd
 //
 // Licensed under the Apache License, Version 2.0 (the "License"): you may
@@ -20,8 +20,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"golang.org/x/net/context"
+	"google.golang.org/appengine/socket"
 	"io"
-	"net"
 	"strconv"
 	"sync"
 	"time"
@@ -34,7 +35,7 @@ type conn struct {
 	mu      sync.Mutex
 	pending int
 	err     error
-	conn    net.Conn
+	conn    *socket.Conn
 
 	// Read
 	readTimeout time.Duration
@@ -53,28 +54,26 @@ type conn struct {
 }
 
 // Dial connects to the Redis server at the given network and address.
-func Dial(network, address string) (Conn, error) {
+func Dial(appEngineContext context.Context, network, address string) (Conn, error) {
 	dialer := xDialer{}
-	return dialer.Dial(network, address)
+	return dialer.Dial(appEngineContext, network, address)
 }
 
 // DialTimeout acts like Dial but takes timeouts for establishing the
 // connection to the server, writing a command and reading a reply.
-func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration) (Conn, error) {
-	netDialer := net.Dialer{Timeout: connectTimeout}
+func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration, appEngineContext context.Context) (Conn, error) {
+	//netDialer := net.Dialer{Timeout: connectTimeout}
+
 	dialer := xDialer{
-		NetDial:      netDialer.Dial,
+
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 	}
-	return dialer.Dial(network, address)
+	return dialer.Dial(appEngineContext, network, address)
 }
 
 // A Dialer specifies options for connecting to a Redis server.
 type xDialer struct {
-	// NetDial specifies the dial function for creating TCP connections. If
-	// NetDial is nil, then net.Dial is used.
-	NetDial func(network, addr string) (net.Conn, error)
 
 	// ReadTimeout specifies the timeout for reading a single command
 	// reply. If ReadTimeout is zero, then no timeout is used.
@@ -86,33 +85,34 @@ type xDialer struct {
 }
 
 // Dial connects to the Redis server at address on the named network.
-func (d *xDialer) Dial(network, address string) (Conn, error) {
-	dial := d.NetDial
-	if dial == nil {
-		dial = net.Dial
-	}
-	netConn, err := dial(network, address)
+func (d *xDialer) Dial(appEngineContext context.Context, network, address string) (Conn, error) {
+
+	appEngineSocketConn, err := socket.Dial(appEngineContext, network, address)
 	if err != nil {
 		return nil, err
 	}
 	return &conn{
-		conn:         netConn,
-		bw:           bufio.NewWriter(netConn),
-		br:           bufio.NewReader(netConn),
+		conn:         appEngineSocketConn,
+		bw:           bufio.NewWriter(appEngineSocketConn),
+		br:           bufio.NewReader(appEngineSocketConn),
 		readTimeout:  d.ReadTimeout,
 		writeTimeout: d.WriteTimeout,
 	}, nil
 }
 
 // NewConn returns a new Redigo connection for the given net connection.
-func NewConn(netConn net.Conn, readTimeout, writeTimeout time.Duration) Conn {
+func NewConn(appEngineContext context.Context, netConn *socket.Conn, network, address string, readTimeout, writeTimeout time.Duration) (Conn, error) {
+	appEngineSocketConn, err := socket.Dial(appEngineContext, network, address)
+	if err != nil {
+		return nil, err
+	}
 	return &conn{
-		conn:         netConn,
-		bw:           bufio.NewWriter(netConn),
-		br:           bufio.NewReader(netConn),
+		conn:         appEngineSocketConn,
+		bw:           bufio.NewWriter(appEngineSocketConn), //
+		br:           bufio.NewReader(appEngineSocketConn),
 		readTimeout:  readTimeout,
 		writeTimeout: writeTimeout,
-	}
+	}, nil
 }
 
 func (c *conn) Close() error {
