@@ -1,7 +1,7 @@
 Redigo
 ======
 
-Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) database.
+Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) database. Modifications are done on this fork to get it working with Google App Engine 
 
 Features
 -------
