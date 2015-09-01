@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -97,10 +99,27 @@ func DialConnectTimeout(d time.Duration) DialOption {
 	}}
 }
 
+// DialNetDial specifies a custom dial function for creating TCP
+// connections. If this option is left out, then net.Dial is
+// used. DialNetDial overrides DialConnectTimeout.
+func DialNetDial(dial func(network, addr string) (net.Conn, error)) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.dial = dial
+	}}
+}
+
 // DialDatabase specifies the database to select when dialing a connection.
 func DialDatabase(db int) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.db = db
+	}}
+}
+
+// DialPassword specifies the password to use when connecting to
+// the Redis server.
+func DialPassword(password string) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.password = password
 	}}
 }
 
@@ -141,6 +160,57 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 	}
 
 	return c, nil
+}
+
+var pathDBRegexp = regexp.MustCompile(`/(\d)\z`)
+
+// DialURL connects to a Redis server at the given URL using the Redis
+// URI scheme. URLs should follow the draft IANA specification for the
+// scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
+func DialURL(rawurl string, options ...DialOption) (Conn, error) {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return nil, err
+	}
+
+	if u.Scheme != "redis" {
+		return nil, fmt.Errorf("invalid redis URL scheme: %s", u.Scheme)
+	}
+
+	// As per the IANA draft spec, the host defaults to localhost and
+	// the port defaults to 6379.
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		// assume port is missing
+		host = u.Host
+		port = "6379"
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	address := net.JoinHostPort(host, port)
+
+	if u.User != nil {
+		password, isSet := u.User.Password()
+		if isSet {
+			options = append(options, DialPassword(password))
+		}
+	}
+
+	match := pathDBRegexp.FindStringSubmatch(u.Path)
+	if len(match) == 2 {
+		db, err := strconv.Atoi(match[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
+		}
+		if db != 0 {
+			options = append(options, DialDatabase(db))
+		}
+	} else if u.Path != "" {
+		return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
+	}
+
+	return Dial("tcp", address, options...)
 }
 
 // NewConn returns a new Redigo connection for the given net connection.
