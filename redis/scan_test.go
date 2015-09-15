@@ -16,10 +16,11 @@ package redis_test
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 	"math"
 	"reflect"
 	"testing"
+
+	"github.com/garyburd/redigo/redis"
 )
 
 var scanConversionTests = []struct {
@@ -100,7 +101,8 @@ func TestScanConversionError(t *testing.T) {
 func ExampleScan() {
 	c, err := dial()
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	defer c.Close()
 
@@ -115,7 +117,8 @@ func ExampleScan() {
 		"GET", "album:*->title",
 		"GET", "album:*->rating"))
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	for len(values) > 0 {
@@ -123,7 +126,8 @@ func ExampleScan() {
 		rating := -1 // initialize to illegal value to detect nil.
 		values, err = redis.Scan(values, &title, &rating)
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
+			return
 		}
 		if rating == -1 {
 			fmt.Println(title, "not-rated")
@@ -295,7 +299,8 @@ func TestScanSlice(t *testing.T) {
 func ExampleScanSlice() {
 	c, err := dial()
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	defer c.Close()
 
@@ -310,7 +315,8 @@ func ExampleScanSlice() {
 		"GET", "album:*->title",
 		"GET", "album:*->rating"))
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	var albums []struct {
@@ -318,7 +324,8 @@ func ExampleScanSlice() {
 		Rating int
 	}
 	if err := redis.ScanSlice(values, &albums); err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	fmt.Printf("%v\n", albums)
 	// Output:
@@ -364,7 +371,8 @@ func TestArgs(t *testing.T) {
 func ExampleArgs() {
 	c, err := dial()
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	defer c.Close()
 
@@ -379,7 +387,8 @@ func ExampleArgs() {
 	p1.Body = "Hello"
 
 	if _, err := c.Do("HMSET", redis.Args{}.Add("id1").AddFlat(&p1)...); err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	m := map[string]string{
@@ -389,18 +398,21 @@ func ExampleArgs() {
 	}
 
 	if _, err := c.Do("HMSET", redis.Args{}.Add("id2").AddFlat(m)...); err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	for _, id := range []string{"id1", "id2"} {
 
 		v, err := redis.Values(c.Do("HGETALL", id))
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
+			return
 		}
 
 		if err := redis.ScanStruct(v, &p2); err != nil {
-			panic(err)
+			fmt.Println(err)
+			return
 		}
 
 		fmt.Printf("%+v\n", p2)

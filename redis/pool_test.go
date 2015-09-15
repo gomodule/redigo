@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/garyburd/redigo/internal/redistest"
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -74,7 +73,7 @@ func (d *poolDialer) dial() (redis.Conn, error) {
 	if dialErr != nil {
 		return nil, d.dialErr
 	}
-	c, err := redistest.Dial()
+	c, err := redis.DialDefaultServer()
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +235,7 @@ func TestPoolTimeout(t *testing.T) {
 
 func TestPoolConcurrenSendReceive(t *testing.T) {
 	p := &redis.Pool{
-		Dial: redistest.Dial,
+		Dial: redis.DialDefaultServer,
 	}
 	defer p.Close()
 
@@ -632,7 +631,7 @@ func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
 
 func BenchmarkPoolGet(b *testing.B) {
 	b.StopTimer()
-	p := redis.Pool{Dial: redistest.Dial, MaxIdle: 2}
+	p := redis.Pool{Dial: redis.DialDefaultServer, MaxIdle: 2}
 	c := p.Get()
 	if err := c.Err(); err != nil {
 		b.Fatal(err)
@@ -648,7 +647,7 @@ func BenchmarkPoolGet(b *testing.B) {
 
 func BenchmarkPoolGetErr(b *testing.B) {
 	b.StopTimer()
-	p := redis.Pool{Dial: redistest.Dial, MaxIdle: 2}
+	p := redis.Pool{Dial: redis.DialDefaultServer, MaxIdle: 2}
 	c := p.Get()
 	if err := c.Err(); err != nil {
 		b.Fatal(err)
@@ -667,7 +666,7 @@ func BenchmarkPoolGetErr(b *testing.B) {
 
 func BenchmarkPoolGetPing(b *testing.B) {
 	b.StopTimer()
-	p := redis.Pool{Dial: redistest.Dial, MaxIdle: 2}
+	p := redis.Pool{Dial: redis.DialDefaultServer, MaxIdle: 2}
 	c := p.Get()
 	if err := c.Err(); err != nil {
 		b.Fatal(err)
