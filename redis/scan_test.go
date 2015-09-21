@@ -339,16 +339,17 @@ var argsTests = []struct {
 }{
 	{"struct ptr",
 		redis.Args{}.AddFlat(&struct {
-			I  int    `redis:"i"`
-			U  uint   `redis:"u"`
-			S  string `redis:"s"`
-			P  []byte `redis:"p"`
+			I  int               `redis:"i"`
+			U  uint              `redis:"u"`
+			S  string            `redis:"s"`
+			P  []byte            `redis:"p"`
+			M  map[string]string `redis:"m"`
 			Bt bool
 			Bf bool
 		}{
-			-1234, 5678, "hello", []byte("world"), true, false,
+			-1234, 5678, "hello", []byte("world"), map[string]string{"hello": "world"}, true, false,
 		}),
-		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "Bt", true, "Bf", false},
+		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "m", map[string]string{"hello": "world"}, "Bt", true, "Bf", false},
 	},
 	{"struct",
 		redis.Args{}.AddFlat(struct{ I int }{123}),
@@ -357,6 +358,20 @@ var argsTests = []struct {
 	{"slice",
 		redis.Args{}.Add(1).AddFlat([]string{"a", "b", "c"}).Add(2),
 		redis.Args{1, "a", "b", "c", 2},
+	},
+	{"struct omitempty",
+		redis.Args{}.AddFlat(&struct {
+			I  int               `redis:"i,omitempty"`
+			U  uint              `redis:"u,omitempty"`
+			S  string            `redis:"s,omitempty"`
+			P  []byte            `redis:"p,omitempty"`
+			M  map[string]string `redis:"m,omitempty"`
+			Bt bool              `redis:"Bt,omitempty"`
+			Bf bool              `redis:"Bf,omitempty"`
+		}{
+			0, 0, "", []byte{}, map[string]string{}, true, false,
+		}),
+		redis.Args{"Bt", true},
 	},
 }
 
