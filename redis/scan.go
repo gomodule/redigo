@@ -234,9 +234,9 @@ func Scan(src []interface{}, dest ...interface{}) ([]interface{}, error) {
 }
 
 type fieldSpec struct {
-	name  string
-	index []int
-	//omitEmpty bool
+	name      string
+	index     []int
+	omitEmpty bool
 }
 
 type structSpec struct {
@@ -273,8 +273,8 @@ func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *st
 				}
 				for _, s := range p[1:] {
 					switch s {
-					//case "omitempty":
-					//  fs.omitempty = true
+					case "omitempty":
+						fs.omitEmpty = true
 					default:
 						panic(fmt.Errorf("redigo: unknown field tag %s for type %s", s, t.Name()))
 					}
@@ -522,6 +522,15 @@ func flattenStruct(args Args, v reflect.Value) Args {
 	ss := structSpecForType(v.Type())
 	for _, fs := range ss.l {
 		fv := v.FieldByIndex(fs.index)
+		if fs.omitEmpty {
+			if (fv.Kind() == reflect.Map || fv.Kind() == reflect.Slice) && fv.Len() == 0 {
+				continue
+			}
+			zero := reflect.Zero(fv.Type()).Interface()
+			if reflect.DeepEqual(fv.Interface(), zero) {
+				continue
+			}
+		}
 		args = append(args, fs.name, fv.Interface())
 	}
 	return args
