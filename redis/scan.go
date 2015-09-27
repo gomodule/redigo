@@ -183,6 +183,13 @@ func convertAssign(d interface{}, s interface{}) (err error) {
 				err = convertAssignInt(d.Elem(), s)
 			}
 		}
+	case string:
+		switch d := d.(type) {
+		case *string:
+			*d = string(s)
+		default:
+			err = cannotConvert(reflect.ValueOf(d), s)
+		}
 	case []interface{}:
 		switch d := d.(type) {
 		case *[]interface{}:

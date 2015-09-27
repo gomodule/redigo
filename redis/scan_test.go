@@ -47,6 +47,7 @@ var scanConversionTests = []struct {
 	{[]byte("1"), true},
 	{int64(1), true},
 	{[]byte("t"), true},
+	{"hello", "hello"},
 	{[]byte("hello"), "hello"},
 	{[]byte("world"), []byte("world")},
 	{[]interface{}{[]byte("foo")}, []interface{}{[]byte("foo")}},
