@@ -135,8 +135,9 @@ type idleConn struct {
 	t time.Time
 }
 
-// NewPool creates a new pool. This function is deprecated. Applications should
-// initialize the Pool fields directly as shown in example.
+// NewPool creates a new pool. 
+//
+// Deprecated: Initialize the Pool directory as shown in the example.
 func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 	return &Pool{Dial: newFn, MaxIdle: maxIdle}
 }

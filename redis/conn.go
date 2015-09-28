@@ -56,7 +56,7 @@ type conn struct {
 // DialTimeout acts like Dial but takes timeouts for establishing the
 // connection to the server, writing a command and reading a reply.
 //
-// DialTimeout is deprecated.
+// Deprecated: Use Dial with options instead.
 func DialTimeout(network, address string, connectTimeout, readTimeout, writeTimeout time.Duration) (Conn, error) {
 	return Dial(network, address,
 		DialConnectTimeout(connectTimeout),
