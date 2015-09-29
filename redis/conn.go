@@ -162,7 +162,7 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 	return c, nil
 }
 
-var pathDBRegexp = regexp.MustCompile(`/(\d)\z`)
+var pathDBRegexp = regexp.MustCompile(`/(\d+)\z`)
 
 // DialURL connects to a Redis server at the given URL using the Redis
 // URI scheme. URLs should follow the draft IANA specification for the
