@@ -94,7 +94,10 @@ var (
 type Pool struct {
 
 	// Dial is an application supplied function for creating and configuring a
-	// connection
+	// connection.
+	//
+	// The connection returned from Dial must not be in a special state
+	// (subscribed to pubsub channel, transaction started, ...).
 	Dial func() (Conn, error)
 
 	// TestOnBorrow is an optional application supplied function for checking
