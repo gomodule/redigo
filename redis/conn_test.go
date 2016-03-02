@@ -529,7 +529,7 @@ func TestDialURLDatabase(t *testing.T) {
 }
 
 // Connect to local instance of Redis running on the default port.
-func ExampleDial(x int) {
+func ExampleDial() {
 	c, err := redis.Dial("tcp", ":6379")
 	if err != nil {
 		// handle error
