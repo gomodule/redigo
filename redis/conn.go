@@ -370,6 +370,10 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 			}
 		case nil:
 			err = c.writeString("")
+		case Argument:
+			var buf bytes.Buffer
+			fmt.Fprint(&buf, arg.RedisArg())
+			err = c.writeBytes(buf.Bytes())
 		default:
 			var buf bytes.Buffer
 			fmt.Fprint(&buf, arg)
