@@ -42,3 +42,11 @@ type Conn interface {
 	// Receive receives a single reply from the Redis server
 	Receive() (reply interface{}, err error)
 }
+
+// Argument is implemented by types which want to control how their value is
+// interpreted when used as an argument to a redis command.
+type Argument interface {
+	// RedisArg returns the interface that represents the value to be used
+	// in redis commands.
+	RedisArg() interface{}
+}
