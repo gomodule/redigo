@@ -46,6 +46,14 @@ func dialTestConn(r io.Reader, w io.Writer) redis.DialOption {
 	})
 }
 
+type durationArg struct {
+	time.Duration
+}
+
+func (t durationArg) RedisArg() interface{} {
+	return t.Seconds()
+}
+
 var writeTests = []struct {
 	args     []interface{}
 	expected string
@@ -81,6 +89,10 @@ var writeTests = []struct {
 	{
 		[]interface{}{"SET", "key", nil},
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$0\r\n\r\n",
+	},
+	{
+		[]interface{}{"SET", "key", durationArg{time.Minute}},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$2\r\n60\r\n",
 	},
 	{
 		[]interface{}{"ECHO", true, false},
