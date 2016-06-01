@@ -17,6 +17,7 @@ package redis
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -75,6 +76,7 @@ type dialOptions struct {
 	dial         func(network, addr string) (net.Conn, error)
 	db           int
 	password     string
+	tlsConfig    *tls.Config
 }
 
 // DialReadTimeout specifies the timeout for reading a single command reply.
@@ -96,6 +98,13 @@ func DialConnectTimeout(d time.Duration) DialOption {
 	return DialOption{func(do *dialOptions) {
 		dialer := net.Dialer{Timeout: d}
 		do.dial = dialer.Dial
+	}}
+}
+
+// DialTLSConfig adds support for supplying a *tls.Config for proxied Redis setups
+func DialTLSConfig(tc *tls.Config) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.tlsConfig = tc
 	}}
 }
 
@@ -126,17 +135,29 @@ func DialPassword(password string) DialOption {
 // Dial connects to the Redis server at the given network and
 // address using the specified options.
 func Dial(network, address string, options ...DialOption) (Conn, error) {
+	var err error
+	var netConn net.Conn
+
 	do := dialOptions{
 		dial: net.Dial,
 	}
+
 	for _, option := range options {
 		option.f(&do)
 	}
 
-	netConn, err := do.dial(network, address)
+	if do.tlsConfig != nil {
+		netConn, err = tls.DialWithDialer(&net.Dialer{
+			Timeout: 1 * time.Second,
+		}, network, address, do.tlsConfig)
+	} else {
+		netConn, err = do.dial(network, address)
+	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	c := &conn{
 		conn:         netConn,
 		bw:           bufio.NewWriter(netConn),

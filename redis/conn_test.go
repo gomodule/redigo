@@ -16,6 +16,7 @@ package redis_test
 
 import (
 	"bytes"
+	"crypto/tls"
 	"io"
 	"math"
 	"net"
@@ -536,6 +537,20 @@ func TestDialURLDatabase(t *testing.T) {
 	actual0 := buf0.String()
 	if actual0 != expected0 {
 		t.Errorf("commands = %q, want %q", actual0, expected0)
+	}
+}
+
+func TestDialTLSConfig(t *testing.T) {
+	// Passing nil will return the regular dialer
+	_, err := redis.DialURL("redis://localhost", redis.DialTLSConfig(nil))
+	if err != nil {
+		t.Error("dial error:", err)
+	}
+
+	// Passing a TLS config will attempt to dial with TLS config, and will timeout if not connected within 1 second
+	_, err = redis.DialURL("redis://localhost", redis.DialTLSConfig(&tls.Config{}))
+	if err == nil {
+		t.Error("dial error: expected connection to timeout for tls connection")
 	}
 }
 
