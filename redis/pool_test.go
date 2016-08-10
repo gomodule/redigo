@@ -576,7 +576,7 @@ func TestWaitPoolDialError(t *testing.T) {
 		t.Errorf("expected one nil error, got %d", nilCount)
 	}
 	if errCount != cap(errs)-1 {
-		t.Errorf("expected %d dial erors, got %d", cap(errs)-1, errCount)
+		t.Errorf("expected %d dial errors, got %d", cap(errs)-1, errCount)
 	}
 	d.check("done", p, cap(errs), 0)
 }

@@ -99,7 +99,7 @@
 //
 // Concurrency
 //
-// Connections support one concurrent caller to the Recieve method and one
+// Connections support one concurrent caller to the Receive method and one
 // concurrent caller to the Send and Flush methods. No other concurrency is
 // supported including concurrent calls to the Do method.
 //
