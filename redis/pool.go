@@ -46,7 +46,8 @@ var (
 //
 // The following example shows how to use a pool in a web application. The
 // application creates a pool at application startup and makes it available to
-// request handlers using a global variable.
+// request handlers using a global variable. The pool configuration used here
+// is an example, not a recommendation. 
 //
 //  func newPool(server, password string) *redis.Pool {
 //      return &redis.Pool{
@@ -64,6 +65,9 @@ var (
 //              return c, err
 //          },
 //          TestOnBorrow: func(c redis.Conn, t time.Time) error {
+//              if time.Since(t) < time.Minute {
+//                  return nil
+//              }
 //              _, err := c.Do("PING")
 //              return err
 //          },
