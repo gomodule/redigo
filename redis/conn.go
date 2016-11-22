@@ -143,34 +143,6 @@ func DialTLSSkipVerify(skip bool) DialOption {
 	}}
 }
 
-// similar cloneTLSClientConfig in the stdlib, but also honor skipVerify for the nil case
-func cloneTLSClientConfig(cfg *tls.Config, skipVerify bool) *tls.Config {
-	if cfg == nil {
-		return &tls.Config{InsecureSkipVerify: skipVerify}
-	}
-	return &tls.Config{
-		Rand:                        cfg.Rand,
-		Time:                        cfg.Time,
-		Certificates:                cfg.Certificates,
-		NameToCertificate:           cfg.NameToCertificate,
-		GetCertificate:              cfg.GetCertificate,
-		RootCAs:                     cfg.RootCAs,
-		NextProtos:                  cfg.NextProtos,
-		ServerName:                  cfg.ServerName,
-		ClientAuth:                  cfg.ClientAuth,
-		ClientCAs:                   cfg.ClientCAs,
-		InsecureSkipVerify:          cfg.InsecureSkipVerify,
-		CipherSuites:                cfg.CipherSuites,
-		PreferServerCipherSuites:    cfg.PreferServerCipherSuites,
-		ClientSessionCache:          cfg.ClientSessionCache,
-		MinVersion:                  cfg.MinVersion,
-		MaxVersion:                  cfg.MaxVersion,
-		CurvePreferences:            cfg.CurvePreferences,
-		DynamicRecordSizingDisabled: cfg.DynamicRecordSizingDisabled,
-		Renegotiation:               cfg.Renegotiation,
-	}
-}
-
 // Dial connects to the Redis server at the given network and
 // address using the specified options.
 func Dial(network, address string, options ...DialOption) (Conn, error) {
