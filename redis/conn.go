@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strconv"
 	"sync"
@@ -351,32 +352,50 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 		if err != nil {
 			break
 		}
-		switch arg := arg.(type) {
-		case string:
-			err = c.writeString(arg)
-		case []byte:
-			err = c.writeBytes(arg)
-		case int:
-			err = c.writeInt64(int64(arg))
-		case int64:
-			err = c.writeInt64(arg)
-		case float64:
-			err = c.writeFloat64(arg)
-		case bool:
-			if arg {
-				err = c.writeString("1")
-			} else {
-				err = c.writeString("0")
-			}
-		case nil:
-			err = c.writeString("")
+		err = c.writeArg(arg)
+	}
+	return err
+}
+
+func (c *conn) writeArg(arg interface{}) (err error) {
+	switch arg := arg.(type) {
+	case string:
+		err = c.writeString(arg)
+	case []byte:
+		err = c.writeBytes(arg)
+	case int:
+		err = c.writeInt64(int64(arg))
+	case int64:
+		err = c.writeInt64(arg)
+	case float64:
+		err = c.writeFloat64(arg)
+	case bool:
+		if arg {
+			err = c.writeString("1")
+		} else {
+			err = c.writeString("0")
+		}
+	case nil:
+		err = c.writeString("")
+	default:
+		v := reflect.ValueOf(arg)
+		switch v.Kind() {
+		case reflect.Bool:
+			err = c.writeArg(v.Bool())
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			err = c.writeArg(v.Int())
+		case reflect.Float32, reflect.Float64:
+			err = c.writeArg(v.Float())
+		case reflect.String:
+			err = c.writeArg(v.String())
 		default:
 			var buf bytes.Buffer
 			fmt.Fprint(&buf, arg)
 			err = c.writeBytes(buf.Bytes())
 		}
 	}
-	return err
+
+	return
 }
 
 type protocolError string

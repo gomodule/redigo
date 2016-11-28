@@ -23,6 +23,11 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
+type scanWrappedString string
+type scanWrappedInt int
+type scanWrappedFloat float64
+type scanWrappedBool bool
+
 var scanConversionTests = []struct {
 	src  interface{}
 	dest interface{}
@@ -32,6 +37,7 @@ var scanConversionTests = []struct {
 	{[]byte("0"), float64(0)},
 	{[]byte("3.14159"), float64(3.14159)},
 	{[]byte("3.14"), float32(3.14)},
+	{[]byte("3.14159"), scanWrappedFloat(3.14159)},
 	{[]byte("-100"), int(-100)},
 	{[]byte("101"), int(101)},
 	{int64(102), int(102)},
@@ -41,15 +47,20 @@ var scanConversionTests = []struct {
 	{int64(106), int8(106)},
 	{[]byte("107"), uint8(107)},
 	{int64(108), uint8(108)},
+	{int64(109), scanWrappedInt(109)},
+	{[]byte("110"), scanWrappedInt(110)},
 	{[]byte("0"), false},
 	{int64(0), false},
 	{[]byte("f"), false},
 	{[]byte("1"), true},
 	{int64(1), true},
 	{[]byte("t"), true},
+	{int64(1), scanWrappedBool(true)},
+	{[]byte("t"), scanWrappedBool(true)},
 	{"hello", "hello"},
 	{[]byte("hello"), "hello"},
 	{[]byte("world"), []byte("world")},
+	{[]byte("hello"), scanWrappedString("hello")},
 	{[]interface{}{[]byte("foo")}, []interface{}{[]byte("foo")}},
 	{[]interface{}{[]byte("foo")}, []string{"foo"}},
 	{[]interface{}{[]byte("hello"), []byte("world")}, []string{"hello", "world"}},
@@ -158,6 +169,10 @@ type s1 struct {
 	Bt bool
 	Bf bool
 	s0
+	Wi scanWrappedInt    `redis:"wi"`
+	Wf scanWrappedFloat  `redis:"wf"`
+	Wb scanWrappedBool   `redis:"wb"`
+	Ws scanWrappedString `redis:"ws"`
 }
 
 var scanStructTests = []struct {
@@ -166,8 +181,8 @@ var scanStructTests = []struct {
 	value interface{}
 }{
 	{"basic",
-		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "X", "123", "y", "456"},
-		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, s0: s0{X: 123, Y: 456}},
+		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "X", "123", "y", "456", "wi", "91011", "wf", "12.13", "wb", "1", "ws", "wrapped"},
+		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, s0: s0{X: 123, Y: 456}, Wi: 91011, Wf: 12.13, Wb: true, Ws: "wrapped"},
 	},
 }
 
