@@ -165,4 +165,13 @@
 //   if _, err := redis.Scan(reply, &value1, &value2); err != nil {
 //      // handle error
 //  }
+//
+// Errors
+//
+// Connection methods return error replies from the server as type redis.Error.
+//
+// Call the connection Err() method to determine if the connection encountered
+// non-recoverable error such as a network error or protocol parsing error. If
+// Err() returns a non-nil value, then the connection is not usable and should
+// be closed.
 package redis // import "github.com/garyburd/redigo/redis"
