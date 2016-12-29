@@ -1,1 +1,1 @@
-Please ask questions at http://stackoverflow.com/questions/tagged/redigo+go
+Ask questions at https://stackoverflow.com/questions/ask?tags=go+redis
