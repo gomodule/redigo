@@ -42,7 +42,7 @@ Related Projects
 Contributing
 ------------
 
-Send email to Gary Burd (address in GitHub profile) before doing any work on Redigo.
+See [CONTRIBUTING.md](https://github.com/garyburd/redigo/blob/master/.github/CONTRIBUTING.md).
 
 License
 -------
