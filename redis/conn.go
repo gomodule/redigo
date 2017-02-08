@@ -128,7 +128,8 @@ func DialPassword(password string) DialOption {
 }
 
 // DialTLSConfig specifies the config to use when a TLS connection is dialed.
-// Has no effect when not dialing a TLS connection.func DialTLSConfig(c *tls.Config) DialOption {
+// Has no effect when not dialing a TLS connection.
+func DialTLSConfig(c *tls.Config) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.tlsConfig = c
 	}}
