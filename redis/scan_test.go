@@ -19,9 +19,31 @@ import (
 	"math"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/garyburd/redigo/redis"
 )
+
+type durationScan struct {
+	time.Duration `redis:"sd"`
+}
+
+func (t *durationScan) RedisScan(src interface{}) (err error) {
+	if t == nil {
+		return fmt.Errorf("nil pointer")
+	}
+	switch src := src.(type) {
+	case string:
+		t.Duration, err = time.ParseDuration(src)
+	case []byte:
+		t.Duration, err = time.ParseDuration(string(src))
+	case int64:
+		t.Duration = time.Duration(src)
+	default:
+		err = fmt.Errorf("cannot convert from %T to %T", src, t)
+	}
+	return err
+}
 
 var scanConversionTests = []struct {
 	src  interface{}
@@ -59,6 +81,11 @@ var scanConversionTests = []struct {
 	{[]interface{}{[]byte("1"), []byte("2")}, []float64{1, 2}},
 	{[]interface{}{[]byte("1")}, []byte{1}},
 	{[]interface{}{[]byte("1")}, []bool{true}},
+	{"1m", durationScan{Duration: time.Minute}},
+	{[]byte("1m"), durationScan{Duration: time.Minute}},
+	{time.Minute.Nanoseconds(), durationScan{Duration: time.Minute}},
+	{[]interface{}{[]byte("1m")}, []durationScan{durationScan{Duration: time.Minute}}},
+	{[]interface{}{[]byte("1m")}, []*durationScan{&durationScan{Duration: time.Minute}}},
 }
 
 func TestScanConversion(t *testing.T) {
@@ -86,6 +113,8 @@ var scanConversionErrorTests = []struct {
 	{int64(-1), byte(0)},
 	{[]byte("junk"), false},
 	{redis.Error("blah"), false},
+	{redis.Error("blah"), durationScan{Duration: time.Minute}},
+	{"invalid", durationScan{Duration: time.Minute}},
 }
 
 func TestScanConversionError(t *testing.T) {
@@ -158,6 +187,8 @@ type s1 struct {
 	Bt bool
 	Bf bool
 	s0
+	Sd  durationScan  `redis:"sd"`
+	Sdp *durationScan `redis:"sdp"`
 }
 
 var scanStructTests = []struct {
@@ -166,8 +197,31 @@ var scanStructTests = []struct {
 	value interface{}
 }{
 	{"basic",
-		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "X", "123", "y", "456"},
-		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, s0: s0{X: 123, Y: 456}},
+		[]string{
+			"i", "-1234",
+			"u", "5678",
+			"s", "hello",
+			"p", "world",
+			"b", "t",
+			"Bt", "1",
+			"Bf", "0",
+			"X", "123",
+			"y", "456",
+			"sd", "1m",
+			"sdp", "1m",
+		},
+		&s1{
+			I:   -1234,
+			U:   5678,
+			S:   "hello",
+			P:   []byte("world"),
+			B:   true,
+			Bt:  true,
+			Bf:  false,
+			s0:  s0{X: 123, Y: 456},
+			Sd:  durationScan{Duration: time.Minute},
+			Sdp: &durationScan{Duration: time.Minute},
+		},
 	},
 }
 
