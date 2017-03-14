@@ -459,7 +459,7 @@ var dialErrors = []struct {
 		"localhost",
 		"invalid redis URL scheme",
 	},
-	// The error message for invalid hosts is diffferent in different
+	// The error message for invalid hosts is different in different
 	// versions of Go, so just check that there is an error message.
 	{
 		"redis://weird url",
