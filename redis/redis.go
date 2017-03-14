@@ -47,3 +47,13 @@ type Argument interface {
 	// in redis commands.
 	RedisArg() interface{}
 }
+
+// Scanner is implemented by types which want to control how their value is
+// interpreted when read from redis.
+type Scanner interface {
+	// RedisScan assigns a value from a redis value.
+	//
+	// An error should be returned if the value cannot be stored without
+	// loss of information.
+	RedisScan(src interface{}) error
+}
