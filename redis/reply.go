@@ -406,10 +406,10 @@ func Positions(result interface{}, err error) ([]*[2]float64, error) {
 		}
 		p, ok := values[i].([]interface{})
 		if !ok {
-			return nil, fmt.Errorf("redigo: unexpected element type for Interface slice, got type %T", values[i])
+			return nil, fmt.Errorf("redigo: unexpected element type for interface slice, got type %T", values[i])
 		}
 		if len(p) != 2 {
-			return nil, fmt.Errorf("redigo: unexpected number of values for a member position,got %d", len(p))
+			return nil, fmt.Errorf("redigo: unexpected number of values for a member position, got %d", len(p))
 		}
 		lat, err := Float64(p[0], nil)
 		if err != nil {

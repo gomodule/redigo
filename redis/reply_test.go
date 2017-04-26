@@ -96,6 +96,11 @@ var replyTests = []struct {
 		ve(redis.Uint64(int64(-1), nil)),
 		ve(uint64(0), redis.ErrNegativeInt),
 	},
+	{
+		"positions([[1, 2], nil, [3, 4]])",
+		ve(redis.Positions([]interface{}{[]interface{}{[]byte("1"), []byte("2")}, nil, []interface{}{[]byte("3"), []byte("4")}}, nil)),
+		ve([]*[2]float64{{1.0, 2.0}, nil, {3.0, 4.0}}, nil),
+	},
 }
 
 func TestReply(t *testing.T) {
