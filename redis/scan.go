@@ -186,7 +186,7 @@ func convertAssign(d interface{}, s interface{}) (err error) {
 	case string:
 		switch d := d.(type) {
 		case *string:
-			*d = string(s)
+			*d = s
 		case *interface{}:
 			*d = s
 		case nil:
