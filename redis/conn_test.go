@@ -59,6 +59,10 @@ var writeTests = []struct {
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
 	},
 	{
+		[]interface{}{"SET", "key", io.LimitReader(strings.NewReader("value"), 5)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+	},
+	{
 		[]interface{}{"SET", "key", byte(100)},
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$3\r\n100\r\n",
 	},
@@ -636,6 +640,46 @@ func TestExecError(t *testing.T) {
 
 	if _, ok := vs[1].(error); !ok {
 		t.Fatalf("second result is type %T, expected error", vs[2])
+	}
+}
+
+func TestLimitedReaderFeat(t *testing.T) {
+	c, err := redis.DialDefaultServer()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	defer c.Close()
+
+	const (
+		key            = "key"
+		sentence       = "Hello, Limited Reader!"
+		sentenceLength = int64(len(sentence))
+	)
+
+	sentenceReader := io.LimitReader(strings.NewReader(sentence), sentenceLength)
+	c.Send("SET", key, sentenceReader)
+	err = c.Flush()
+	if err != nil {
+		t.Fatalf("error setting (SET) %q from LimitedReader, %v", key, err)
+	}
+
+	reply, err := c.Do("GET", key)
+	if err != nil {
+		t.Fatalf("error getting (GET) %q from redis, %v", key, err)
+	}
+	if reply == nil {
+		t.Fatalf("error getting (GET) %q from redis", key)
+	}
+
+	block, err := redis.Bytes(reply, err)
+	if err != nil {
+		t.Fatalf("error getting bytes from redis reply, %v", err)
+	}
+
+	sentenceReply := string(block)
+	if sentence != sentenceReply {
+		t.Fatalf("expected reply to be %q but got %q instead",
+			sentence, sentenceReply)
 	}
 }
 

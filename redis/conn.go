@@ -344,6 +344,32 @@ func (c *conn) writeFloat64(n float64) error {
 	return c.writeBytes(strconv.AppendFloat(c.numScratch[:0], n, 'g', -1, 64))
 }
 
+func (c *conn) writeFromLimitedReader(lr *io.LimitedReader) error {
+	if lr == nil || lr.R == nil || lr.N == 0 { // ensure there is data to be read
+		return protocolError("no data to be read from LimitedReader")
+	}
+
+	// write fixed length
+	fixedLength := lr.N
+	c.writeLen('$', int(fixedLength))
+
+	// write actual content, capped at limitedReader
+	n, err := c.bw.ReadFrom(lr)
+	if err != nil {
+		return err
+	}
+
+	// ensure that written length is as much as the fixed length we specified earlier
+	if n != fixedLength {
+		return protocolError(fmt.Sprintf(
+			"expected to read %d bytes from limitedReader, while only read %d",
+			fixedLength, n))
+	}
+
+	_, err = c.bw.WriteString("\r\n")
+	return err
+}
+
 func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 	c.writeLen('*', 1+len(args))
 	err = c.writeString(cmd)
@@ -370,6 +396,8 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 			}
 		case nil:
 			err = c.writeString("")
+		case *io.LimitedReader:
+			err = c.writeFromLimitedReader(arg)
 		default:
 			var buf bytes.Buffer
 			fmt.Fprint(&buf, arg)
