@@ -52,6 +52,11 @@ var replyTests = []struct {
 		ve([]string{"v1", "v2"}, nil),
 	},
 	{
+		"strings([v1, v2])",
+		ve(redis.Strings([]interface{}{"v1", "v2"}, nil)),
+		ve([]string{"v1", "v2"}, nil),
+	},
+	{
 		"strings(nil)",
 		ve(redis.Strings(nil, nil)),
 		ve([]string(nil), redis.ErrNil),
