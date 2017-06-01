@@ -199,10 +199,16 @@ func (p *Pool) IdleCount() int {
 
 // Close releases the resources used by the pool.
 func (p *Pool) Close() error {
+	p.closed = true
+	p.closeAll()
+	return nil
+}
+
+// Close all connections.
+func (p *Pool) closeAll() {
 	p.mu.Lock()
 	idle := p.idle
 	p.idle.Init()
-	p.closed = true
 	p.active -= idle.Len()
 	if p.cond != nil {
 		p.cond.Broadcast()
@@ -211,7 +217,6 @@ func (p *Pool) Close() error {
 	for e := idle.Front(); e != nil; e = e.Next() {
 		e.Value.(idleConn).c.Close()
 	}
-	return nil
 }
 
 // release decrements the active count and signals waiters. The caller must
@@ -306,6 +311,12 @@ func (p *Pool) get() (Conn, error) {
 
 func (p *Pool) put(c Conn, forceClose bool) error {
 	err := c.Err()
+	return p.putCommon(err, c, forceClose)
+}
+
+// putCommon contains operations in common with the Pool and the
+// SentinelAwarePool.
+func (p *Pool) putCommon(err error, c Conn, forceClose bool) error {
 	p.mu.Lock()
 	if !p.closed && err == nil && !forceClose {
 		p.idle.PushFront(idleConn{t: nowFunc(), c: c})
@@ -329,8 +340,123 @@ func (p *Pool) put(c Conn, forceClose bool) error {
 	return c.Close()
 }
 
+// The SentinelAwarePool is identical to the normal Pool implementation except
+// the configuration of the monitored master is retained. Change in this
+// configuration causes a purge of all stored idle connections. The typical
+// use of the UpdateMaster method will be in the Dial() method, see the
+// example below.
+//
+// A TestOnReturn function entry point is also supplied. Users are encouraged
+// to put a role test in TestOnReturn to prevent connections that persist
+// through unexpected role changes without fatal errors from making it back
+// into the pool.
+//
+// Active connections will not be impacted by the purge. The user is expected
+// to be aware of this and be able to handle interruptions to the redis
+// connection in the event of a failover, which is _not_ seamless.
+//
+// Example of usage to contact master:
+//
+//  func newSentinelPool() *redis.SentinelAwarePool {
+//	  sentConn, err := redis.NewSentinelClient("tcp",
+//      []string{"127.0.0.1:26379", "127.0.0.2:26379", "127.0.0.2.26379"},
+//      nil, 100*time.Millisecond, 100*time.Millisecond, 100*time.Millisecond)
+//
+//	  if err != nil {
+//	    log.Println("Failed to connect to redis sentinel:", err)
+//	    return nil
+//	  }
+//
+//	  sap := &redis.SentinelAwarePool{
+//	    Pool : redis.Pool{
+//	      MaxIdle : 10,
+//	      IdleTimeout : 240 * time.Second,
+//	      TestOnBorrow: func(c redis.Conn, t time.Time) error {
+//	        if !redis.TestRole(c, "master") {
+//	          return errors.New("Failed role check")
+//	        } else {
+//	          return nil
+//	        }
+//	      },
+//	    },
+//	    TestOnReturn : func(c redis.Conn) error {
+//	      if !redis.TestRole(c, "master") {
+//	        return errors.New("Failed role check")
+//	      } else {
+//	        return nil
+//	      }
+//	    },
+//	  }
+//
+//	  sap.Pool.Dial = func() (redis.Conn, error) {
+//	    masterAddr, err := sentConn.QueryConfForMaster("kvmaster")
+//	    if err != nil {
+//	      return nil, err
+//	    }
+//	    sap.UpdateMaster(masterAddr)
+//
+//	    c, err := redis.Dial("tcp", masterAddr)
+//	    if err != nil {
+//	      return nil, err
+//	    }
+//	    if !redis.TestRole(c, "master") {
+//	      return nil, errors.New("Failed role check")
+//	    }
+//	    return c, err
+//	  }
+//
+//	  return sap
+//	}
+//
+// The SentinelClient used above will try all connected sentinels when
+// querying for the master address. However, if no sentinels can be
+// contacted, it may be impossible to dial for some time. The
+// SentinelClient should automatically recover once a sentinel returns.
+type SentinelAwarePool struct {
+	Pool
+	// TestOnReturn is a user-supplied function to test a connection before
+	// returning it to the pool. Like TestOnBorrow, TestOnReturn will close the
+	// connection if an error is observed. It is strongly suggested to test the
+	// role of a connection on return, especially if the sentinels in use are
+	// older than 2.8.12.
+	TestOnReturn func(c Conn) error
+
+	masterAddr string
+}
+
+// UpdateMaster updates the internal accounting of the SentinelAwarePool,
+// which may trigger a flush of all idle connections if the master
+// changes.
+func (sap *SentinelAwarePool) UpdateMaster(addr string) {
+	if addr != sap.masterAddr {
+		sap.masterAddr = addr
+		sap.closeAll()
+	}
+}
+
+// Entrypoint for TestOnReturn, any error here causes the connection to be
+// closed instead of being returned to the pool.
+func (sap *SentinelAwarePool) testConn(c Conn) error {
+	err := c.Err()
+	if err != nil {
+		return err
+	}
+	return sap.TestOnReturn(c)
+}
+
+func (sap *SentinelAwarePool) put(c Conn, forceClose bool) error {
+	err := sap.testConn(c)
+	return sap.putCommon(err, c, forceClose)
+}
+
+// New interface to allow the pooledConnection to interact with both
+// the Pool and the SentinelAwarePool.
+type connToPool interface {
+	put(Conn, bool) error
+}
+
 type pooledConnection struct {
-	p     *Pool
+	p     connToPool
 	c     Conn
 	state int
 }
