@@ -616,3 +616,24 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	}
 	return reply, err
 }
+
+type connMutex struct {
+	Conn
+	Mutex *sync.Mutex
+}
+
+func (c *connMutex) Do(cmd string, args ...interface{}) (interface{}, error) {
+	c.Mutex.Lock()
+	reply, err := c.Conn.Do(cmd, args...)
+	c.Mutex.Unlock()
+	return reply, err
+}
+
+type ConnMutex interface {
+	Do(commandName string, args ...interface{}) (reply interface{}, err error)
+}
+
+func DialMutex(network, address string, options ...DialOption) (ConnMutex, error) {
+	c, err := Dial(network, address, options...)
+	return &connMutex{c, &sync.Mutex{}}, err
+}
