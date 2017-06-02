@@ -46,6 +46,11 @@ func dialTestConn(r io.Reader, w io.Writer) redis.DialOption {
 	})
 }
 
+type connWrappedString string
+type connWrappedInt int
+type connWrappedFloat float64
+type connWrappedBool bool
+
 var writeTests = []struct {
 	args     []interface{}
 	expected string
@@ -55,7 +60,7 @@ var writeTests = []struct {
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
 	},
 	{
-		[]interface{}{"SET", "key", "value"},
+		[]interface{}{"SET", "key", connWrappedString("value")},
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
 	},
 	{
@@ -71,8 +76,28 @@ var writeTests = []struct {
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$20\r\n-9223372036854775808\r\n",
 	},
 	{
+		[]interface{}{"SET", "key", connWrappedInt(42)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$2\r\n42\r\n",
+	},
+	{
 		[]interface{}{"SET", "key", float64(1349673917.939762)},
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$21\r\n1.349673917939762e+09\r\n",
+	},
+	{
+		[]interface{}{"SET", "key", connWrappedFloat(123.456)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$7\r\n123.456\r\n",
+	},
+	{
+		[]interface{}{"SET", "key", true},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\n1\r\n",
+	},
+	{
+		[]interface{}{"SET", "key", false},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\n0\r\n",
+	},
+	{
+		[]interface{}{"SET", "key", connWrappedBool(true)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\n1\r\n",
 	},
 	{
 		[]interface{}{"SET", "key", ""},
