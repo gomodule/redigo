@@ -115,6 +115,12 @@ func convertAssignValue(d reflect.Value, s interface{}) (err error) {
 		err = convertAssignBulkString(d, s)
 	case int64:
 		err = convertAssignInt(d, s)
+	case []interface{}:
+		if d.Type().Elem().Kind() == reflect.Interface {
+			d.Set(reflect.ValueOf(s))
+			return nil
+		}
+		return convertAssignValues(d, s)
 	default:
 		err = cannotConvert(d, s)
 	}
