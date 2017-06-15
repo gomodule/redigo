@@ -437,8 +437,8 @@ func startGoroutines(p *redis.Pool, cmd string, args ...interface{}) chan error 
 		go func() {
 			c := p.Get()
 			_, err := c.Do(cmd, args...)
-			errs <- err
 			c.Close()
+			errs <- err
 		}()
 	}
 
