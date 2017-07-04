@@ -390,15 +390,54 @@ var errScanStructValue = errors.New("redigo.ScanStruct: value must be non-nil po
 // boolean types.
 //
 // If a src element is nil, then the corresponding field is not modified.
+//
+// var des *Struct
+// ScanStruct(src, &des)
+// if des != nil {
+// 	...
+// }
 func ScanStruct(src []interface{}, dest interface{}) error {
-	d := reflect.ValueOf(dest)
-	if d.Kind() != reflect.Ptr || d.IsNil() {
+	//d := reflect.ValueOf(dest)
+	//if d.Kind() != reflect.Ptr || d.IsNil() {
+	//	fmt.Println("eeee")
+	//	return errScanStructValue
+	//}
+	//d = d.Elem()
+	//if d.Kind() != reflect.Struct {
+	//	fmt.Println("eeeeaaaaa")
+	//	return errScanStructValue
+	//}
+	if len(src) == 0 {
+		return nil
+	}
+
+	var objType = reflect.TypeOf(destination)
+	var objValue = reflect.ValueOf(destination)
+	var objValueKind = objValue.Kind()
+
+	if objValueKind == reflect.Struct {
 		return errScanStructValue
 	}
-	d = d.Elem()
-	if d.Kind() != reflect.Struct {
+
+	if objValue.IsNil() {
 		return errScanStructValue
 	}
+
+	for {
+		if objValueKind == reflect.Ptr && objValue.IsNil() {
+			objValue.Set(reflect.New(objType.Elem()))
+		}
+
+		if objValueKind == reflect.Ptr {
+			objValue = objValue.Elem()
+			objType = objType.Elem()
+			objValueKind = objValue.Kind()
+			continue
+		}
+		break
+	}
+	d := objValue
+	
 	ss := structSpecForType(d.Type())
 
 	if len(src)%2 != 0 {
