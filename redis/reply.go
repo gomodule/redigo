@@ -333,7 +333,7 @@ func StringMap(result interface{}, err error) (map[string]string, error) {
 		key, okKey := values[i].([]byte)
 		value, okValue := values[i+1].([]byte)
 		if !okKey || !okValue {
-			return nil, errors.New("redigo: ScanMap key not a bulk string value")
+			return nil, errors.New("redigo: StringMap key not a bulk string value")
 		}
 		m[string(key)] = string(value)
 	}
@@ -355,7 +355,7 @@ func IntMap(result interface{}, err error) (map[string]int, error) {
 	for i := 0; i < len(values); i += 2 {
 		key, ok := values[i].([]byte)
 		if !ok {
-			return nil, errors.New("redigo: ScanMap key not a bulk string value")
+			return nil, errors.New("redigo: IntMap key not a bulk string value")
 		}
 		value, err := Int(values[i+1], nil)
 		if err != nil {
@@ -381,7 +381,7 @@ func Int64Map(result interface{}, err error) (map[string]int64, error) {
 	for i := 0; i < len(values); i += 2 {
 		key, ok := values[i].([]byte)
 		if !ok {
-			return nil, errors.New("redigo: ScanMap key not a bulk string value")
+			return nil, errors.New("redigo: Int64Map key not a bulk string value")
 		}
 		value, err := Int64(values[i+1], nil)
 		if err != nil {
