@@ -38,6 +38,7 @@ Related Projects
 - [chasex/redis-go-cluster](https://github.com/chasex/redis-go-cluster) - A Redis cluster client implementation.
 - [FZambia/go-sentinel](https://github.com/FZambia/go-sentinel) - Redis Sentinel support for Redigo
 - [PuerkitoBio/redisc](https://github.com/PuerkitoBio/redisc) - Redis Cluster client built on top of Redigo
+- [xgfone/go-redis](https://github.com/xgfone/go-redis) - Supply the high-level API interface based on Redigo.
 
 Contributing
 ------------
