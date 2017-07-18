@@ -96,7 +96,8 @@ func (s *Server) watch(r io.Reader, ready chan error) {
 		text = scn.Text()
 		fmt.Fprintf(serverLog, "%s\n", text)
 		if !listening {
-			if strings.Contains(text, "The server is now ready to accept connections on port") {
+			if strings.Contains(text, " * Ready to accept connections") ||
+				strings.Contains(text, " * The server is now ready to accept connections on port") {
 				listening = true
 				ready <- nil
 			}
