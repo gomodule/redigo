@@ -94,6 +94,9 @@ func (c PubSubConn) PUnsubscribe(channel ...interface{}) error {
 }
 
 // Ping sends a PING to the server with the specified data.
+//
+// The connection must be subscribed to at least one channel or pattern when
+// calling this method.
 func (c PubSubConn) Ping(data string) error {
 	c.Conn.Send("PING", data)
 	return c.Conn.Flush()
