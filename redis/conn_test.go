@@ -49,13 +49,28 @@ func dialTestConn(r io.Reader, w io.Writer) redis.DialOption {
 	})
 }
 
+type tlsTestConn struct {
+	net.Conn
+	done chan struct{}
+}
+
+func (c *tlsTestConn) Close() error {
+	c.Conn.Close()
+	<-c.done
+	return nil
+}
+
 func dialTestConnTLS(r io.Reader, w io.Writer) redis.DialOption {
 	return redis.DialNetDial(func(network, addr string) (net.Conn, error) {
 		client, server := net.Pipe()
 		tlsServer := tls.Server(server, &serverTLSConfig)
 		go io.Copy(tlsServer, r)
-		go io.Copy(w, tlsServer)
-		return client, nil
+		done := make(chan struct{})
+		go func() {
+			io.Copy(w, tlsServer)
+			close(done)
+		}()
+		return &tlsTestConn{Conn: client, done: done}, nil
 	})
 }
 
@@ -569,6 +584,8 @@ func checkPingPong(t *testing.T, buf *bytes.Buffer, c redis.Conn) {
 	if err != nil {
 		t.Fatal("ping error:", err)
 	}
+	// Close connection to ensure that writes to buf are complete.
+	c.Close()
 	expected := "*1\r\n$4\r\nPING\r\n"
 	actual := buf.String()
 	if actual != expected {
@@ -589,7 +606,6 @@ func TestDialURLTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal("dial error:", err)
 	}
-	defer c.Close()
 	checkPingPong(t, &buf, c)
 }
 
@@ -602,7 +618,6 @@ func TestDialURLIgnoreUseTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal("dial error:", err)
 	}
-	defer c.Close()
 	checkPingPong(t, &buf, c)
 }
 
@@ -615,7 +630,6 @@ func TestDialUseTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal("dial error:", err)
 	}
-	defer c.Close()
 	checkPingPong(t, &buf, c)
 }
 
@@ -628,7 +642,6 @@ func TestDialTLSSKipVerify(t *testing.T) {
 	if err != nil {
 		t.Fatal("dial error:", err)
 	}
-	defer c.Close()
 	checkPingPong(t, &buf, c)
 }
 
