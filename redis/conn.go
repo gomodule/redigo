@@ -76,7 +76,7 @@ type dialOptions struct {
 	dial         func(network, addr string) (net.Conn, error)
 	db           int
 	password     string
-	dialTLS      bool
+	useTLS       bool
 	skipVerify   bool
 	tlsConfig    *tls.Config
 }
@@ -135,11 +135,19 @@ func DialTLSConfig(c *tls.Config) DialOption {
 	}}
 }
 
-// DialTLSSkipVerify to disable server name verification when connecting
-// over TLS. Has no effect when not dialing a TLS connection.
+// DialTLSSkipVerify disables server name verification when connecting over
+// TLS. Has no effect when not dialing a TLS connection.
 func DialTLSSkipVerify(skip bool) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.skipVerify = skip
+	}}
+}
+
+// DialUseTLS specifies whether TLS should be used when connecting to the
+// server. This option is ignore by DialURL.
+func DialUseTLS(useTLS bool) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.useTLS = useTLS
 	}}
 }
 
@@ -158,7 +166,7 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 		return nil, err
 	}
 
-	if do.dialTLS {
+	if do.useTLS {
 		tlsConfig := cloneTLSClientConfig(do.tlsConfig, do.skipVerify)
 		if tlsConfig.ServerName == "" {
 			host, _, err := net.SplitHostPort(address)
@@ -200,10 +208,6 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 	}
 
 	return c, nil
-}
-
-func dialTLS(do *dialOptions) {
-	do.dialTLS = true
 }
 
 var pathDBRegexp = regexp.MustCompile(`/(\d*)\z`)
@@ -257,9 +261,7 @@ func DialURL(rawurl string, options ...DialOption) (Conn, error) {
 		return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
 	}
 
-	if u.Scheme == "rediss" {
-		options = append([]DialOption{{dialTLS}}, options...)
-	}
+	options = append(options, DialUseTLS(u.Scheme == "rediss"))
 
 	return Dial("tcp", address, options...)
 }
