@@ -132,6 +132,7 @@ func DialPassword(password string) DialOption {
 func DialTLSConfig(c *tls.Config) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.tlsConfig = c
+		dialTLS(do)
 	}}
 }
 
@@ -140,6 +141,7 @@ func DialTLSConfig(c *tls.Config) DialOption {
 func DialTLSSkipVerify(skip bool) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.skipVerify = skip
+		dialTLS(do)
 	}}
 }
 
