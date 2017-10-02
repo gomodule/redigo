@@ -38,7 +38,7 @@
 //
 //  n, err := conn.Do("APPEND", "key", "value")
 //
-// The Do method converts command arguments to binary strings for transmission
+// The Do method converts command arguments to bulk strings for transmission
 // to the server as follows:
 //
 //  Go Type                 Conversion
