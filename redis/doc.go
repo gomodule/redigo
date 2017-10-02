@@ -48,7 +48,7 @@
 //  float64                 strconv.FormatFloat(v, 'g', -1, 64)
 //  bool                    true -> "1", false -> "0"
 //  nil                     ""
-//  all other types         fmt.Print(v)
+//  all other types         fmt.Fprint(w, v)
 //
 // Redis command reply types are represented using the following Go types:
 //
