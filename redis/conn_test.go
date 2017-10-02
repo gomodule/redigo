@@ -82,6 +82,10 @@ func (t durationArg) RedisArg() interface{} {
 	return t.Seconds()
 }
 
+type recursiveArg int
+
+func (v recursiveArg) RedisArg() interface{} { return v }
+
 var writeTests = []struct {
 	args     []interface{}
 	expected string
@@ -121,6 +125,10 @@ var writeTests = []struct {
 	{
 		[]interface{}{"SET", "key", durationArg{time.Minute}},
 		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$2\r\n60\r\n",
+	},
+	{
+		[]interface{}{"SET", "key", recursiveArg(123)},
+		"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$3\r\n123\r\n",
 	},
 	{
 		[]interface{}{"ECHO", true, false},
