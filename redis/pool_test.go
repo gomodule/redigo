@@ -92,12 +92,15 @@ func (d *poolDialer) check(message string, p *redis.Pool, dialed, open, inuse in
 		d.t.Errorf("%s: open=%d, want %d", message, d.open, open)
 	}
 
-	if active := p.ActiveCount(); active != open {
-		d.t.Errorf("%s: active=%d, want %d", message, active, open)
+	stats := p.Stats()
+
+	if stats.ActiveCount != open {
+		d.t.Errorf("%s: active=%d, want %d", message, stats.ActiveCount, open)
 	}
-	if idle := p.IdleCount(); idle != open-inuse {
-		d.t.Errorf("%s: idle=%d, want %d", message, idle, open-inuse)
+	if stats.IdleCount != open-inuse {
+		d.t.Errorf("%s: idle=%d, want %d", message, stats.IdleCount, open-inuse)
 	}
+
 	d.mu.Unlock()
 }
 
