@@ -49,7 +49,7 @@ type Argument interface {
 	RedisArg() interface{}
 }
 
-// Scanner is implemented by an object which wants to control it's value is
+// Scanner is implemented by an object which wants to control its value is
 // interpreted when read from Redis.
 type Scanner interface {
 	// RedisScan assigns a value from a Redis value. The argument src is one of
