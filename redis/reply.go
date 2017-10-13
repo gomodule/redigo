@@ -203,7 +203,7 @@ func Bool(reply interface{}, err error) (bool, error) {
 		return false, err
 	}
 	switch reply := reply.(type) {
-	case int64:
+	case int, int64:
 		return reply != 0, nil
 	case []byte:
 		return strconv.ParseBool(string(reply))
