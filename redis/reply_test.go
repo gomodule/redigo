@@ -49,7 +49,7 @@ var replyTests = []struct {
 	{
 		"floats([v1, v2])",
 		ve(redis.Floats([]interface{}{[]byte("4.1"), []byte("5.2")}, nil)),
-		ve([]int{4, 5}, nil),
+		ve([]float64{4.1, 5.2}, nil),
 	},
 	{
 		"floats(nil)",
