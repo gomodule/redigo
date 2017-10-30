@@ -54,7 +54,7 @@ var replyTests = []struct {
 	{
 		"floats(nil)",
 		ve(redis.Floats(nil, nil)),
-		ve([]int(nil), redis.ErrNil),
+		ve([]float64(nil), redis.ErrNil),
 	},
 	{
 		"strings([v1, v2])",
