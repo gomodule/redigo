@@ -21,6 +21,7 @@ Documentation
 
 - [API Reference](http://godoc.org/github.com/garyburd/redigo/redis)
 - [FAQ](https://github.com/garyburd/redigo/wiki/FAQ)
+- [Examples](https://godoc.org/github.com/garyburd/redigo/redis#pkg-examples)
 
 Installation
 ------------
