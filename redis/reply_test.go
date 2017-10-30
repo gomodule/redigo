@@ -42,9 +42,24 @@ var replyTests = []struct {
 		ve([]int{4, 5}, nil),
 	},
 	{
+		"ints([v1, nil, v2])",
+		ve(redis.Ints([]interface{}{[]byte("4"), nil, []byte("5")}, nil)),
+		ve([]int{4, 0, 5}, nil),
+	},
+	{
+		"ints([v1, nil, v2])",
+		ve(redis.Ints([]interface{}{[]byte("4"), nil, []byte("5")}, nil)),
+		ve([]int{4, 0, 5}, nil),
+	},
+	{
 		"ints(nil)",
 		ve(redis.Ints(nil, nil)),
 		ve([]int(nil), redis.ErrNil),
+	},
+	{
+		"int64s([v1, v2])",
+		ve(redis.Int64s([]interface{}{[]byte("4"), []byte("5")}, nil)),
+		ve([]int64{4, 5}, nil),
 	},
 	{
 		"strings([v1, v2])",
@@ -52,19 +67,14 @@ var replyTests = []struct {
 		ve([]string{"v1", "v2"}, nil),
 	},
 	{
-		"strings(nil)",
-		ve(redis.Strings(nil, nil)),
-		ve([]string(nil), redis.ErrNil),
-	},
-	{
 		"byteslices([v1, v2])",
 		ve(redis.ByteSlices([]interface{}{[]byte("v1"), []byte("v2")}, nil)),
 		ve([][]byte{[]byte("v1"), []byte("v2")}, nil),
 	},
 	{
-		"byteslices(nil)",
-		ve(redis.ByteSlices(nil, nil)),
-		ve([][]byte(nil), redis.ErrNil),
+		"float64s([v1, v2])",
+		ve(redis.Float64s([]interface{}{[]byte("1.234"), []byte("5.678")}, nil)),
+		ve([]float64{1.234, 5.678}, nil),
 	},
 	{
 		"values([v1, v2])",
