@@ -38,6 +38,8 @@ func cannotConvert(d reflect.Value, s interface{}) error {
 		sname = "Redis simple string"
 	case Error:
 		sname = "Redis error"
+	case float64:
+		sname = "Redis float"
 	case int64:
 		sname = "Redis integer"
 	case []byte:
@@ -75,6 +77,20 @@ func convertAssignBulkString(d reflect.Value, s []byte) (err error) {
 			err = cannotConvert(d, s)
 		} else {
 			d.SetBytes(s)
+		}
+	default:
+		err = cannotConvert(d, s)
+	}
+	return
+}
+
+func convertAssignFloat(d reflect.Value, s float64) (err error) {
+	switch d.Type().Kind() {
+	case reflect.Float64, reflect.Float32:
+		d.SetFloat(s)
+		if d.Float() != s {
+			err = strconv.ErrRange
+			d.SetFloat(0)
 		}
 	default:
 		err = cannotConvert(d, s)
@@ -134,6 +150,8 @@ func convertAssignValue(d reflect.Value, s interface{}) (err error) {
 		err = convertAssignBulkString(d, s)
 	case int64:
 		err = convertAssignInt(d, s)
+	case float64:
+		err = convertAssignFloat(d, s)
 	default:
 		err = cannotConvert(d, s)
 	}
