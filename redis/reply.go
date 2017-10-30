@@ -317,6 +317,26 @@ func Ints(reply interface{}, err error) ([]int, error) {
 	return ints, nil
 }
 
+// Floats is a helper that converts an array command reply to a []float64. If
+// err is not equal to nil, then Floats returns nil, err.
+func Floats(reply interface{}, err error) ([]float64, error) {
+	var floats []float64
+	values, err := Values(reply, err)
+	if err != nil {
+		return floats, err
+	}
+
+	for i := 0; i < len(values); i++ {
+		float_val, err := Float64(values[i], nil)
+		if err != nil {
+			return floats, err
+		}
+		floats = append(floats, float_val)
+	}
+
+	return floats, nil
+}
+
 // StringMap is a helper that converts an array of strings (alternating key, value)
 // into a map[string]string. The HGETALL and CONFIG GET commands return replies in this format.
 // Requires an even number of values in result.
