@@ -47,6 +47,16 @@ var replyTests = []struct {
 		ve([]int(nil), redis.ErrNil),
 	},
 	{
+		"floats([v1, v2])",
+		ve(redis.Floats([]interface{}{[]byte("4.1"), []byte("5.2")}, nil)),
+		ve([]int{4, 5}, nil),
+	},
+	{
+		"floats(nil)",
+		ve(redis.Floats(nil, nil)),
+		ve([]int(nil), redis.ErrNil),
+	},
+	{
 		"strings([v1, v2])",
 		ve(redis.Strings([]interface{}{[]byte("v1"), []byte("v2")}, nil)),
 		ve([]string{"v1", "v2"}, nil),
