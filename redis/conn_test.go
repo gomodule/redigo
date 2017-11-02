@@ -764,7 +764,6 @@ func BenchmarkDoPing(b *testing.B) {
 var clientTLSConfig, serverTLSConfig tls.Config
 
 func init() {
-
 	// The certificate and key for testing TLS dial options was created
 	// using the command
 	//

@@ -31,7 +31,6 @@ import (
 
 // conn is the low-level implementation of Conn
 type conn struct {
-
 	// Shared
 	mu      sync.Mutex
 	pending int
