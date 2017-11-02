@@ -243,7 +243,7 @@ func Values(reply interface{}, err error) ([]interface{}, error) {
 	return nil, fmt.Errorf("redigo: unexpected type for Values, got type %T", reply)
 }
 
-func sliceHelper(reply interface{}, err error, name string, makeSlice func(int), assign func(int, []byte) error) error {
+func sliceHelper(reply interface{}, err error, name string, makeSlice func(int), assign func(int, interface{}) error) error {
 	if err != nil {
 		return err
 	}
@@ -254,11 +254,7 @@ func sliceHelper(reply interface{}, err error, name string, makeSlice func(int),
 			if reply[i] == nil {
 				continue
 			}
-			p, ok := reply[i].([]byte)
-			if !ok {
-				return fmt.Errorf("redigo: unexpected element type for %s, got type %T", name, reply[i])
-			}
-			if err := assign(i, p); err != nil {
+			if err := assign(i, reply[i]); err != nil {
 				return err
 			}
 		}
@@ -277,7 +273,11 @@ func sliceHelper(reply interface{}, err error, name string, makeSlice func(int),
 // item is not a bulk string or nil.
 func Float64s(reply interface{}, err error) ([]float64, error) {
 	var result []float64
-	err = sliceHelper(reply, err, "Float64s", func(n int) { result = make([]float64, n) }, func(i int, p []byte) error {
+	err = sliceHelper(reply, err, "Float64s", func(n int) { result = make([]float64, n) }, func(i int, v interface{}) error {
+		p, ok := v.([]byte)
+		if !ok {
+			return fmt.Errorf("redigo: unexpected element type for Floats64, got type %T", v)
+		}
 		f, err := strconv.ParseFloat(string(p), 64)
 		result[i] = f
 		return err
@@ -291,9 +291,17 @@ func Float64s(reply interface{}, err error) ([]float64, error) {
 // item is not a bulk string or nil.
 func Strings(reply interface{}, err error) ([]string, error) {
 	var result []string
-	err = sliceHelper(reply, err, "Strings", func(n int) { result = make([]string, n) }, func(i int, p []byte) error {
-		result[i] = string(p)
-		return nil
+	err = sliceHelper(reply, err, "Strings", func(n int) { result = make([]string, n) }, func(i int, v interface{}) error {
+		switch v := v.(type) {
+		case string:
+			result[i] = v
+			return nil
+		case []byte:
+			result[i] = string(v)
+			return nil
+		default:
+			return fmt.Errorf("redigo: unexpected element type for Strings, got type %T", v)
+		}
 	})
 	return result, err
 }
@@ -304,7 +312,11 @@ func Strings(reply interface{}, err error) ([]string, error) {
 // bulk string or nil.
 func ByteSlices(reply interface{}, err error) ([][]byte, error) {
 	var result [][]byte
-	err = sliceHelper(reply, err, "ByteSlices", func(n int) { result = make([][]byte, n) }, func(i int, p []byte) error {
+	err = sliceHelper(reply, err, "ByteSlices", func(n int) { result = make([][]byte, n) }, func(i int, v interface{}) error {
+		p, ok := v.([]byte)
+		if !ok {
+			return fmt.Errorf("redigo: unexpected element type for ByteSlices, got type %T", v)
+		}
 		result[i] = p
 		return nil
 	})
@@ -317,10 +329,18 @@ func ByteSlices(reply interface{}, err error) ([][]byte, error) {
 // bulk string or nil.
 func Int64s(reply interface{}, err error) ([]int64, error) {
 	var result []int64
-	err = sliceHelper(reply, err, "Int64s", func(n int) { result = make([]int64, n) }, func(i int, p []byte) error {
-		n, err := strconv.ParseInt(string(p), 10, 64)
-		result[i] = n
-		return err
+	err = sliceHelper(reply, err, "Int64s", func(n int) { result = make([]int64, n) }, func(i int, v interface{}) error {
+		switch v := v.(type) {
+		case int64:
+			result[i] = v
+			return nil
+		case []byte:
+			n, err := strconv.ParseInt(string(v), 10, 64)
+			result[i] = n
+			return err
+		default:
+			return fmt.Errorf("redigo: unexpected element type for Int64s, got type %T", v)
+		}
 	})
 	return result, err
 }
@@ -331,10 +351,22 @@ func Int64s(reply interface{}, err error) ([]int64, error) {
 // bulk string or nil.
 func Ints(reply interface{}, err error) ([]int, error) {
 	var result []int
-	err = sliceHelper(reply, err, "Ints", func(n int) { result = make([]int, n) }, func(i int, p []byte) error {
-		n, err := strconv.Atoi(string(p))
-		result[i] = n
-		return err
+	err = sliceHelper(reply, err, "Ints", func(n int) { result = make([]int, n) }, func(i int, v interface{}) error {
+		switch v := v.(type) {
+		case int64:
+			n := int(v)
+			if int64(n) != v {
+				return strconv.ErrRange
+			}
+			result[i] = n
+			return nil
+		case []byte:
+			n, err := strconv.Atoi(string(v))
+			result[i] = n
+			return err
+		default:
+			return fmt.Errorf("redigo: unexpected element type for Ints, got type %T", v)
+		}
 	})
 	return result, err
 }
