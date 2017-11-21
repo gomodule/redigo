@@ -38,6 +38,7 @@ var (
 	ErrNegativeInt = errNegativeInt
 
 	serverPath     = flag.String("redis-server", "redis-server", "Path to redis server binary")
+	serverAddress  = flag.String("redis-address", "127.0.0.1", "The address of the server")
 	serverBasePort = flag.Int("redis-port", 16379, "Beginning of port range for test servers")
 	serverLogName  = flag.String("redis-log", "", "Write Redis server logs to `filename`")
 	serverLog      = ioutil.Discard
@@ -136,6 +137,7 @@ func startDefaultServer() error {
 	defaultServer, defaultServerErr = NewServer(
 		"default",
 		"--port", strconv.Itoa(*serverBasePort),
+		"--bind", *serverAddress,
 		"--save", "",
 		"--appendonly", "no")
 	return defaultServerErr
@@ -147,7 +149,7 @@ func DialDefaultServer() (Conn, error) {
 	if err := startDefaultServer(); err != nil {
 		return nil, err
 	}
-	c, err := Dial("tcp", fmt.Sprintf(":%d", *serverBasePort), DialReadTimeout(1*time.Second), DialWriteTimeout(1*time.Second))
+	c, err := Dial("tcp", fmt.Sprintf("%v:%d", *serverAddress, *serverBasePort), DialReadTimeout(1*time.Second), DialWriteTimeout(1*time.Second))
 	if err != nil {
 		return nil, err
 	}
