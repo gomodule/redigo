@@ -102,8 +102,9 @@ func (c PubSubConn) Ping(data string) error {
 // Receive returns a pushed message as a Subscription, Message, PMessage, Pong
 // or error. The return value is intended to be used directly in a type switch
 // as illustrated in the PubSubConn example.
+// It doesn't use the ReadTimeout configured on the pool.
 func (c PubSubConn) Receive() interface{} {
-	reply, err := Values(c.Conn.Receive())
+	reply, err := Values(c.Conn.ReceiveNoReadTimeout())
 	if err != nil {
 		return err
 	}

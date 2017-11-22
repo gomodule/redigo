@@ -82,6 +82,7 @@ type dialOptions struct {
 }
 
 // DialReadTimeout specifies the timeout for reading a single command reply.
+// Read timeout is not used by Pub/Sub connections.
 func DialReadTimeout(d time.Duration) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.readTimeout = d
@@ -572,8 +573,22 @@ func (c *conn) Flush() error {
 }
 
 func (c *conn) Receive() (reply interface{}, err error) {
+	return c.receive(false)
+}
+
+func (c *conn) ReceiveNoReadTimeout() (reply interface{}, err error) {
+	return c.receive(true)
+}
+
+var zeroTime time.Time
+
+func (c *conn) receive(noReadTimeout bool) (reply interface{}, err error) {
 	if c.readTimeout != 0 {
-		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		if noReadTimeout {
+			c.conn.SetReadDeadline(zeroTime)
+		} else {
+			c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		}
 	}
 	if reply, err = c.readReply(); err != nil {
 		return nil, c.fatal(err)
