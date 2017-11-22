@@ -38,6 +38,10 @@ type Conn interface {
 
 	// Receive receives a single reply from the Redis server
 	Receive() (reply interface{}, err error)
+
+	// ReceiveNoReadTimeout receives a single reply from the Redis server
+	// without applying any read timeout.
+	ReceiveNoReadTimeout() (reply interface{}, err error)
 }
 
 // Argument is the interface implemented by an object which wants to control how
