@@ -89,6 +89,14 @@ func (c *muxConn) Flush() error {
 }
 
 func (c *muxConn) Receive() (interface{}, error) {
+	return c.receive(false)
+}
+
+func (c *muxConn) ReceiveNoReadTimeout() (interface{}, error) {
+	return c.receive(true)
+}
+
+func (c *muxConn) receive(noReadTimeout bool) (interface{}, error) {
 	if len(c.ids) == 0 {
 		return nil, errors.New("mux pool underflow")
 	}
@@ -112,7 +120,13 @@ func (c *muxConn) Receive() (interface{}, error) {
 		}
 	}
 
-	v, err := p.c.Receive()
+	var v interface{}
+	var err error
+	if noReadTimeout {
+		v, err = p.c.ReceiveNoReadTimeout()
+	} else {
+		v, err = p.c.Receive()
+	}
 
 	id++
 	p.recvID = id
