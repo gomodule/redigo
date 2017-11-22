@@ -72,6 +72,7 @@ type DialOption struct {
 type dialOptions struct {
 	readTimeout  time.Duration
 	writeTimeout time.Duration
+	dialer       *net.Dialer
 	dial         func(network, addr string) (net.Conn, error)
 	db           int
 	password     string
@@ -94,17 +95,27 @@ func DialWriteTimeout(d time.Duration) DialOption {
 	}}
 }
 
-// DialConnectTimeout specifies the timeout for connecting to the Redis server.
+// DialConnectTimeout specifies the timeout for connecting to the Redis server when
+// no DialNetDial option is specified.
 func DialConnectTimeout(d time.Duration) DialOption {
 	return DialOption{func(do *dialOptions) {
-		dialer := net.Dialer{Timeout: d}
-		do.dial = dialer.Dial
+		do.dialer.Timeout = d
+	}}
+}
+
+// DialKeepAlive specifies the keep-alive period for TCP connections to the Redis server
+// when no DialNetDial option is specified.
+// If zero, keep-alives are not enabled. If no DialKeepAlive option is specified then
+// the default of 5 minutes is used to ensure that half-closed TCP sessions are detected.
+func DialKeepAlive(d time.Duration) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.dialer.KeepAlive = d
 	}}
 }
 
 // DialNetDial specifies a custom dial function for creating TCP
-// connections. If this option is left out, then net.Dial is
-// used. DialNetDial overrides DialConnectTimeout.
+// connections, otherwise a net.Dialer customized via the other options is used.
+// DialNetDial overrides DialConnectTimeout and DialKeepAlive.
 func DialNetDial(dial func(network, addr string) (net.Conn, error)) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.dial = dial
@@ -154,10 +165,15 @@ func DialUseTLS(useTLS bool) DialOption {
 // address using the specified options.
 func Dial(network, address string, options ...DialOption) (Conn, error) {
 	do := dialOptions{
-		dial: net.Dial,
+		dialer: &net.Dialer{
+			KeepAlive: time.Minute * 5,
+		},
 	}
 	for _, option := range options {
 		option.f(&do)
+	}
+	if do.dial == nil {
+		do.dial = do.dialer.Dial
 	}
 
 	netConn, err := do.dial(network, address)
