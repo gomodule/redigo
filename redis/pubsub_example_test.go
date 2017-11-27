@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
+// +build go1.7
+
 package redis_test
 
 import (
@@ -29,7 +31,6 @@ func listenPubSubChannels(ctx context.Context, redisServerAddr string,
 	onStart func() error,
 	onMessage func(channel string, data []byte) error,
 	channels ...string) error {
-
 	// A ping is set to the server with this period to test for the health of
 	// the connection and server.
 	const healthCheckPeriod = time.Minute
