@@ -127,12 +127,14 @@ func stopDefaultServer() {
 	}
 }
 
-// startDefaultServer starts the default server if not already running.
-func startDefaultServer() error {
+// DefaultServerAddr starts the test server if not already started and returns
+// the address of that server.
+func DefaultServerAddr() (string, error) {
 	defaultServerMu.Lock()
 	defer defaultServerMu.Unlock()
+	addr := fmt.Sprintf("%v:%d", *serverAddress, *serverBasePort)
 	if defaultServer != nil || defaultServerErr != nil {
-		return defaultServerErr
+		return addr, defaultServerErr
 	}
 	defaultServer, defaultServerErr = NewServer(
 		"default",
@@ -140,16 +142,17 @@ func startDefaultServer() error {
 		"--bind", *serverAddress,
 		"--save", "",
 		"--appendonly", "no")
-	return defaultServerErr
+	return addr, defaultServerErr
 }
 
 // DialDefaultServer starts the test server if not already started and dials a
 // connection to the server.
 func DialDefaultServer() (Conn, error) {
-	if err := startDefaultServer(); err != nil {
+	addr, err := DefaultServerAddr()
+	if err != nil {
 		return nil, err
 	}
-	c, err := Dial("tcp", fmt.Sprintf("%v:%d", *serverAddress, *serverBasePort), DialReadTimeout(1*time.Second), DialWriteTimeout(1*time.Second))
+	c, err := Dial("tcp", addr, DialReadTimeout(1*time.Second), DialWriteTimeout(1*time.Second))
 	if err != nil {
 		return nil, err
 	}
