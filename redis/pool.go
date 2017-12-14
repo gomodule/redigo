@@ -96,7 +96,7 @@ var (
 //        return nil, err
 //      }
 //      return c, nil
-//    }
+//    },
 //  }
 //
 // Use the TestOnBorrow function to check the health of an idle connection
