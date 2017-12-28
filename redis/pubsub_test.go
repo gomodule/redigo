@@ -17,6 +17,7 @@ package redis_test
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/garyburd/redigo/redis"
 )
@@ -64,4 +65,10 @@ func TestPushed(t *testing.T) {
 	c.Conn.Send("PING")
 	c.Conn.Flush()
 	expectPushed(t, c, `Send("PING")`, redis.Pong{})
+
+	c.Ping("timeout")
+	got := c.ReceiveWithTimeout(time.Minute)
+	if want := (redis.Pong{Data: "timeout"}); want != got {
+		t.Errorf("recv /w timeout got %v, want %v", got, want)
+	}
 }
