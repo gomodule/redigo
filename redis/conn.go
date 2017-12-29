@@ -186,7 +186,12 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 	}
 
 	if do.useTLS {
-		tlsConfig := cloneTLSClientConfig(do.tlsConfig, do.skipVerify)
+		var tlsConfig *tls.Config
+		if do.tlsConfig == nil {
+			tlsConfig = &tls.Config{InsecureSkipVerify: do.skipVerify}
+		} else {
+			tlsConfig = cloneTLSConfig(do.tlsConfig)
+		}
 		if tlsConfig.ServerName == "" {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {
