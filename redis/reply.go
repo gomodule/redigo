@@ -345,6 +345,24 @@ func Int64s(reply interface{}, err error) ([]int64, error) {
 	return result, err
 }
 
+func Uint64s(reply interface{}, err error) ([]uint64, error) {
+	var result []uint64
+	err = sliceHelper(reply, err, "Uint64s", func(n int) { result = make([]uint64, n) }, func(i int, v interface{}) error {
+		switch v := v.(type) {
+		case uint64:
+			result[i] = v
+			return nil
+		case []byte:
+			n, err := strconv.ParseUint(string(v), 10, 64)
+			result[i] = n
+			return err
+		default:
+			return fmt.Errorf("redigo: unexpected element type for Int64s, got type %T", v)
+		}
+	})
+	return result, err
+}
+
 // Ints is a helper that converts an array command reply to a []in.
 // If err is not equal to nil, then Ints returns nil, err. Nil array
 // items are stay nil. Ints returns an error if an array item is not a
