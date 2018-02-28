@@ -15,7 +15,6 @@
 package redis_test
 
 import (
-	"context"
 	"errors"
 	"io"
 	"reflect"
@@ -584,40 +583,6 @@ func TestWaitPoolDialError(t *testing.T) {
 		t.Errorf("expected %d dial errors, got %d", cap(errs)-1, errCount)
 	}
 	d.check("done", p, cap(errs), 0, 0)
-}
-
-func TestWaitPoolGetAfterClose(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	p.Close()
-	_, err := p.GetContext(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestWaitPoolGetCanceledContext(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
-	ctx, f := context.WithCancel(context.Background())
-	f()
-	c := p.Get()
-	defer c.Close()
-	_, err := p.GetContext(ctx)
-	if err != context.Canceled {
-		t.Fatalf("got error %v, want %v", err, context.Canceled)
-	}
 }
 
 // Borrowing requires us to iterate over the idle connections, unlock the pool,
