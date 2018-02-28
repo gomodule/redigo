@@ -16,6 +16,7 @@ package redis
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
 	"errors"
@@ -26,7 +27,6 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/internal"
-	"golang.org/x/net/context"
 )
 
 var (

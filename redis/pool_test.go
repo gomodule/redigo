@@ -15,6 +15,7 @@
 package redis_test
 
 import (
+	"context"
 	"errors"
 	"io"
 	"reflect"
@@ -23,7 +24,6 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"golang.org/x/net/context"
 )
 
 type poolTestConn struct {
