@@ -20,13 +20,13 @@ import "testing"
 
 func TestPoolList(t *testing.T) {
 	var idle idleList
-	var a, b, c idleConn
+	var a, b, c poolConn
 
-	check := func(ics ...*idleConn) {
-		if idle.count != len(ics) {
-			t.Fatal("idle.count != len(ics)")
+	check := func(pcs ...*poolConn) {
+		if idle.count != len(pcs) {
+			t.Fatal("idle.count != len(pcs)")
 		}
-		if len(ics) == 0 {
+		if len(pcs) == 0 {
 			if idle.front != nil {
 				t.Fatalf("front not nil")
 			}
@@ -35,11 +35,11 @@ func TestPoolList(t *testing.T) {
 			}
 			return
 		}
-		if idle.front != ics[0] {
-			t.Fatal("front != ics[0]")
+		if idle.front != pcs[0] {
+			t.Fatal("front != pcs[0]")
 		}
-		if idle.back != ics[len(ics)-1] {
-			t.Fatal("back != ics[len(ics)-1]")
+		if idle.back != pcs[len(pcs)-1] {
+			t.Fatal("back != pcs[len(pcs)-1]")
 		}
 		if idle.front.prev != nil {
 			t.Fatal("front.prev != nil")
@@ -47,12 +47,12 @@ func TestPoolList(t *testing.T) {
 		if idle.back.next != nil {
 			t.Fatal("back.next != nil")
 		}
-		for i := 1; i < len(ics)-1; i++ {
-			if ics[i-1].next != ics[i] {
-				t.Fatal("ics[i-1].next != ics[i]")
+		for i := 1; i < len(pcs)-1; i++ {
+			if pcs[i-1].next != pcs[i] {
+				t.Fatal("pcs[i-1].next != pcs[i]")
 			}
-			if ics[i+1].prev != ics[i] {
-				t.Fatal("ics[i+1].prev != ics[i]")
+			if pcs[i+1].prev != pcs[i] {
+				t.Fatal("pcs[i+1].prev != pcs[i]")
 			}
 		}
 	}

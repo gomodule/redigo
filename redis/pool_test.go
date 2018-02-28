@@ -212,7 +212,37 @@ func TestPoolClose(t *testing.T) {
 	}
 }
 
-func TestPoolTimeout(t *testing.T) {
+func TestPoolClosedConn(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:     2,
+		IdleTimeout: 300 * time.Second,
+		Dial:        d.dial,
+	}
+	defer p.Close()
+	c := p.Get()
+	if c.Err() != nil {
+		t.Fatal("get failed")
+	}
+	c.Close()
+	if err := c.Err(); err == nil {
+		t.Fatal("Err on closed connection did not return error")
+	}
+	if _, err := c.Do("PING"); err == nil {
+		t.Fatal("Do on closed connection did not return error")
+	}
+	if err := c.Send("PING"); err == nil {
+		t.Fatal("Send on closed connection did not return error")
+	}
+	if err := c.Flush(); err == nil {
+		t.Fatal("Flush on closed connection did not return error")
+	}
+	if _, err := c.Receive(); err == nil {
+		t.Fatal("Receive on closed connection did not return error")
+	}
+}
+
+func TestPoolIdleTimeout(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
 		MaxIdle:     2,
@@ -232,6 +262,34 @@ func TestPoolTimeout(t *testing.T) {
 	d.check("1", p, 1, 1, 0)
 
 	now = now.Add(p.IdleTimeout + 1)
+
+	c = p.Get()
+	c.Do("PING")
+	c.Close()
+
+	d.check("2", p, 2, 1, 0)
+}
+
+func TestPoolMaxLifetime(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:         2,
+		MaxConnLifetime: 300 * time.Second,
+		Dial:            d.dial,
+	}
+	defer p.Close()
+
+	now := time.Now()
+	redis.SetNowFunc(func() time.Time { return now })
+	defer redis.SetNowFunc(time.Now)
+
+	c := p.Get()
+	c.Do("PING")
+	c.Close()
+
+	d.check("1", p, 1, 1, 0)
+
+	now = now.Add(p.MaxConnLifetime + 1)
 
 	c = p.Get()
 	c.Do("PING")

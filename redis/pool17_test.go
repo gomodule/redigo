@@ -23,6 +23,22 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
+func TestWaitPoolGetContext(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   1,
+		MaxActive: 1,
+		Dial:      d.dial,
+		Wait:      true,
+	}
+	defer p.Close()
+	c, err := p.GetContext(context.Background())
+	if err != nil {
+		t.Fatalf("GetContext returned %v", err)
+	}
+	defer c.Close()
+}
+
 func TestWaitPoolGetAfterClose(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
