@@ -18,8 +18,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/garyburd/redigo/internal"
-	"github.com/garyburd/redigo/redis"
+	"github.com/gomodule/redigo/internal"
+	"github.com/gomodule/redigo/redis"
 )
 
 // ConnMux multiplexes one or more connections to a single underlying

@@ -14,7 +14,7 @@
 
 // Package redis is a client for the Redis database.
 //
-// The Redigo FAQ (https://github.com/garyburd/redigo/wiki/FAQ) contains more
+// The Redigo FAQ (https://github.com/gomodule/redigo/wiki/FAQ) contains more
 // documentation about this package.
 //
 // Connections
@@ -174,4 +174,4 @@
 // non-recoverable error such as a network error or protocol parsing error. If
 // Err() returns a non-nil value, then the connection is not usable and should
 // be closed.
-package redis // import "github.com/garyburd/redigo/redis"
+package redis // import "github.com/gomodule/redigo/redis"
