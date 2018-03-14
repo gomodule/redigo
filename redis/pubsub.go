@@ -36,17 +36,8 @@ type Message struct {
 	// The originating channel.
 	Channel string
 
-	// The message data.
-	Data []byte
-}
-
-// PMessage represents a pmessage notification.
-type PMessage struct {
-	// The matched pattern.
+	// The matched pattern, if any
 	Pattern string
-
-	// The originating channel.
-	Channel string
 
 	// The message data.
 	Data []byte
@@ -102,9 +93,9 @@ func (c PubSubConn) Ping(data string) error {
 	return c.Conn.Flush()
 }
 
-// Receive returns a pushed message as a Subscription, Message, PMessage, Pong
-// or error. The return value is intended to be used directly in a type switch
-// as illustrated in the PubSubConn example.
+// Receive returns a pushed message as a Subscription, Message, Pong or error.
+// The return value is intended to be used directly in a type switch as
+// illustrated in the PubSubConn example.
 func (c PubSubConn) Receive() interface{} {
 	return c.receiveInternal(c.Conn.Receive())
 }
@@ -135,11 +126,11 @@ func (c PubSubConn) receiveInternal(replyArg interface{}, errArg error) interfac
 		}
 		return m
 	case "pmessage":
-		var pm PMessage
-		if _, err := Scan(reply, &pm.Pattern, &pm.Channel, &pm.Data); err != nil {
+		var m Message
+		if _, err := Scan(reply, &m.Pattern, &m.Channel, &m.Data); err != nil {
 			return err
 		}
-		return pm
+		return m
 	case "subscribe", "psubscribe", "unsubscribe", "punsubscribe":
 		s := Subscription{Kind: kind}
 		if _, err := Scan(reply, &s.Channel, &s.Count); err != nil {
