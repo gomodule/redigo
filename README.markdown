@@ -38,7 +38,7 @@ Related Projects
 - [rafaeljusto/redigomock](https://godoc.org/github.com/rafaeljusto/redigomock) - A mock library for Redigo.
 - [chasex/redis-go-cluster](https://github.com/chasex/redis-go-cluster) - A Redis cluster client implementation.
 - [FZambia/go-sentinel](https://github.com/FZambia/go-sentinel) - Redis Sentinel support for Redigo
-- [PuerkitoBio/redisc](https://github.com/PuerkitoBio/redisc) - Redis Cluster client built on top of Redigo
+- [mna/redisc](https://github.com/mna/redisc) - Redis Cluster client built on top of Redigo
 
 Contributing
 ------------
