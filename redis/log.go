@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -85,6 +86,9 @@ func (c *loggingConn) printValue(buf *bytes.Buffer, v interface{}) {
 }
 
 func (c *loggingConn) print(method, commandName string, args []interface{}, reply interface{}, err error) {
+	if commandName == "" || commandName == strings.ToUpper("ping") {
+		return
+	}
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "%s%s(", c.prefix, method)
 	if method != "Receive" {

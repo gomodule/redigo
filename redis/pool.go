@@ -424,6 +424,7 @@ func (ac *activeConn) Close() error {
 			}
 		}
 	}
+	pc.c.Do("")
 	ac.p.put(pc, ac.state != 0 || pc.c.Err() != nil)
 	return nil
 }
