@@ -17,6 +17,7 @@ package redis
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -27,6 +28,11 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"go.opencensus.io/stats"
+	"go.opencensus.io/trace"
+
+	"github.com/gomodule/redigo/internal/observability"
 )
 
 var (
@@ -168,6 +174,21 @@ func DialUseTLS(useTLS bool) DialOption {
 // Dial connects to the Redis server at the given network and
 // address using the specified options.
 func Dial(network, address string, options ...DialOption) (Conn, error) {
+	return DialWithContext(context.Background(), network, address, options...)
+}
+
+func DialWithContext(ctx context.Context, network, address string, options ...DialOption) (Conn, error) {
+	startTime := time.Now()
+	conn, err := doDial(network, address, options...)
+	measures := []stats.Measurement{observability.MDials.M(1), observability.MDialLatencySeconds.M(time.Since(startTime).Seconds())}
+	if err != nil {
+		measures = append(measures, observability.MDialErrors.M(1))
+	}
+	stats.Record(ctx, measures...)
+	return conn, err
+}
+
+func doDial(network, address string, options ...DialOption) (Conn, error) {
 	do := dialOptions{
 		dialer: &net.Dialer{
 			KeepAlive: time.Minute * 5,
@@ -348,42 +369,54 @@ func (c *conn) writeLen(prefix byte, n int) error {
 	return err
 }
 
-func (c *conn) writeString(s string) error {
+func (c *conn) writeString(s string) (int, error) {
 	c.writeLen('$', len(s))
-	c.bw.WriteString(s)
-	_, err := c.bw.WriteString("\r\n")
-	return err
+	n, _ := c.bw.WriteString(s)
+	nr, err := c.bw.WriteString("\r\n")
+	n += nr
+	return n, err
 }
 
-func (c *conn) writeBytes(p []byte) error {
+func (c *conn) writeBytes(p []byte) (int, error) {
 	c.writeLen('$', len(p))
 	c.bw.Write(p)
-	_, err := c.bw.WriteString("\r\n")
-	return err
+	return c.bw.WriteString("\r\n")
 }
 
-func (c *conn) writeInt64(n int64) error {
+func (c *conn) writeInt64(n int64) (int, error) {
 	return c.writeBytes(strconv.AppendInt(c.numScratch[:0], n, 10))
 }
 
-func (c *conn) writeFloat64(n float64) error {
+func (c *conn) writeFloat64(n float64) (int, error) {
 	return c.writeBytes(strconv.AppendFloat(c.numScratch[:0], n, 'g', -1, 64))
 }
 
-func (c *conn) writeCommand(cmd string, args []interface{}) error {
+func (c *conn) writeCommand(ctx context.Context, cmd string, args []interface{}) (int64, error) {
+	ctx, span := trace.StartSpan(ctx, "redis.(*Conn).writeCommand")
+	defer span.End()
+
 	c.writeLen('*', 1+len(args))
-	if err := c.writeString(cmd); err != nil {
-		return err
+	n := int64(0)
+	ns, err := c.writeString(cmd)
+	n += int64(ns)
+	if err != nil {
+		span.SetStatus(trace.Status{Code: int32(trace.StatusCodeInternal), Message: err.Error()})
+		span.End()
+		return n, err
 	}
 	for _, arg := range args {
-		if err := c.writeArg(arg, true); err != nil {
-			return err
+		ni, err := c.writeArg(arg, true)
+		if err != nil {
+			span.End()
+			return n, err
 		}
+		n += int64(ni)
 	}
-	return nil
+	span.Annotatef([]trace.Attribute{trace.Int64Attribute("bytes_written", n)}, "Wrote bytes")
+	return n, nil
 }
 
-func (c *conn) writeArg(arg interface{}, argumentTypeOK bool) (err error) {
+func (c *conn) writeArg(arg interface{}, argumentTypeOK bool) (int, error) {
 	switch arg := arg.(type) {
 	case string:
 		return c.writeString(arg)
@@ -427,19 +460,19 @@ func (pe protocolError) Error() string {
 	return fmt.Sprintf("redigo: %s (possible server error or unsupported concurrent read by application)", string(pe))
 }
 
-func (c *conn) readLine() ([]byte, error) {
+func (c *conn) readLine() ([]byte, int, error) {
 	p, err := c.br.ReadSlice('\n')
 	if err == bufio.ErrBufferFull {
-		return nil, protocolError("long response line")
+		return nil, len(p), protocolError("long response line")
 	}
 	if err != nil {
-		return nil, err
+		return nil, len(p), err
 	}
 	i := len(p) - 2
 	if i < 0 || p[i] != '\r' {
-		return nil, protocolError("bad response line terminator")
+		return nil, len(p), protocolError("bad response line terminator")
 	}
-	return p[:i], nil
+	return p[:i], len(p), nil
 }
 
 // parseLen parses bulk string and array lengths.
@@ -466,9 +499,9 @@ func parseLen(p []byte) (int, error) {
 }
 
 // parseInt parses an integer reply.
-func parseInt(p []byte) (interface{}, error) {
+func parseInt(p []byte) (interface{}, int, error) {
 	if len(p) == 0 {
-		return 0, protocolError("malformed integer")
+		return 0, 0, protocolError("malformed integer")
 	}
 
 	var negate bool
@@ -476,7 +509,7 @@ func parseInt(p []byte) (interface{}, error) {
 		negate = true
 		p = p[1:]
 		if len(p) == 0 {
-			return 0, protocolError("malformed integer")
+			return 0, 0, protocolError("malformed integer")
 		}
 	}
 
@@ -484,7 +517,7 @@ func parseInt(p []byte) (interface{}, error) {
 	for _, b := range p {
 		n *= 10
 		if b < '0' || b > '9' {
-			return 0, protocolError("illegal bytes in length")
+			return 0, len(p), protocolError("illegal bytes in length")
 		}
 		n += int64(b - '0')
 	}
@@ -492,79 +525,86 @@ func parseInt(p []byte) (interface{}, error) {
 	if negate {
 		n = -n
 	}
-	return n, nil
+	return n, len(p), nil
 }
 
 var (
-	okReply   interface{} = "OK"
-	pongReply interface{} = "PONG"
+	okReply   string = "OK"
+	pongReply string = "PONG"
 )
 
-func (c *conn) readReply() (interface{}, error) {
-	line, err := c.readLine()
+func (c *conn) readReply() (interface{}, int, error) {
+	line, n, err := c.readLine()
 	if err != nil {
-		return nil, err
+		return nil, n, err
 	}
 	if len(line) == 0 {
-		return nil, protocolError("short response line")
+		return nil, n, protocolError("short response line")
 	}
 	switch line[0] {
 	case '+':
 		switch {
 		case len(line) == 3 && line[1] == 'O' && line[2] == 'K':
 			// Avoid allocation for frequent "+OK" response.
-			return okReply, nil
+			return okReply, n, nil
 		case len(line) == 5 && line[1] == 'P' && line[2] == 'O' && line[3] == 'N' && line[4] == 'G':
 			// Avoid allocation in PING command benchmarks :)
-			return pongReply, nil
+			return pongReply, n, nil
 		default:
-			return string(line[1:]), nil
+			return string(line[1:]), n, nil
 		}
 	case '-':
-		return Error(string(line[1:])), nil
+		return Error(string(line[1:])), n, nil
 	case ':':
 		return parseInt(line[1:])
 	case '$':
 		n, err := parseLen(line[1:])
 		if n < 0 || err != nil {
-			return nil, err
+			return nil, n, err
 		}
 		p := make([]byte, n)
-		_, err = io.ReadFull(c.br, p)
+		ni, err := io.ReadFull(c.br, p)
+		ni += n
 		if err != nil {
-			return nil, err
+			return nil, ni, err
 		}
-		if line, err := c.readLine(); err != nil {
-			return nil, err
+		if line, nii, err := c.readLine(); err != nil {
+			return nil, ni + nii, err
 		} else if len(line) != 0 {
-			return nil, protocolError("bad bulk string format")
+			return nil, ni, protocolError("bad bulk string format")
 		}
-		return p, nil
+		return p, ni, nil
 	case '*':
-		n, err := parseLen(line[1:])
-		if n < 0 || err != nil {
-			return nil, err
+		ni, err := parseLen(line[1:])
+		if ni < 0 || err != nil {
+			return nil, n, err
 		}
-		r := make([]interface{}, n)
+		r := make([]interface{}, ni)
+		var nir int
 		for i := range r {
-			r[i], err = c.readReply()
+			r[i], nir, err = c.readReply()
+			n += nir
 			if err != nil {
-				return nil, err
+				return nil, n, err
 			}
 		}
-		return r, nil
+		return r, n, nil
 	}
-	return nil, protocolError("unexpected response line")
+	return nil, n, protocolError("unexpected response line")
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {
+	return c.SendWithContext(context.Background(), cmd, args...)
+}
+
+func (c *conn) SendWithContext(ctx context.Context, cmd string, args ...interface{}) error {
 	c.mu.Lock()
 	c.pending += 1
 	c.mu.Unlock()
 	if c.writeTimeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 	}
-	if err := c.writeCommand(cmd, args); err != nil {
+	if _, err := c.writeCommand(ctx, cmd, args); err != nil {
 		return c.fatal(err)
 	}
 	return nil
@@ -591,7 +631,7 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 	}
 	c.conn.SetReadDeadline(deadline)
 
-	if reply, err = c.readReply(); err != nil {
+	if reply, _, err = c.readReply(); err != nil {
 		return nil, c.fatal(err)
 	}
 	// When using pub/sub, the number of receives can be greater than the
@@ -617,6 +657,14 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 }
 
 func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...interface{}) (interface{}, error) {
+	return c.do(context.Background(), readTimeout, cmd, args...)
+}
+
+func (c *conn) DoWithContext(ctx context.Context, cmd string, args ...interface{}) (interface{}, error) {
+	return c.do(ctx, c.readTimeout, cmd, args...)
+}
+
+func (c *conn) do(ctx context.Context, readTimeout time.Duration, cmd string, args ...interface{}) (interface{}, error) {
 	c.mu.Lock()
 	pending := c.pending
 	c.pending = 0
@@ -626,31 +674,68 @@ func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...inte
 		return nil, nil
 	}
 
+	spanName := cmd
+	if spanName == "" {
+		spanName = "do"
+	}
+
+	ctx, _ = observability.TagKeyValuesIntoContext(ctx, observability.KeyCommandName, spanName)
+	ctx, span := trace.StartSpan(ctx, "redis.(*Conn)."+spanName)
+	startTime := time.Now()
+	defer func() {
+		// At the very end we need to record the overall latency
+		span.End()
+		stats.Record(ctx, observability.MRoundtripLatencySeconds.M(time.Since(startTime).Seconds()))
+	}()
+
 	if c.writeTimeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		span.Annotatef([]trace.Attribute{
+			trace.Int64Attribute("timeout_ns", c.writeTimeout.Nanoseconds()),
+		}, "Set connection writeTimeout")
 	}
 
 	if cmd != "" {
-		if err := c.writeCommand(cmd, args); err != nil {
+		nw, err := c.writeCommand(ctx, cmd, args)
+		stats.Record(ctx, observability.MBytesWritten.M(nw), observability.MWrites.M(1))
+		if err != nil {
+			stats.Record(ctx, observability.MWriteErrors.M(1))
+			span.SetStatus(trace.Status{Code: int32(trace.StatusCodeInternal), Message: err.Error()})
 			return nil, c.fatal(err)
 		}
 	}
 
 	if err := c.bw.Flush(); err != nil {
+		span.SetStatus(trace.Status{Code: int32(trace.StatusCodeInternal), Message: err.Error()})
 		return nil, c.fatal(err)
 	}
 
 	var deadline time.Time
 	if readTimeout != 0 {
 		deadline = time.Now().Add(readTimeout)
+		span.Annotatef([]trace.Attribute{
+			trace.Int64Attribute("timeout_ns", readTimeout.Nanoseconds()),
+		}, "Set connection readTimeout")
 	}
 	c.conn.SetReadDeadline(deadline)
+
+	var nread int64
+	defer func() {
+		// At the end record the number of bytes read and increment the number of reads.
+		stats.Record(ctx, observability.MBytesRead.M(nread), observability.MReads.M(1))
+	}()
+
+	_, readSpan := trace.StartSpan(ctx, "redis.(*Conn).readReplies")
+	defer readSpan.End()
 
 	if cmd == "" {
 		reply := make([]interface{}, pending)
 		for i := range reply {
-			r, e := c.readReply()
+			r, nir, e := c.readReply()
+			nread += int64(nir)
 			if e != nil {
+				readSpan.SetStatus(trace.Status{Code: int32(trace.StatusCodeInternal), Message: e.Error()})
+				stats.Record(ctx, observability.MReadErrors.M(1))
 				return nil, c.fatal(e)
 			}
 			reply[i] = r
@@ -662,12 +747,23 @@ func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...inte
 	var reply interface{}
 	for i := 0; i <= pending; i++ {
 		var e error
-		if reply, e = c.readReply(); e != nil {
+		var nir int
+		reply, nir, e = c.readReply()
+		nread += int64(nir)
+		if e != nil {
+			readSpan.SetStatus(trace.Status{Code: int32(trace.StatusCodeInternal), Message: e.Error()})
+			stats.Record(ctx, observability.MReadErrors.M(1))
 			return nil, c.fatal(e)
 		}
 		if e, ok := reply.(Error); ok && err == nil {
 			err = e
 		}
+	}
+	if err != nil {
+		stats.Record(ctx, observability.MReadErrors.M(1))
+		readSpan.SetStatus(trace.Status{Code: int32(trace.StatusCodeInternal), Message: err.Error()})
+	} else {
+		span.Annotatef([]trace.Attribute{trace.Int64Attribute("bytes_read", nread)}, "Read bytes")
 	}
 	return reply, err
 }

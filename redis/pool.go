@@ -16,6 +16,7 @@ package redis
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
 	"errors"
@@ -26,6 +27,10 @@ import (
 	"time"
 
 	"github.com/gomodule/redigo/internal"
+	"github.com/gomodule/redigo/internal/observability"
+
+	"go.opencensus.io/stats"
+	"go.opencensus.io/trace"
 )
 
 var (
@@ -176,11 +181,25 @@ func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 // getting an underlying connection, then the connection Err, Do, Send, Flush
 // and Receive methods return that error.
 func (p *Pool) Get() Conn {
-	pc, err := p.get(nil)
+	return p.GetWithContext(context.Background())
+}
+
+func (p *Pool) GetWithContext(ctx context.Context) Conn {
+	ctx, span := trace.StartSpan(ctx, "redis.(*Pool).Get")
+	measures := []stats.Measurement{observability.MPoolGets.M(1)}
+	defer func() {
+		span.End()
+		stats.Record(ctx, measures...)
+	}()
+
+	pc, err := p.get(ctx)
 	if err != nil {
+		measures = append(measures, observability.MPoolGetErrors.M(1))
+		span.SetStatus(trace.Status{Code: int32(trace.StatusCodeInternal), Message: err.Error()})
 		return errorConn{err}
 	}
-	return &activeConn{p: p, pc: pc}
+	measures = append(measures, observability.MConnectionsTaken.M(1))
+	return &activeConn{p: p, pc: pc, ctx: ctx}
 }
 
 // PoolStats contains pool statistics.
@@ -266,11 +285,7 @@ func (p *Pool) lazyInit() {
 
 // get prunes stale connections and returns a connection from the idle list or
 // creates a new connection.
-func (p *Pool) get(ctx interface {
-	Done() <-chan struct{}
-	Err() error
-}) (*poolConn, error) {
-
+func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 	// Handle limit for p.Wait == true.
 	if p.Wait && p.MaxActive > 0 {
 		p.lazyInit()
@@ -307,6 +322,7 @@ func (p *Pool) get(ctx interface {
 		p.mu.Unlock()
 		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
 			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
+			stats.Record(ctx, observability.MConnectionsReused.M(1))
 			return pc, nil
 		}
 		pc.c.Close()
@@ -328,8 +344,11 @@ func (p *Pool) get(ctx interface {
 
 	p.active++
 	p.mu.Unlock()
+	dialStartTime := time.Now()
 	c, err := p.Dial()
+	measures := []stats.Measurement{observability.MDialLatencySeconds.M(time.Since(dialStartTime).Seconds())}
 	if err != nil {
+		measures = append(measures, observability.MDialErrors.M(1))
 		c = nil
 		p.mu.Lock()
 		p.active--
@@ -338,10 +357,12 @@ func (p *Pool) get(ctx interface {
 		}
 		p.mu.Unlock()
 	}
+	measures = append(measures, observability.MConnectionsNew.M(1))
+	stats.Record(ctx, measures...)
 	return &poolConn{c: c, created: nowFunc()}, err
 }
 
-func (p *Pool) put(pc *poolConn, forceClose bool) error {
+func (p *Pool) put(ctx context.Context, pc *poolConn, forceClose bool) error {
 	p.mu.Lock()
 	if !p.closed && !forceClose {
 		pc.t = nowFunc()
@@ -365,6 +386,7 @@ func (p *Pool) put(pc *poolConn, forceClose bool) error {
 		p.ch <- struct{}{}
 	}
 	p.mu.Unlock()
+	stats.Record(ctx, observability.MConnectionsReturned.M(1))
 	return nil
 }
 
@@ -372,6 +394,14 @@ type activeConn struct {
 	p     *Pool
 	pc    *poolConn
 	state int
+	ctx   context.Context
+}
+
+func (ac *activeConn) context() context.Context {
+	if ac.ctx == nil {
+		return context.Background()
+	}
+	return ac.ctx
 }
 
 var (
@@ -397,6 +427,7 @@ func (ac *activeConn) Close() error {
 		return nil
 	}
 	ac.pc = nil
+	stats.Record(ac.context(), observability.MConnectionsClosed.M(1))
 
 	if ac.state&internal.MultiState != 0 {
 		pc.c.Send("DISCARD")
@@ -425,7 +456,7 @@ func (ac *activeConn) Close() error {
 		}
 	}
 	pc.c.Do("")
-	ac.p.put(pc, ac.state != 0 || pc.c.Err() != nil)
+	ac.p.put(ac.context(), pc, ac.state != 0 || pc.c.Err() != nil)
 	return nil
 }
 
@@ -437,6 +468,10 @@ func (ac *activeConn) Err() error {
 	return pc.c.Err()
 }
 
+type contextAwareDoer interface {
+	DoWithContext(context.Context, string, ...interface{}) (interface{}, error)
+}
+
 func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
@@ -444,7 +479,7 @@ func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interfa
 	}
 	ci := internal.LookupCommandInfo(commandName)
 	ac.state = (ac.state | ci.Set) &^ ci.Clear
-	return pc.c.Do(commandName, args...)
+	return pc.c.(contextAwareDoer).DoWithContext(ac.context(), commandName, args...)
 }
 
 func (ac *activeConn) DoWithTimeout(timeout time.Duration, commandName string, args ...interface{}) (reply interface{}, err error) {
@@ -502,6 +537,9 @@ func (ac *activeConn) ReceiveWithTimeout(timeout time.Duration) (reply interface
 type errorConn struct{ err error }
 
 func (ec errorConn) Do(string, ...interface{}) (interface{}, error) { return nil, ec.err }
+func (ec errorConn) DoWithContext(context.Context, string, ...interface{}) (interface{}, error) {
+	return nil, ec.err
+}
 func (ec errorConn) DoWithTimeout(time.Duration, string, ...interface{}) (interface{}, error) {
 	return nil, ec.err
 }
