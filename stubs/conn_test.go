@@ -62,60 +62,58 @@ func TestStub(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Test Close()
-			err := tc.conn.Close()
-			if err == nil {
-				t.Errorf("Close(): expected error\n")
-			}
-			if !strings.Contains(err.Error(), tc.xErr) {
-				t.Errorf("Close(): expected %q; got %q\n", tc.xErr, err.Error())
-			}
+		// Test Close()
+		err := tc.conn.Close()
+		if err == nil {
+			t.Errorf("Close(): expected error\n")
+		}
+		if !strings.Contains(err.Error(), tc.xErr) {
+			t.Errorf("Close(): expected %q; got %q\n", tc.xErr, err.Error())
+		}
 
-			// Test Err()
-			err = tc.conn.Err()
-			if err == nil {
-				t.Errorf("Err(): expected error\n")
-			}
-			if !strings.Contains(err.Error(), tc.xErr) {
-				t.Errorf("Err(): expected %q; got %q\n", tc.xErr, err.Error())
-			}
+		// Test Err()
+		err = tc.conn.Err()
+		if err == nil {
+			t.Errorf("Err(): expected error\n")
+		}
+		if !strings.Contains(err.Error(), tc.xErr) {
+			t.Errorf("Err(): expected %q; got %q\n", tc.xErr, err.Error())
+		}
 
-			// Test Do(...)
-			_, err = tc.conn.Do("SET", "key", "value")
-			if err == nil {
-				t.Errorf("Do(...): expected error\n")
-			}
-			if !strings.Contains(err.Error(), tc.xErr) {
-				t.Errorf("Do(...): expected %q; got %q\n", tc.xErr, err.Error())
-			}
+		// Test Do(...)
+		_, err = tc.conn.Do("SET", "key", "value")
+		if err == nil {
+			t.Errorf("Do(...): expected error\n")
+		}
+		if !strings.Contains(err.Error(), tc.xErr) {
+			t.Errorf("Do(...): expected %q; got %q\n", tc.xErr, err.Error())
+		}
 
-			// Test Send(...)
-			err = tc.conn.Send("SET", "key", "value")
-			if err == nil {
-				t.Errorf("Send(...): expected error\n")
-			}
-			if !strings.Contains(err.Error(), tc.xErr) {
-				t.Errorf("Send(...): expected %q; got %q\n", tc.xErr, err.Error())
-			}
+		// Test Send(...)
+		err = tc.conn.Send("SET", "key", "value")
+		if err == nil {
+			t.Errorf("Send(...): expected error\n")
+		}
+		if !strings.Contains(err.Error(), tc.xErr) {
+			t.Errorf("Send(...): expected %q; got %q\n", tc.xErr, err.Error())
+		}
 
-			// Test Flush()
-			err = tc.conn.Flush()
-			if err == nil {
-				t.Errorf("Flush(): expected error\n")
-			}
-			if !strings.Contains(err.Error(), tc.xErr) {
-				t.Errorf("Flush(): expected %q; got %q\n", tc.xErr, err.Error())
-			}
+		// Test Flush()
+		err = tc.conn.Flush()
+		if err == nil {
+			t.Errorf("Flush(): expected error\n")
+		}
+		if !strings.Contains(err.Error(), tc.xErr) {
+			t.Errorf("Flush(): expected %q; got %q\n", tc.xErr, err.Error())
+		}
 
-			// Test Receive()
-			_, err = tc.conn.Receive()
-			if err == nil {
-				t.Errorf("Receive(): expected error\n")
-			}
-			if !strings.Contains(err.Error(), tc.xErr) {
-				t.Errorf("Receive(): expected %q; got %q\n", tc.xErr, err.Error())
-			}
-		})
+		// Test Receive()
+		_, err = tc.conn.Receive()
+		if err == nil {
+			t.Errorf("Receive(): expected error\n")
+		}
+		if !strings.Contains(err.Error(), tc.xErr) {
+			t.Errorf("Receive(): expected %q; got %q\n", tc.xErr, err.Error())
+		}
 	}
 }
