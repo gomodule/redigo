@@ -14,14 +14,14 @@
 
 package stubs
 
-import "fmt"
+import "errors"
 
-// MsgNotImplemented is the default error body returned when a
-// method is invokes without a stub func defined.
-const MsgNotImplemented = "not implemented"
+// ErrNotImplemented is the default error returned when a
+// method is invoked without a stub func defined.
+var ErrNotImplemented = errors.New("stub: not implemented")
 
 // StubConn is a redis.Conn that helps consumers of redigo with testing
-type StubConn struct {
+type Conn struct {
 	OnClose   func() error
 	OnErr     func() error
 	OnDo      func(commandName string, args ...interface{}) (reply interface{}, err error)
@@ -32,54 +32,54 @@ type StubConn struct {
 
 // Close conforms to the redis.Conn interface.
 // "Close closes the connection."
-func (s *StubConn) Close() error {
+func (s *Conn) Close() error {
 	if s.OnClose == nil {
-		return fmt.Errorf(MsgNotImplemented)
+		return ErrNotImplemented
 	}
 	return s.OnClose()
 }
 
 // Err conforms to the redis.Conn interface.
 // "Err returns a non-nil value when the connection is not usable."
-func (s *StubConn) Err() error {
+func (s *Conn) Err() error {
 	if s.OnErr == nil {
-		return fmt.Errorf(MsgNotImplemented)
+		return ErrNotImplemented
 	}
 	return s.OnErr()
 }
 
 // Do conforms to the redis.Conn interface.
 // "Do sends a command to the server and returns the received reply."
-func (s *StubConn) Do(cmd string, args ...interface{}) (reply interface{}, err error) {
+func (s *Conn) Do(cmd string, args ...interface{}) (reply interface{}, err error) {
 	if s.OnDo == nil {
-		return nil, fmt.Errorf(MsgNotImplemented)
+		return nil, ErrNotImplemented
 	}
 	return s.OnDo(cmd, args...)
 }
 
 // Send conforms to the redis.Conn interface.
 // "Send writes the command to the client's output buffer."
-func (s *StubConn) Send(cmd string, args ...interface{}) error {
+func (s *Conn) Send(cmd string, args ...interface{}) error {
 	if s.OnSend == nil {
-		return fmt.Errorf(MsgNotImplemented)
+		return ErrNotImplemented
 	}
 	return s.OnSend(cmd, args...)
 }
 
 // Flush conforms to the redis.Conn interface.
 // "Flush flushes the output buffer to the Redis server."
-func (s *StubConn) Flush() error {
+func (s *Conn) Flush() error {
 	if s.OnFlush == nil {
-		return fmt.Errorf(MsgNotImplemented)
+		return ErrNotImplemented
 	}
 	return s.OnFlush()
 }
 
 // Receive conforms to the redis.Conn interface.
 // "Receive receives a single reply from the Redis server"
-func (s *StubConn) Receive() (reply interface{}, err error) {
+func (s *Conn) Receive() (reply interface{}, err error) {
 	if s.OnReceive == nil {
-		return nil, fmt.Errorf(MsgNotImplemented)
+		return nil, ErrNotImplemented
 	}
 	return s.OnReceive()
 }

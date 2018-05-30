@@ -32,12 +32,12 @@ func TestStub(t *testing.T) {
 	}{
 		{
 			"undefined funcs",
-			&StubConn{},
-			MsgNotImplemented,
+			&Conn{},
+			ErrNotImplemented.Error(),
 		},
 		{
 			"provided funcs",
-			&StubConn{
+			&Conn{
 				OnClose: func() error {
 					return fmt.Errorf(alt)
 				},
