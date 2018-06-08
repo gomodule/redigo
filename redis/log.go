@@ -33,6 +33,7 @@ func NewLoggingConn(conn Conn, logger *log.Logger, prefix string) Conn {
 	return &loggingConn{conn, logger, prefix, nil}
 }
 
+//NewLoggingConnFilter returns a logging wrapper around a connection and a filter function.
 func NewLoggingConnFilter(conn Conn, logger *log.Logger, prefix string, skip func(cmdName string) bool) Conn {
 	if prefix != "" {
 		prefix = prefix + "."
