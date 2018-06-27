@@ -301,9 +301,9 @@ func (p *Pool) get(ctx interface {
 	}
 
 	// Get idle connection from the front of idle list.
-	for p.idle.front != nil {
-		pc := p.idle.front
-		p.idle.popFront()
+	for p.idle.back != nil {
+		pc := p.idle.back
+		p.idle.popBack()
 		p.mu.Unlock()
 		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
 			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
