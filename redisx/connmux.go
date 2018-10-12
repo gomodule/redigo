@@ -18,7 +18,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/gomodule/redigo/internal"
 	"github.com/gomodule/redigo/redis"
 )
 
@@ -60,7 +59,7 @@ type muxConn struct {
 }
 
 func (c *muxConn) send(flush bool, cmd string, args ...interface{}) error {
-	if internal.LookupCommandInfo(cmd).Set != 0 {
+	if lookupCommandInfo(cmd).notMuxable {
 		return errors.New("command not supported by mux pool")
 	}
 	p := c.p

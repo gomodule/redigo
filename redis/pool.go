@@ -24,8 +24,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/gomodule/redigo/internal"
 )
 
 var (
@@ -398,14 +396,14 @@ func (ac *activeConn) Close() error {
 	}
 	ac.pc = nil
 
-	if ac.state&internal.MultiState != 0 {
+	if ac.state&connectionMultiState != 0 {
 		pc.c.Send("DISCARD")
-		ac.state &^= (internal.MultiState | internal.WatchState)
-	} else if ac.state&internal.WatchState != 0 {
+		ac.state &^= (connectionMultiState | connectionWatchState)
+	} else if ac.state&connectionWatchState != 0 {
 		pc.c.Send("UNWATCH")
-		ac.state &^= internal.WatchState
+		ac.state &^= connectionWatchState
 	}
-	if ac.state&internal.SubscribeState != 0 {
+	if ac.state&connectionSubscribeState != 0 {
 		pc.c.Send("UNSUBSCRIBE")
 		pc.c.Send("PUNSUBSCRIBE")
 		// To detect the end of the message stream, ask the server to echo
@@ -419,7 +417,7 @@ func (ac *activeConn) Close() error {
 				break
 			}
 			if p, ok := p.([]byte); ok && bytes.Equal(p, sentinel) {
-				ac.state &^= internal.SubscribeState
+				ac.state &^= connectionSubscribeState
 				break
 			}
 		}
@@ -442,7 +440,7 @@ func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interfa
 	if pc == nil {
 		return nil, errConnClosed
 	}
-	ci := internal.LookupCommandInfo(commandName)
+	ci := lookupCommandInfo(commandName)
 	ac.state = (ac.state | ci.Set) &^ ci.Clear
 	return pc.c.Do(commandName, args...)
 }
@@ -456,7 +454,7 @@ func (ac *activeConn) DoWithTimeout(timeout time.Duration, commandName string, a
 	if !ok {
 		return nil, errTimeoutNotSupported
 	}
-	ci := internal.LookupCommandInfo(commandName)
+	ci := lookupCommandInfo(commandName)
 	ac.state = (ac.state | ci.Set) &^ ci.Clear
 	return cwt.DoWithTimeout(timeout, commandName, args...)
 }
@@ -466,7 +464,7 @@ func (ac *activeConn) Send(commandName string, args ...interface{}) error {
 	if pc == nil {
 		return errConnClosed
 	}
-	ci := internal.LookupCommandInfo(commandName)
+	ci := lookupCommandInfo(commandName)
 	ac.state = (ac.state | ci.Set) &^ ci.Clear
 	return pc.c.Send(commandName, args...)
 }
