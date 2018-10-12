@@ -14,4 +14,4 @@
 
 // Package redisx contains experimental features for Redigo. Features in this
 // package may be modified or deleted at any time.
-package redisx // import "github.com/gomodule/redigo/redisx"
+package redisx
