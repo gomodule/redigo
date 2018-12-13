@@ -170,6 +170,10 @@ var readTests = []struct {
 		"PONG",
 	},
 	{
+		"+OK\n\n", // no \r
+		errorSentinel,
+	},
+	{
 		"@OK\r\n",
 		errorSentinel,
 	},
@@ -207,6 +211,11 @@ var readTests = []struct {
 	},
 
 	{
+		// "" is not a valid length
+		"$\r\nfoobar\r\n",
+		errorSentinel,
+	},
+	{
 		// "x" is not a valid length
 		"$x\r\nfoobar\r\n",
 		errorSentinel,
@@ -214,6 +223,11 @@ var readTests = []struct {
 	{
 		// -2 is not a valid length
 		"$-2\r\n",
+		errorSentinel,
+	},
+	{
+		// ""  is not a valid integer
+		":\r\n",
 		errorSentinel,
 	},
 	{
@@ -253,6 +267,30 @@ func TestRead(t *testing.T) {
 			}
 			if !reflect.DeepEqual(actual, tt.expected) {
 				t.Errorf("Receive(%q) = %v, want %v", tt.reply, actual, tt.expected)
+			}
+		}
+	}
+}
+
+func TestReadString(t *testing.T) {
+	// n is value of bufio.defaultBufSize
+	const n = 4096
+
+	// Test read string lengths near bufio.Reader buffer boundaries.
+	testRanges := [][2]int{{0, 64}, {n - 64, n + 64}, {2*n - 64, 2*n + 64}}
+
+	p := make([]byte, 2*n+64)
+	for i := range p {
+		p[i] = byte('a' + i%26)
+	}
+	s := string(p)
+
+	for _, r := range testRanges {
+		for i := r[0]; i < r[1]; i++ {
+			c, _ := redis.Dial("", "", dialTestConn("+"+s[:i]+"\r\n", nil))
+			actual, err := c.Receive()
+			if err != nil || actual != s[:i] {
+				t.Fatalf("Receive(string len %d) -> err=%v, equal=%v", i, err, actual != s[:i])
 			}
 		}
 	}
