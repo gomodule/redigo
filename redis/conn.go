@@ -671,7 +671,7 @@ func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...inte
 
 	var err error
 	var reply interface{}
-	for i := 0; i <= pending; i++ {
+	for i := 0; i < pending; i++ {
 		var e error
 		if reply, e = c.readReply(); e != nil {
 			return nil, c.fatal(e)
