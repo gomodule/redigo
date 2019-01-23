@@ -143,7 +143,7 @@ func DialPassword(password string) DialOption {
 }
 
 // DialClientName specifies a client name to be used
-// to the Redis server connection.
+// by the Redis server connection.
 func DialClientName(name string) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.clientName = name
