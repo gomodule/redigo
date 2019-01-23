@@ -671,6 +671,21 @@ func TestDialTLSSKipVerify(t *testing.T) {
 	checkPingPong(t, &buf, c)
 }
 
+func TestDialClientName(t *testing.T) {
+	var buf bytes.Buffer
+	_, err := redis.Dial("tcp", ":6379",
+		dialTestConn(pingResponse, &buf),
+		redis.DialClientName("redis-connection"),
+	)
+	if err != nil {
+		t.Fatal("dial error:", err)
+	}
+	expected := "*2\r\n$14\r\nCLIENT SETNAME\r\n$16\r\nredis-connection\r\n"
+	if w := buf.String(); w != expected {
+		t.Errorf("got %q, want %q", w, expected)
+	}
+}
+
 // Connect to local instance of Redis running on the default port.
 func ExampleDial() {
 	c, err := redis.Dial("tcp", ":6379")
