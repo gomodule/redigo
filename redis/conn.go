@@ -234,7 +234,7 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 	}
 
 	if do.clientName != "" {
-		if _, err := c.Do("CLIENT SETNAME", do.clientName); err != nil {
+		if _, err := c.Do("CLIENT", "SETNAME", do.clientName); err != nil {
 			netConn.Close()
 			return nil, err
 		}

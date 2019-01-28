@@ -680,7 +680,7 @@ func TestDialClientName(t *testing.T) {
 	if err != nil {
 		t.Fatal("dial error:", err)
 	}
-	expected := "*2\r\n$14\r\nCLIENT SETNAME\r\n$16\r\nredis-connection\r\n"
+	expected := "*3\r\n$6\r\nCLIENT\r\n$7\r\nSETNAME\r\n$16\r\nredis-connection\r\n"
 	if w := buf.String(); w != expected {
 		t.Errorf("got %q, want %q", w, expected)
 	}
@@ -693,7 +693,7 @@ func TestDialClientName(t *testing.T) {
 	}
 	defer c.Close()
 
-	v, err := c.Do("CLIENT GETNAME")
+	v, err := c.Do("CLIENT", "GETNAME")
 	if err != nil {
 		t.Fatalf("CLIENT GETNAME returned error %v", err)
 	}
@@ -703,8 +703,8 @@ func TestDialClientName(t *testing.T) {
 		t.Fatalf("String(v) returned error %v", err)
 	}
 
-	if vs == connectionName {
-		t.Fatalf("wrong connection name. Got %s, expected %s", vs, connectionName)
+	if vs != connectionName {
+		t.Fatalf("wrong connection name. Got '%s', expected '%s'", vs, connectionName)
 	}
 }
 
