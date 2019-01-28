@@ -684,6 +684,28 @@ func TestDialClientName(t *testing.T) {
 	if w := buf.String(); w != expected {
 		t.Errorf("got %q, want %q", w, expected)
 	}
+
+	// testing against a real server
+	connectionName := "test-connection"
+	c, err := redis.DialDefaultServer(redis.DialClientName(connectionName))
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	defer c.Close()
+
+	v, err := c.Do("CLIENT GETNAME")
+	if err != nil {
+		t.Fatalf("CLIENT GETNAME returned error %v", err)
+	}
+
+	vs, err := redis.String(v, nil)
+	if err != nil {
+		t.Fatalf("String(v) returned error %v", err)
+	}
+
+	if vs == connectionName {
+		t.Fatalf("wrong connection name. Got %s, expected %s", vs, connectionName)
+	}
 }
 
 // Connect to local instance of Redis running on the default port.
