@@ -147,12 +147,12 @@ func DefaultServerAddr() (string, error) {
 
 // DialDefaultServer starts the test server if not already started and dials a
 // connection to the server.
-func DialDefaultServer() (Conn, error) {
+func DialDefaultServer(options ...DialOption) (Conn, error) {
 	addr, err := DefaultServerAddr()
 	if err != nil {
 		return nil, err
 	}
-	c, err := Dial("tcp", addr, DialReadTimeout(1*time.Second), DialWriteTimeout(1*time.Second))
+	c, err := Dial("tcp", addr, append([]DialOption{DialReadTimeout(1 * time.Second), DialWriteTimeout(1 * time.Second)}, options...)...)
 	if err != nil {
 		return nil, err
 	}

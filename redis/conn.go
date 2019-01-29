@@ -80,6 +80,7 @@ type dialOptions struct {
 	dial         func(network, addr string) (net.Conn, error)
 	db           int
 	password     string
+	clientName   string
 	useTLS       bool
 	skipVerify   bool
 	tlsConfig    *tls.Config
@@ -138,6 +139,14 @@ func DialDatabase(db int) DialOption {
 func DialPassword(password string) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.password = password
+	}}
+}
+
+// DialClientName specifies a client name to be used
+// by the Redis server connection.
+func DialClientName(name string) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.clientName = name
 	}}
 }
 
@@ -219,6 +228,13 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 
 	if do.password != "" {
 		if _, err := c.Do("AUTH", do.password); err != nil {
+			netConn.Close()
+			return nil, err
+		}
+	}
+
+	if do.clientName != "" {
+		if _, err := c.Do("CLIENT", "SETNAME", do.clientName); err != nil {
 			netConn.Close()
 			return nil, err
 		}
