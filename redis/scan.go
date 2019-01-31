@@ -82,6 +82,16 @@ func convertAssignBulkString(d reflect.Value, s []byte) (err error) {
 	return
 }
 
+func convertAssignSimpleString(d reflect.Value, s string) (err error) {
+	switch d.Type().Kind() {
+	case reflect.String:
+		d.SetString(s)
+	default:
+		err = cannotConvert(d, s)
+	}
+	return
+}
+
 func convertAssignInt(d reflect.Value, s int64) (err error) {
 	switch d.Type().Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -130,6 +140,8 @@ func convertAssignValue(d reflect.Value, s interface{}) (err error) {
 	}
 
 	switch s := s.(type) {
+	case string:
+		err = convertAssignSimpleString(d, s)
 	case []byte:
 		err = convertAssignBulkString(d, s)
 	case int64:
