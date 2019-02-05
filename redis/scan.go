@@ -44,6 +44,8 @@ func cannotConvert(d reflect.Value, s interface{}) error {
 		sname = "Redis bulk string"
 	case []interface{}:
 		sname = "Redis array"
+	case nil:
+		sname = "Redis nil"
 	default:
 		sname = reflect.TypeOf(s).String()
 	}
