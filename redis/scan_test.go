@@ -72,6 +72,8 @@ var scanConversionTests = []struct {
 	{"hello", "hello"},
 	{[]byte("hello"), "hello"},
 	{[]byte("world"), []byte("world")},
+	{nil, ""},
+	{nil, []byte(nil)},
 
 	{[]interface{}{[]byte("b1")}, []interface{}{[]byte("b1")}},
 	{[]interface{}{[]byte("b2")}, []string{"b2"}},
