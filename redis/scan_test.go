@@ -95,6 +95,9 @@ var scanConversionTests = []struct {
 	{[]interface{}{"1"}, []byte{1}},
 	{[]interface{}{"1"}, []bool{true}},
 
+	{[]interface{}{nil, "2"}, []interface{}{nil, "2"}},
+	{[]interface{}{nil, []byte("2")}, [][]byte{nil, []byte("2")}},
+
 	{[]interface{}{redis.Error("e1")}, []interface{}{redis.Error("e1")}},
 	{[]interface{}{redis.Error("e2")}, [][]byte{[]byte("e2")}},
 	{[]interface{}{redis.Error("e3")}, []string{"e3"}},

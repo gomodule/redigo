@@ -52,6 +52,16 @@ func cannotConvert(d reflect.Value, s interface{}) error {
 	return fmt.Errorf("cannot convert from %s to %s", sname, d.Type())
 }
 
+func convertAssignNil(d reflect.Value) (err error) {
+	switch d.Type().Kind() {
+	case reflect.Slice, reflect.Interface:
+		d.Set(reflect.Zero(d.Type()))
+	default:
+		err = cannotConvert(d, nil)
+	}
+	return err
+}
+
 func convertAssignError(d reflect.Value, s Error) (err error) {
 	if d.Kind() == reflect.String {
 		d.SetString(string(s))
@@ -159,6 +169,8 @@ func convertAssignValue(d reflect.Value, s interface{}) (err error) {
 	}
 
 	switch s := s.(type) {
+	case nil:
+		err = convertAssignNil(d)
 	case []byte:
 		err = convertAssignBulkString(d, s)
 	case int64:
