@@ -402,7 +402,7 @@ func TestPipelineCommands(t *testing.T) {
 	}
 }
 
-func TestBlankCommmand(t *testing.T) {
+func TestBlankCommand(t *testing.T) {
 	c, err := redis.DialDefaultServer()
 	if err != nil {
 		t.Fatalf("error connection to database, %v", err)
