@@ -154,11 +154,13 @@ type Pool struct {
 
 	chInitialized uint32 // set to 1 when field ch is initialized
 
-	mu     sync.Mutex    // mu protects the following fields
-	closed bool          // set to true when the pool is closed.
-	active int           // the number of open connections in the pool
-	ch     chan struct{} // limits open connections when p.Wait is true
-	idle   idleList      // idle connections
+	mu           sync.Mutex    // mu protects the following fields
+	closed       bool          // set to true when the pool is closed.
+	active       int           // the number of open connections in the pool
+	ch           chan struct{} // limits open connections when p.Wait is true
+	idle         idleList      // idle connections
+	waitCount    int64         // total number of connections waited for.
+	waitDuration time.Duration // total time waited for new connections.
 }
 
 // NewPool creates a new pool.
@@ -188,14 +190,24 @@ type PoolStats struct {
 	ActiveCount int
 	// IdleCount is the number of idle connections in the pool.
 	IdleCount int
+
+	// WaitCount is the total number of connections waited for.
+	// This value is currently not guaranteed to be 100% accurate.
+	WaitCount int64
+
+	// WaitDuration is the total time blocked waiting for a new connection.
+	// This value is currently not guaranteed to be 100% accurate.
+	WaitDuration time.Duration
 }
 
 // Stats returns pool's statistics.
 func (p *Pool) Stats() PoolStats {
 	p.mu.Lock()
 	stats := PoolStats{
-		ActiveCount: p.active,
-		IdleCount:   p.idle.count,
+		ActiveCount:  p.active,
+		IdleCount:    p.idle.count,
+		WaitCount:    p.waitCount,
+		WaitDuration: p.waitDuration,
 	}
 	p.mu.Unlock()
 
@@ -270,8 +282,17 @@ func (p *Pool) get(ctx interface {
 }) (*poolConn, error) {
 
 	// Handle limit for p.Wait == true.
+	var waited time.Duration
 	if p.Wait && p.MaxActive > 0 {
 		p.lazyInit()
+
+		// wait indicates if we believe it will block so its not 100% accurate
+		// however for stats it should be good enough.
+		wait := len(p.ch) == 0
+		var start time.Time
+		if wait {
+			start = time.Now()
+		}
 		if ctx == nil {
 			<-p.ch
 		} else {
@@ -281,9 +302,17 @@ func (p *Pool) get(ctx interface {
 				return nil, ctx.Err()
 			}
 		}
+		if wait {
+			waited = time.Since(start)
+		}
 	}
 
 	p.mu.Lock()
+
+	if waited > 0 {
+		p.waitCount++
+		p.waitDuration += waited
+	}
 
 	// Prune stale connections at the back of the idle list.
 	if p.IdleTimeout > 0 {
