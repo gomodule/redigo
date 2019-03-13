@@ -127,6 +127,13 @@ type Pool struct {
 	// (subscribed to pubsub channel, transaction started, ...).
 	Dial func() (Conn, error)
 
+	// DialContext is an application supplied function for creating and configuring a
+	// connection with the given context.
+	//
+	// The connection returned from Dial must not be in a special state
+	// (subscribed to pubsub channel, transaction started, ...).
+	DialContext func(ctx context.Context) (Conn, error)
+
 	// TestOnBorrow is an optional application supplied function for checking
 	// the health of an idle connection before the connection is used again by
 	// the application. Argument t is the time that the connection was returned
@@ -341,7 +348,7 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 
 	p.active++
 	p.mu.Unlock()
-	c, err := p.Dial()
+	c, err := p.dial(ctx)
 	if err != nil {
 		c = nil
 		p.mu.Lock()
@@ -352,6 +359,16 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 		p.mu.Unlock()
 	}
 	return &poolConn{c: c, created: nowFunc()}, err
+}
+
+func (p *Pool) dial(ctx context.Context) (Conn, error) {
+	if p.DialContext != nil {
+		return p.DialContext(ctx)
+	}
+	if p.Dial != nil {
+		return p.Dial()
+	}
+	return nil, errors.New("redigo: must pass Dial or DialContext to pool")
 }
 
 func (p *Pool) put(pc *poolConn, forceClose bool) error {

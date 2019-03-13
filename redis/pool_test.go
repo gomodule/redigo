@@ -85,6 +85,10 @@ func (d *poolDialer) dial() (redis.Conn, error) {
 	return &poolTestConn{d: d, Conn: c}, nil
 }
 
+func (d *poolDialer) dialContext(ctx context.Context) (redis.Conn, error) {
+	return d.dial()
+}
+
 func (d *poolDialer) check(message string, p *redis.Pool, dialed, open, inuse int) {
 	d.mu.Lock()
 	if d.dialed != dialed {
@@ -652,6 +656,22 @@ func TestWaitPoolGetContext(t *testing.T) {
 		MaxActive: 1,
 		Dial:      d.dial,
 		Wait:      true,
+	}
+	defer p.Close()
+	c, err := p.GetContext(context.Background())
+	if err != nil {
+		t.Fatalf("GetContext returned %v", err)
+	}
+	defer c.Close()
+}
+
+func TestWaitPoolGetContextWithDialContext(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:     1,
+		MaxActive:   1,
+		DialContext: d.dialContext,
+		Wait:        true,
 	}
 	defer p.Close()
 	c, err := p.GetContext(context.Background())
