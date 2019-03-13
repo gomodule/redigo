@@ -24,6 +24,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 var (
@@ -181,6 +183,22 @@ func (p *Pool) Get() Conn {
 	return &activeConn{p: p, pc: pc}
 }
 
+// GetContext gets a connection using the provided context.
+//
+// The provided Context must be non-nil. If the context expires before the
+// connection is complete, an error is returned. Any expiration on the context
+// will not affect the returned connection.
+//
+// If the function completes without error, then the application must close the
+// returned connection.
+func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
+	pc, err := p.get(ctx)
+	if err != nil {
+		return errorConn{err}, err
+	}
+	return &activeConn{p: p, pc: pc}, nil
+}
+
 // PoolStats contains pool statistics.
 type PoolStats struct {
 	// ActiveCount is the number of connections in the pool. The count includes
@@ -264,10 +282,7 @@ func (p *Pool) lazyInit() {
 
 // get prunes stale connections and returns a connection from the idle list or
 // creates a new connection.
-func (p *Pool) get(ctx interface {
-	Done() <-chan struct{}
-	Err() error
-}) (*poolConn, error) {
+func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 
 	// Handle limit for p.Wait == true.
 	if p.Wait && p.MaxActive > 0 {
