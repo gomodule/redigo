@@ -253,6 +253,24 @@ func (p *Pool) Close() error {
 	return nil
 }
 
+// Do sends a command to the server and returns the received reply on a connection from the pool.
+// This can be used to easily minimize the time a connection is held from the pool for an individual Conn.Do.
+func (p *Pool) Do(command string, args ...interface{}) (reply interface{}, err error) {
+	c := p.Get()
+	defer c.Close()
+
+	return c.Do(command, args...)
+}
+
+// DoScript evaluates the script on a connection from the pool.
+// This can be used to easily minimize the time a connection is held from the pool for an individual Script.Do.
+func (p *Pool) DoScript(script *Script, args ...interface{}) (interface{}, error) {
+	c := p.Get()
+	defer c.Close()
+
+	return script.Do(c, args...)
+}
+
 func (p *Pool) lazyInit() {
 	// Fast path.
 	if atomic.LoadUint32(&p.chInitialized) == 1 {

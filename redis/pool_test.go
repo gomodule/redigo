@@ -445,6 +445,51 @@ func TestPoolMonitorCleanup(t *testing.T) {
 	d.check("", p, 1, 0, 0)
 }
 
+func TestPoolDo(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   2,
+		MaxActive: 2,
+		Dial:      d.dial,
+	}
+	defer p.Close()
+
+	v, err := redis.Int(p.Do("INCRBY", "testkey", 2))
+	if err != nil {
+		t.Errorf("expected err == nil got: %q", err)
+	}
+	if v != 2 {
+		t.Errorf("expected v == 1 got: %q", v)
+	}
+
+	d.check("", p, 1, 1, 0)
+}
+
+func TestPoolDoScript(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   2,
+		MaxActive: 2,
+		Dial:      d.dial,
+	}
+	defer p.Close()
+
+	s := redis.NewScript(1, `
+		local key = unpack(KEYS)
+		local val = unpack(ARGV)
+		return redis.call('INCRBY', key, val)`,
+	)
+	v, err := redis.Int(p.DoScript(s, "testkey", 2))
+	if err != nil {
+		t.Errorf("expected err == nil got: %q", err)
+	}
+	if v != 2 {
+		t.Errorf("expected v == 1 got: %q", v)
+	}
+
+	d.check("", p, 1, 1, 0)
+}
+
 func TestPoolPubSubCleanup(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
