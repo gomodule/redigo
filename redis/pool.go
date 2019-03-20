@@ -16,6 +16,7 @@ package redis
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
 	"errors"
@@ -179,6 +180,22 @@ func (p *Pool) Get() Conn {
 		return errorConn{err}
 	}
 	return &activeConn{p: p, pc: pc}
+}
+
+// GetContext gets a connection using the provided context.
+//
+// The provided Context must be non-nil. If the context expires before the
+// connection is complete, an error is returned. Any expiration on the context
+// will not affect the returned connection.
+//
+// If the function completes without error, then the application must close the
+// returned connection.
+func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
+	pc, err := p.get(ctx)
+	if err != nil {
+		return errorConn{err}, err
+	}
+	return &activeConn{p: p, pc: pc}, nil
 }
 
 // PoolStats contains pool statistics.
