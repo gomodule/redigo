@@ -25,8 +25,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 var (
