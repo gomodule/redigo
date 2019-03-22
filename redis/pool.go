@@ -57,6 +57,7 @@ var (
 //    return &redis.Pool{
 //      MaxIdle: 3,
 //      IdleTimeout: 240 * time.Second,
+//      // Dial or DialContext must be set. When both are set, DialContext takes precedence over Dial.
 //      Dial: func () (redis.Conn, error) { return redis.Dial("tcp", addr) },
 //    }
 //  }
@@ -125,6 +126,13 @@ type Pool struct {
 	// The connection returned from Dial must not be in a special state
 	// (subscribed to pubsub channel, transaction started, ...).
 	Dial func() (Conn, error)
+
+	// DialContext is an application supplied function for creating and configuring a
+	// connection with the given context.
+	//
+	// The connection returned from Dial must not be in a special state
+	// (subscribed to pubsub channel, transaction started, ...).
+	DialContext func(ctx context.Context) (Conn, error)
 
 	// TestOnBorrow is an optional application supplied function for checking
 	// the health of an idle connection before the connection is used again by
@@ -293,10 +301,7 @@ func (p *Pool) lazyInit() {
 
 // get prunes stale connections and returns a connection from the idle list or
 // creates a new connection.
-func (p *Pool) get(ctx interface {
-	Done() <-chan struct{}
-	Err() error
-}) (*poolConn, error) {
+func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 
 	// Handle limit for p.Wait == true.
 	var waited time.Duration
@@ -372,7 +377,7 @@ func (p *Pool) get(ctx interface {
 
 	p.active++
 	p.mu.Unlock()
-	c, err := p.Dial()
+	c, err := p.dial(ctx)
 	if err != nil {
 		c = nil
 		p.mu.Lock()
@@ -383,6 +388,16 @@ func (p *Pool) get(ctx interface {
 		p.mu.Unlock()
 	}
 	return &poolConn{c: c, created: nowFunc()}, err
+}
+
+func (p *Pool) dial(ctx context.Context) (Conn, error) {
+	if p.DialContext != nil {
+		return p.DialContext(ctx)
+	}
+	if p.Dial != nil {
+		return p.Dial()
+	}
+	return nil, errors.New("redigo: must pass Dial or DialContext to pool")
 }
 
 func (p *Pool) put(pc *poolConn, forceClose bool) error {
