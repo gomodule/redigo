@@ -115,3 +115,19 @@ func ReceiveWithTimeout(c Conn, timeout time.Duration) (interface{}, error) {
 	}
 	return cwt.ReceiveWithTimeout(timeout)
 }
+
+// SlowLog represents a redis SlowLog
+// slowLogID - A unique progressive identifier for every slow log entry.
+// unixTimeStamp - The unix timestamp at which the logged command was processed.
+// executionTime - The amount of time needed for its execution, in microseconds.
+// args - The array composing the arguments of the command.
+// clientIPAddressAndPort - Client IP address and port (4.0 only).
+// clientName - Client name if set via the CLIENT SETNAME command (4.0 only).
+type SlowLog struct {
+	slowLogID              int64
+	unixTimeStamp          int64
+	executionTime          int64
+	args                   []string
+	clientIPAddressAndPort string
+	clientName             string
+}

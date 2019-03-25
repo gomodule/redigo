@@ -17,6 +17,7 @@ package redis
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 )
 
@@ -476,4 +477,53 @@ func Positions(result interface{}, err error) ([]*[2]float64, error) {
 		positions[i] = &[2]float64{lat, long}
 	}
 	return positions, nil
+}
+
+// SlowLogs is a helper that parse the SLOWLOG GET command output and
+// return the array of SlowLog
+func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
+	if err != nil {
+		return nil, err
+	}
+	slowlogsRaw := reflect.ValueOf(result)
+	slowLogLen := slowlogsRaw.Len()
+	if slowLogLen <= 0 {
+		return nil, nil
+	}
+	slowLogs := make([]SlowLog, slowLogLen)
+	for i := 0; i < slowLogLen; i++ {
+		index := 0
+		slowLogRaw := slowlogsRaw.Index(i).Elem()
+		slowLogRawLen := slowLogRaw.Len()
+		// A unique progressive identifier for every slow log entry.
+		var slowLogID = slowLogRaw.Index(index).Interface().(int64)
+		index++
+		// The unix timestamp at which the logged command was processed.
+		var unixTimeStamp = slowLogRaw.Index(index).Interface().(int64)
+		index++
+		// The amount of time needed for its execution, in microseconds.
+		var executionTime = slowLogRaw.Index(index).Interface().(int64)
+		index++
+		// The array composing the arguments of the command.
+		slowLogArgsRaw := slowLogRaw.Index(index).Elem()
+		index++
+		args := make([]string, slowLogArgsRaw.Len())
+		for k := 0; k < slowLogArgsRaw.Len(); k++ {
+			args[k] = fmt.Sprintf("%s", slowLogArgsRaw.Index(k))
+		}
+		var clientIPAddressAndPort string
+		var clientName string
+		if index < slowLogRawLen {
+			// Client IP address and port (4.0 only).
+			clientIPAddressAndPort = fmt.Sprintf("%s", slowLogRaw.Index(index))
+			index++
+			// Client name if set via the CLIENT SETNAME command (4.0 only).
+			clientName = fmt.Sprintf("%s", slowLogRaw.Index(index))
+			index++
+		}
+		slowLog := SlowLog{slowLogID: slowLogID, unixTimeStamp: unixTimeStamp, executionTime: executionTime,
+			args: args, clientIPAddressAndPort: clientIPAddressAndPort, clientName: clientName}
+		slowLogs[i] = slowLog
+	}
+	return slowLogs, nil
 }
