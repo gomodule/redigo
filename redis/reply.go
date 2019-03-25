@@ -17,8 +17,8 @@ package redis
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"strconv"
+	"time"
 )
 
 // ErrNil indicates that a reply value is nil.
@@ -481,49 +481,52 @@ func Positions(result interface{}, err error) ([]*[2]float64, error) {
 
 // SlowLogs is a helper that parse the SLOWLOG GET command output and
 // return the array of SlowLog
-func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
+func SlowLogs(result interface{}, err error) ([]*SlowLog, error) {
+	rawLogs, err := Values(result, err)
 	if err != nil {
 		return nil, err
 	}
-	slowlogsRaw := reflect.ValueOf(result)
-	slowLogLen := slowlogsRaw.Len()
-	if slowLogLen <= 0 {
-		return nil, nil
-	}
-	slowLogs := make([]SlowLog, slowLogLen)
-	for i := 0; i < slowLogLen; i++ {
-		index := 0
-		slowLogRaw := slowlogsRaw.Index(i).Elem()
-		slowLogRawLen := slowLogRaw.Len()
-		// A unique progressive identifier for every slow log entry.
-		var slowLogID = slowLogRaw.Index(index).Interface().(int64)
-		index++
-		// The unix timestamp at which the logged command was processed.
-		var unixTimeStamp = slowLogRaw.Index(index).Interface().(int64)
-		index++
-		// The amount of time needed for its execution, in microseconds.
-		var executionTime = slowLogRaw.Index(index).Interface().(int64)
-		index++
-		// The array composing the arguments of the command.
-		slowLogArgsRaw := slowLogRaw.Index(index).Elem()
-		index++
-		args := make([]string, slowLogArgsRaw.Len())
-		for k := 0; k < slowLogArgsRaw.Len(); k++ {
-			args[k] = fmt.Sprintf("%s", slowLogArgsRaw.Index(k))
+	logs := make([]*SlowLog, len(rawLogs))
+	for i, rawLog := range rawLogs {
+		rawLog, ok := rawLog.([]interface{})
+		if !ok {
+			return nil, errors.New("redigo: slowlog element is not an array")
 		}
-		var clientIPAddressAndPort string
-		var clientName string
-		if index < slowLogRawLen {
-			// Client IP address and port (4.0 only).
-			clientIPAddressAndPort = fmt.Sprintf("%s", slowLogRaw.Index(index))
-			index++
-			// Client name if set via the CLIENT SETNAME command (4.0 only).
-			clientName = fmt.Sprintf("%s", slowLogRaw.Index(index))
-			index++
+
+		log := &SlowLog{}
+		logs[i] = log
+
+		if len(rawLog) < 4 {
+			return nil, errors.New("redigo: slowlog element has less than four elements")
 		}
-		slowLog := SlowLog{slowLogID: slowLogID, unixTimeStamp: unixTimeStamp, executionTime: executionTime,
-			args: args, clientIPAddressAndPort: clientIPAddressAndPort, clientName: clientName}
-		slowLogs[i] = slowLog
+		log.ID, ok = rawLog[0].(int64)
+		if !ok {
+			return nil, errors.New("redigo: slowlog element[0] not an int")
+		}
+		log.UnixTime, ok = rawLog[1].(int64)
+		if !ok {
+			return nil, errors.New("redigo: slowlog element[1] not an int")
+		}
+		duration, ok := rawLog[2].(int64)
+		if !ok {
+			return nil, errors.New("redigo: slowlog element[2] not an int")
+		}
+		log.ExecutionTime = time.Duration(duration) * time.Microsecond
+
+		log.Args, err = Strings(rawLog[3], nil)
+		if err != nil {
+			return nil, fmt.Errorf("redigo: slowlog element[3] is not array of string. actual error is : %w", err)
+		}
+		if len(rawLog) >= 6 {
+			log.ClientAddr, err = String(rawLog[4], nil)
+			if err != nil {
+				return nil, fmt.Errorf("redigo: slowlog element[4] is not a string. actual error is : %w", err)
+			}
+			log.ClientName, err = String(rawLog[5], nil)
+			if err != nil {
+				return nil, fmt.Errorf("redigo: slowlog element[5] is not a string. actual error is : %w", err)
+			}
+		}
 	}
-	return slowLogs, nil
+	return logs, nil
 }
