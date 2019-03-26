@@ -121,8 +121,8 @@ type SlowLog struct {
 	// ID is a unique progressive identifier for every slow log entry.
 	ID int64
 
-	// UnixTime is the unix timestamp at which the logged command was processed.
-	UnixTime int64
+	// Time is the unix timestamp at which the logged command was processed.
+	Time time.Time
 
 	// ExecutationTime is the amount of time needed for the command execution.
 	ExecutionTime time.Duration
