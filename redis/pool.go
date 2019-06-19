@@ -315,14 +315,10 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 		if wait {
 			start = time.Now()
 		}
-		if ctx == nil {
+		if ctx == nil || ctx.Err() == nil {
 			<-p.ch
 		} else {
-			select {
-			case <-p.ch:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
+			return nil, ctx.Err()
 		}
 		if wait {
 			waited = time.Since(start)
