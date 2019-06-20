@@ -317,8 +317,8 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 		}
 		if ctx == nil {
 			<-p.ch
-		} else if err := ctx.Err(); err != nil {
-			return nil, err
+			//} else if err := ctx.Err(); err != nil {
+			//	return nil, err
 		} else {
 			select {
 			case <-p.ch:
