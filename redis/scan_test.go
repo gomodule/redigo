@@ -432,8 +432,9 @@ var argsTests = []struct {
 			Bt bool
 			Bf bool
 			PtrB *bool
+			PtrI *int
 		}{
-			-1234, 5678, "hello", []byte("world"), map[string]string{"hello": "world"}, true, false, &boolTrue,
+			-1234, 5678, "hello", []byte("world"), map[string]string{"hello": "world"}, true, false, &boolTrue, nil,
 		}),
 		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "m", map[string]string{"hello": "world"}, "Bt", true, "Bf", false, "PtrB", true},
 	},
