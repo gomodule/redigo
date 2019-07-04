@@ -199,14 +199,14 @@ type s0 struct {
 }
 
 type s1 struct {
-	X  int    `redis:"-"`
-	I  int    `redis:"i"`
-	U  uint   `redis:"u"`
-	S  string `redis:"s"`
-	P  []byte `redis:"p"`
-	B  bool   `redis:"b"`
-	Bt bool
-	Bf bool
+	X    int    `redis:"-"`
+	I    int    `redis:"i"`
+	U    uint   `redis:"u"`
+	S    string `redis:"s"`
+	P    []byte `redis:"p"`
+	B    bool   `redis:"b"`
+	Bt   bool
+	Bf   bool
 	PtrB *bool
 	s0
 	Sd  durationScan  `redis:"sd"`
@@ -236,17 +236,17 @@ var scanStructTests = []struct {
 			"sdp", "1m",
 		},
 		&s1{
-			I:   -1234,
-			U:   5678,
-			S:   "hello",
-			P:   []byte("world"),
-			B:   true,
-			Bt:  true,
-			Bf:  false,
+			I:    -1234,
+			U:    5678,
+			S:    "hello",
+			P:    []byte("world"),
+			B:    true,
+			Bt:   true,
+			Bf:   false,
 			PtrB: &boolTrue,
-			s0:  s0{X: 123, Y: 456},
-			Sd:  durationScan{Duration: time.Minute},
-			Sdp: &durationScan{Duration: time.Minute},
+			s0:   s0{X: 123, Y: 456},
+			Sd:   durationScan{Duration: time.Minute},
+			Sdp:  &durationScan{Duration: time.Minute},
 		},
 	},
 	{"absent values",
@@ -424,13 +424,13 @@ var argsTests = []struct {
 }{
 	{"struct ptr",
 		redis.Args{}.AddFlat(&struct {
-			I  int               `redis:"i"`
-			U  uint              `redis:"u"`
-			S  string            `redis:"s"`
-			P  []byte            `redis:"p"`
-			M  map[string]string `redis:"m"`
-			Bt bool
-			Bf bool
+			I    int               `redis:"i"`
+			U    uint              `redis:"u"`
+			S    string            `redis:"s"`
+			P    []byte            `redis:"p"`
+			M    map[string]string `redis:"m"`
+			Bt   bool
+			Bf   bool
 			PtrB *bool
 			PtrI *int
 		}{
