@@ -553,6 +553,10 @@ var dialErrors = []struct {
 		"redis://localhost:6379/abc123",
 		"invalid database: abc123",
 	},
+	{
+		"redis:foo//localhost:6379",
+		"invalid redis URL, url is opaque: redis:foo//localhost:6379",
+	},
 }
 
 func TestDialURLErrors(t *testing.T) {
