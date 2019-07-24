@@ -265,6 +265,10 @@ func DialURL(rawurl string, options ...DialOption) (Conn, error) {
 		return nil, fmt.Errorf("invalid redis URL scheme: %s", u.Scheme)
 	}
 
+	if u.Opaque != "" {
+		return nil, fmt.Errorf("invalid redis URL, url is opaque: %s", rawurl)
+	}
+
 	// As per the IANA draft spec, the host defaults to localhost and
 	// the port defaults to 6379.
 	host, port, err := net.SplitHostPort(u.Host)
