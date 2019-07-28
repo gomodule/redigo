@@ -115,6 +115,26 @@ func convertAssignBulkString(d reflect.Value, s []byte) (err error) {
 		} else {
 			err = cannotConvert(d, s)
 		}
+	case reflect.Ptr:
+		if d.CanInterface() && d.CanSet() {
+			if s == nil {
+				if d.IsNil() {
+					return nil
+				}
+
+				d.Set(reflect.Zero(d.Type()))
+				return nil
+			}
+
+			if d.IsNil() {
+				d.Set(reflect.New(d.Type().Elem()))
+			}
+
+			if sc, ok := d.Interface().(Scanner); ok {
+				return sc.RedisScan(s)
+			}
+		}
+		err = convertAssignString(d, string(s))
 	default:
 		err = convertAssignString(d, string(s))
 	}

@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	"github.com/stretchr/testify/require"
 )
 
 type durationScan struct {
@@ -454,6 +456,68 @@ func TestArgs(t *testing.T) {
 		if !reflect.DeepEqual(tt.actual, tt.expected) {
 			t.Fatalf("%s is %v, want %v", tt.title, tt.actual, tt.expected)
 		}
+	}
+}
+
+type InnerStruct struct {
+	Foo int64
+}
+
+func (f *InnerStruct) RedisScan(src interface{}) (err error) {
+	switch s := src.(type) {
+	case []byte:
+		f.Foo, err = strconv.ParseInt(string(s), 10, 64)
+	case string:
+		f.Foo, err = strconv.ParseInt(s, 10, 64)
+	default:
+		return fmt.Errorf("invalid type %T", src)
+	}
+	return err
+}
+
+type OuterStruct struct {
+	Inner *InnerStruct
+}
+
+func TestScanPtrRedisScan(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      []interface{}
+		dest     OuterStruct
+		expected OuterStruct
+	}{
+		{
+			name:     "value-to-nil",
+			src:      []interface{}{[]byte("1234"), nil},
+			dest:     OuterStruct{&InnerStruct{}},
+			expected: OuterStruct{Inner: &InnerStruct{Foo: 1234}},
+		},
+		{
+			name:     "nil-to-nil",
+			src:      []interface{}{[]byte(nil), nil},
+			dest:     OuterStruct{},
+			expected: OuterStruct{},
+		},
+		{
+			name:     "value-to-value",
+			src:      []interface{}{[]byte("1234"), nil},
+			dest:     OuterStruct{Inner: &InnerStruct{Foo: 5678}},
+			expected: OuterStruct{Inner: &InnerStruct{Foo: 1234}},
+		},
+		{
+			name:     "nil-to-value",
+			src:      []interface{}{[]byte(nil), nil},
+			dest:     OuterStruct{Inner: &InnerStruct{Foo: 1234}},
+			expected: OuterStruct{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := redis.Scan(tc.src, &tc.dest.Inner)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, tc.dest)
+		})
 	}
 }
 
