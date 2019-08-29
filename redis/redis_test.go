@@ -39,6 +39,7 @@ func (tc timeoutTestConn) ReceiveWithTimeout(timeout time.Duration) (interface{}
 
 func (tc timeoutTestConn) Send(string, ...interface{}) error { return nil }
 func (tc timeoutTestConn) Err() error                        { return nil }
+func (tc timeoutTestConn) Peek() bool                        { return false }
 func (tc timeoutTestConn) Close() error                      { return nil }
 func (tc timeoutTestConn) Flush() error                      { return nil }
 

@@ -133,6 +133,12 @@ func (c *loggingConn) Send(commandName string, args ...interface{}) error {
 	return err
 }
 
+func (c *loggingConn) Peek() bool {
+	reply := c.Conn.Peek()
+	c.print("Peek", "", nil, reply, nil)
+	return reply
+}
+
 func (c *loggingConn) Receive() (interface{}, error) {
 	reply, err := c.Conn.Receive()
 	c.print("Receive", "", nil, reply, err)
