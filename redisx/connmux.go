@@ -87,6 +87,10 @@ func (c *muxConn) Flush() error {
 	return err
 }
 
+func (c *muxConn) Peek() bool {
+	return c.p.c.Peek()
+}
+
 func (c *muxConn) Receive() (interface{}, error) {
 	if len(c.ids) == 0 {
 		return nil, errors.New("mux pool underflow")
