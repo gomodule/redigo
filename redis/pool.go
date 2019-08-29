@@ -538,6 +538,14 @@ func (ac *activeConn) Flush() error {
 	return pc.c.Flush()
 }
 
+func (ac *activeConn) Peek() bool {
+	pc := ac.pc
+	if pc == nil {
+		return false
+	}
+	return pc.c.Peek()
+}
+
 func (ac *activeConn) Receive() (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
@@ -568,6 +576,7 @@ func (ec errorConn) Send(string, ...interface{}) error                     { ret
 func (ec errorConn) Err() error                                            { return ec.err }
 func (ec errorConn) Close() error                                          { return nil }
 func (ec errorConn) Flush() error                                          { return ec.err }
+func (ec errorConn) Peek() bool                                            { return false }
 func (ec errorConn) Receive() (interface{}, error)                         { return nil, ec.err }
 func (ec errorConn) ReceiveWithTimeout(time.Duration) (interface{}, error) { return nil, ec.err }
 

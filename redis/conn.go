@@ -611,6 +611,10 @@ func (c *conn) Flush() error {
 	return nil
 }
 
+func (c *conn) Peek() bool {
+	return c.br.Buffered() > 0
+}
+
 func (c *conn) Receive() (interface{}, error) {
 	return c.ReceiveWithTimeout(c.readTimeout)
 }

@@ -43,6 +43,9 @@ type Conn interface {
 
 	// Receive receives a single reply from the Redis server
 	Receive() (reply interface{}, err error)
+
+	// Peek returns true if these is a byte in the Recieve buffer (indicating a message awaits)
+	Peek() bool
 }
 
 // Argument is the interface implemented by an object which wants to control how
