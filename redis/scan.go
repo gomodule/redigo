@@ -99,6 +99,8 @@ func convertAssignString(d reflect.Value, s string) (err error) {
 		} else {
 			err = cannotConvert(d, s)
 		}
+	case reflect.Ptr:
+		err = convertAssignString(d.Elem(), s)
 	default:
 		err = cannotConvert(d, s)
 	}
@@ -644,7 +646,13 @@ func flattenStruct(args Args, v reflect.Value) Args {
 				continue
 			}
 		}
-		args = append(args, fs.name, fv.Interface())
+		if fv.Kind() == reflect.Ptr {
+			if !fv.IsNil() {
+				args = append(args, fs.name, fv.Elem().Interface())
+			}
+		} else {
+			args = append(args, fs.name, fv.Interface())
+		}
 	}
 	return args
 }

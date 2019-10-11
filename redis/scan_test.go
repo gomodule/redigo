@@ -201,18 +201,21 @@ type s0 struct {
 }
 
 type s1 struct {
-	X  int    `redis:"-"`
-	I  int    `redis:"i"`
-	U  uint   `redis:"u"`
-	S  string `redis:"s"`
-	P  []byte `redis:"p"`
-	B  bool   `redis:"b"`
-	Bt bool
-	Bf bool
+	X    int    `redis:"-"`
+	I    int    `redis:"i"`
+	U    uint   `redis:"u"`
+	S    string `redis:"s"`
+	P    []byte `redis:"p"`
+	B    bool   `redis:"b"`
+	Bt   bool
+	Bf   bool
+	PtrB *bool
 	s0
 	Sd  durationScan  `redis:"sd"`
 	Sdp *durationScan `redis:"sdp"`
 }
+
+var boolTrue = true
 
 var scanStructTests = []struct {
 	title string
@@ -228,22 +231,24 @@ var scanStructTests = []struct {
 			"b", "t",
 			"Bt", "1",
 			"Bf", "0",
+			"PtrB", "1",
 			"X", "123",
 			"y", "456",
 			"sd", "1m",
 			"sdp", "1m",
 		},
 		&s1{
-			I:   -1234,
-			U:   5678,
-			S:   "hello",
-			P:   []byte("world"),
-			B:   true,
-			Bt:  true,
-			Bf:  false,
-			s0:  s0{X: 123, Y: 456},
-			Sd:  durationScan{Duration: time.Minute},
-			Sdp: &durationScan{Duration: time.Minute},
+			I:    -1234,
+			U:    5678,
+			S:    "hello",
+			P:    []byte("world"),
+			B:    true,
+			Bt:   true,
+			Bf:   false,
+			PtrB: &boolTrue,
+			s0:   s0{X: 123, Y: 456},
+			Sd:   durationScan{Duration: time.Minute},
+			Sdp:  &durationScan{Duration: time.Minute},
 		},
 	},
 	{"absent values",
@@ -421,17 +426,19 @@ var argsTests = []struct {
 }{
 	{"struct ptr",
 		redis.Args{}.AddFlat(&struct {
-			I  int               `redis:"i"`
-			U  uint              `redis:"u"`
-			S  string            `redis:"s"`
-			P  []byte            `redis:"p"`
-			M  map[string]string `redis:"m"`
-			Bt bool
-			Bf bool
+			I    int               `redis:"i"`
+			U    uint              `redis:"u"`
+			S    string            `redis:"s"`
+			P    []byte            `redis:"p"`
+			M    map[string]string `redis:"m"`
+			Bt   bool
+			Bf   bool
+			PtrB *bool
+			PtrI *int
 		}{
-			-1234, 5678, "hello", []byte("world"), map[string]string{"hello": "world"}, true, false,
+			-1234, 5678, "hello", []byte("world"), map[string]string{"hello": "world"}, true, false, &boolTrue, nil,
 		}),
-		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "m", map[string]string{"hello": "world"}, "Bt", true, "Bf", false},
+		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "m", map[string]string{"hello": "world"}, "Bt", true, "Bf", false, "PtrB", true},
 	},
 	{"struct",
 		redis.Args{}.AddFlat(struct{ I int }{123}),
