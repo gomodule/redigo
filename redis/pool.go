@@ -141,6 +141,10 @@ type Pool struct {
 	// closed.
 	TestOnBorrow func(c Conn, t time.Time) error
 
+	// TestOnBorrowWithContext is the same as TestOnBorrow, but includes
+	// the context.
+	TestOnBorrowWithContext func(c Conn, t time.Time, ctx context.Context) error
+
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
 
@@ -354,7 +358,8 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 		pc := p.idle.front
 		p.idle.popFront()
 		p.mu.Unlock()
-		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
+		if (p.TestOnBorrowWithContext == nil || p.TestOnBorrowWithContext(pc.c, pc.t, p.GetContext(ctx))) &&
+			(p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
 			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
 			return pc, nil
 		}
