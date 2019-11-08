@@ -444,6 +444,10 @@ var argsTests = []struct {
 		redis.Args{}.AddFlat(struct{ I int }{123}),
 		redis.Args{"I", 123},
 	},
+	{"struct with RedisArg",
+		redis.Args{}.AddFlat(struct{ T CustomTime }{CustomTime{Time: time.Unix(1573231058, 0)}}),
+		redis.Args{"T", int64(1573231058)},
+	},
 	{"slice",
 		redis.Args{}.Add(1).AddFlat([]string{"a", "b", "c"}).Add(2),
 		redis.Args{1, "a", "b", "c", 2},
@@ -464,6 +468,14 @@ func TestArgs(t *testing.T) {
 			t.Fatalf("%s is %v, want %v", tt.title, tt.actual, tt.expected)
 		}
 	}
+}
+
+type CustomTime struct {
+	time.Time
+}
+
+func (t CustomTime) RedisArg() interface{} {
+	return t.Unix()
 }
 
 type InnerStruct struct {
