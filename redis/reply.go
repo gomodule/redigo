@@ -478,7 +478,6 @@ func Positions(result interface{}, err error) ([]*[2]float64, error) {
 	return positions, nil
 }
 
-
 func Uint64s(reply interface{}, err error) ([]uint64, error) {
 	var result []uint64
 	err = sliceHelper(reply, err, "Uint64s", func(n int) { result = make([]uint64, n) }, func(i int, v interface{}) error {
@@ -491,29 +490,25 @@ func Uint64s(reply interface{}, err error) ([]uint64, error) {
 			result[i] = n
 			return err
 		default:
-			return fmt.Errorf("redigo: unexpected element type for Int64s, got type %T", v)
+			return fmt.Errorf("redigo: unexpected element type for Uint64s, got type %T", v)
 		}
 	})
 	return result, err
 }
 
-
-// IntMap is a helper that converts an array of strings (alternating key, value)
-// into a map[string]int. The HGETALL commands return replies in this format.
-// Requires an even number of values in result.
 func Uint64Map(result interface{}, err error) (map[uint64]uint64, error) {
 	values, err := Values(result, err)
 	if err != nil {
 		return nil, err
 	}
 	if len(values)%2 != 0 {
-		return nil, errors.New("redigo: IntMap expects even number of values result")
+		return nil, errors.New("redigo: Uint64Map expects even number of values result")
 	}
 	m := make(map[uint64]uint64, len(values)/2)
 	for i := 0; i < len(values); i += 2 {
 		key, err := Uint64(values[i], nil)
 		if err != nil {
-			return nil, errors.New("redigo: IntMap key not a bulk uint4 value")
+			return nil, errors.New("redigo: Uint64Map key not a bulk uint4 value")
 		}
 		value, err := Uint64(values[i+1], nil)
 		if err != nil {
