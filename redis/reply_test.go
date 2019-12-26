@@ -67,6 +67,16 @@ var replyTests = []struct {
 		ve([]int64{4, 5}, nil),
 	},
 	{
+		"uint64s([uint64, uint64])",
+		ve(redis.Uint64s([]interface{}{uint64(4), uint64(5)}, nil)),
+		ve([]uint64{4, 5}, nil),
+	},
+	{
+		"uint64s([[]byte, []byte])",
+		ve(redis.Uint64s([]interface{}{[]byte("4"), []byte("5")}, nil)),
+		ve([]uint64{4, 5}, nil),
+	},
+	{
 		"strings([[]byte, []bytev2])",
 		ve(redis.Strings([]interface{}{[]byte("v1"), []byte("v2")}, nil)),
 		ve([]string{"v1", "v2"}, nil),
