@@ -508,7 +508,7 @@ func Uint64Map(result interface{}, err error) (map[uint64]uint64, error) {
 	for i := 0; i < len(values); i += 2 {
 		key, err := Uint64(values[i], nil)
 		if err != nil {
-			return nil, errors.New("redigo: Uint64Map key not a bulk uint4 value")
+			return nil, err
 		}
 		value, err := Uint64(values[i+1], nil)
 		if err != nil {
