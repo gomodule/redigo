@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // ErrNil indicates that a reply value is nil.
@@ -476,4 +477,57 @@ func Positions(result interface{}, err error) ([]*[2]float64, error) {
 		positions[i] = &[2]float64{lat, long}
 	}
 	return positions, nil
+}
+
+// SlowLogs is a helper that parse the SLOWLOG GET command output and
+// return the array of SlowLog
+func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
+	rawLogs, err := Values(result, err)
+	if err != nil {
+		return nil, err
+	}
+	logs := make([]SlowLog, len(rawLogs))
+	for i, rawLog := range rawLogs {
+		rawLog, ok := rawLog.([]interface{})
+		if !ok {
+			return nil, errors.New("redigo: slowlog element is not an array")
+		}
+
+		var log SlowLog
+
+		if len(rawLog) < 4 {
+			return nil, errors.New("redigo: slowlog element has less than four elements")
+		}
+		log.ID, ok = rawLog[0].(int64)
+		if !ok {
+			return nil, errors.New("redigo: slowlog element[0] not an int64")
+		}
+		timestamp, ok := rawLog[1].(int64)
+		if !ok {
+			return nil, errors.New("redigo: slowlog element[1] not an int64")
+		}
+		log.Time = time.Unix(timestamp, 0)
+		duration, ok := rawLog[2].(int64)
+		if !ok {
+			return nil, errors.New("redigo: slowlog element[2] not an int64")
+		}
+		log.ExecutionTime = time.Duration(duration) * time.Microsecond
+
+		log.Args, err = Strings(rawLog[3], nil)
+		if err != nil {
+			return nil, fmt.Errorf("redigo: slowlog element[3] is not array of string. actual error is : %s", err.Error())
+		}
+		if len(rawLog) >= 6 {
+			log.ClientAddr, err = String(rawLog[4], nil)
+			if err != nil {
+				return nil, fmt.Errorf("redigo: slowlog element[4] is not a string. actual error is : %s", err.Error())
+			}
+			log.ClientName, err = String(rawLog[5], nil)
+			if err != nil {
+				return nil, fmt.Errorf("redigo: slowlog element[5] is not a string. actual error is : %s", err.Error())
+			}
+		}
+		logs[i] = log
+	}
+	return logs, nil
 }
