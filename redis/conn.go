@@ -541,11 +541,11 @@ func (c *conn) readReply() (interface{}, error) {
 	}
 	switch line[0] {
 	case '+':
-		switch {
-		case len(line) == 3 && line[1] == 'O' && line[2] == 'K':
+		switch string(line[1:]) {
+		case "OK":
 			// Avoid allocation for frequent "+OK" response.
 			return okReply, nil
-		case len(line) == 5 && line[1] == 'P' && line[2] == 'O' && line[3] == 'N' && line[4] == 'G':
+		case "PONG":
 			// Avoid allocation in PING command benchmarks :)
 			return pongReply, nil
 		default:
