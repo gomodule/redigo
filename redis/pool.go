@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	mrand "math/rand"
 )
 
 var (
@@ -299,6 +300,14 @@ func (p *Pool) lazyInit() {
 	p.mu.Unlock()
 }
 
+func randomOffset(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	mrand.Seed(time.Now().UnixNano())
+	return mrand.Intn(n)
+}
+
 // get prunes stale connections and returns a connection from the idle list or
 // creates a new connection.
 func (p *Pool) get(ctx context.Context) (*poolConn, error) {
@@ -387,7 +396,8 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 		}
 		p.mu.Unlock()
 	}
-	return &poolConn{c: c, created: nowFunc()}, err
+	off := time.Duration(randomOffset(int(p.MaxConnLifetime.Seconds())/3))
+	return &poolConn{c: c, created: nowFunc().Add(off*time.Second)}, err
 }
 
 func (p *Pool) dial(ctx context.Context) (Conn, error) {
