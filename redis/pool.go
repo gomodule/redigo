@@ -21,11 +21,11 @@ import (
 	"crypto/sha1"
 	"errors"
 	"io"
+	mrand "math/rand"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
-	mrand "math/rand"
 )
 
 var (
@@ -396,8 +396,8 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 		}
 		p.mu.Unlock()
 	}
-	off := time.Duration(randomOffset(int(p.MaxConnLifetime.Seconds())/3))
-	return &poolConn{c: c, created: nowFunc().Add(off*time.Second)}, err
+	off := time.Duration(randomOffset(int(p.MaxConnLifetime.Seconds()) / 3))
+	return &poolConn{c: c, created: nowFunc().Add(off * time.Second)}, err
 }
 
 func (p *Pool) dial(ctx context.Context) (Conn, error) {
