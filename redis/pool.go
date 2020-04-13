@@ -174,7 +174,7 @@ type Pool struct {
 
 // NewPool creates a new pool.
 //
-// Deprecated: Initialize the Pool directory as shown in the example.
+// Deprecated: Initialize the Pool directly as shown in the example.
 func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 	return &Pool{Dial: newFn, MaxIdle: maxIdle}
 }
