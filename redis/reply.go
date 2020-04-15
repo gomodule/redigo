@@ -479,8 +479,8 @@ func Positions(result interface{}, err error) ([]*[2]float64, error) {
 	return positions, nil
 }
 
-// Same as Int64s, Uint64s is a helper that converts an array command reply to a []uint64.
-// If err is not equal to nil, then Uint64s returns nil, err. Nil array
+// Uint64s is a helper that converts an array command reply to a []uint64.
+//If err is not equal to nil, then Uint64s returns nil, err. Nil array
 // items are stay nil. Uint64s returns an error if an array item is not a
 // bulk string or nil.
 func Uint64s(reply interface{}, err error) ([]uint64, error) {
@@ -502,10 +502,10 @@ func Uint64s(reply interface{}, err error) ([]uint64, error) {
 }
 
 
-// Same as Int64Map , Uint64Map is a helper that return a  map[uint64]uint64 data. 
+// Uint64Map is a helper that return a  map[string]uint64 data.
 //The HGETALL commands return replies in this format.
 // Requires an even number of values in result.
-func Uint64Map(result interface{}, err error) (map[uint64]uint64, error) {
+func Uint64Map(result interface{}, err error) (map[string]uint64, error) {
 	values, err := Values(result, err)
 	if err != nil {
 		return nil, err
@@ -513,17 +513,17 @@ func Uint64Map(result interface{}, err error) (map[uint64]uint64, error) {
 	if len(values)%2 != 0 {
 		return nil, errors.New("redigo: Uint64Map expects even number of values result")
 	}
-	m := make(map[uint64]uint64, len(values)/2)
+	m := make(map[string]uint64, len(values)/2)
 	for i := 0; i < len(values); i += 2 {
-		key, err := Uint64(values[i], nil)
-		if err != nil {
-			return nil, err
+		key, ok := values[i].([]byte)
+		if !ok {
+			return nil, errors.New("redigo: Uint64Map key not a bulk string value")
 		}
 		value, err := Uint64(values[i+1], nil)
 		if err != nil {
 			return nil, err
 		}
-		m[key] = value
+		m[string(key)] = value
 	}
 	return m, nil
 }
