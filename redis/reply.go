@@ -480,7 +480,7 @@ func Positions(result interface{}, err error) ([]*[2]float64, error) {
 }
 
 // Uint64s is a helper that converts an array command reply to a []uint64.
-//If err is not equal to nil, then Uint64s returns nil, err. Nil array
+// If err is not equal to nil, then Uint64s returns nil, err. Nil array
 // items are stay nil. Uint64s returns an error if an array item is not a
 // bulk string or nil.
 func Uint64s(reply interface{}, err error) ([]uint64, error) {
@@ -502,7 +502,7 @@ func Uint64s(reply interface{}, err error) ([]uint64, error) {
 }
 
 
-// Uint64Map is a helper that return a  map[string]uint64 data.
+// Uint64Map is a helper that converts an array of strings (alternating key, value) into a map[string]uint64.
 //The HGETALL commands return replies in this format.
 // Requires an even number of values in result.
 func Uint64Map(result interface{}, err error) (map[string]uint64, error) {
