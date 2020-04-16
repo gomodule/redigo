@@ -502,8 +502,8 @@ func Uint64s(reply interface{}, err error) ([]uint64, error) {
 }
 
 
-// Uint64Map is a helper that converts an array of strings (alternating key, value) into a map[string]uint64.
-//The HGETALL commands return replies in this format.
+// Uint64Map is a helper that converts an array of strings (alternating key, value)
+// into a map[string]uint64. The HGETALL commands return replies in this format.
 // Requires an even number of values in result.
 func Uint64Map(result interface{}, err error) (map[string]uint64, error) {
 	values, err := Values(result, err)
