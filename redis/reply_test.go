@@ -16,6 +16,7 @@ package redis_test
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"testing"
@@ -67,6 +68,36 @@ var replyTests = []struct {
 		"int64s([int64, int64])",
 		ve(redis.Int64s([]interface{}{int64(4), int64(5)}, nil)),
 		ve([]int64{4, 5}, nil),
+	},
+	{
+		"uint64s([uint64, uint64])",
+		ve(redis.Uint64s([]interface{}{uint64(4), uint64(5)}, nil)),
+		ve([]uint64{4, 5}, nil),
+	},
+	{
+		"uint64s([uint64, uint64])",
+		ve(redis.Uint64s([]interface{}{math.MaxUint64, math.MaxUint64}, nil)),
+		ve([]uint64{math.MaxUint64, math.MaxUint64}, nil),
+	},
+	{
+		"uint64s([[]byte, []byte])",
+		ve(redis.Uint64s([]interface{}{[]byte("4"), []byte("5")}, nil)),
+		ve([]uint64{4, 5}, nil),
+	},
+	{
+		"Uint64Map([[]byte, []byte])",
+		ve(redis.Uint64Map([]interface{}{[]byte("4"), []byte("5")}, nil)),
+		ve(map[string]uint64{"1": 4, "2": 5}, nil),
+	},
+	{
+		"Uint64Map([uint64, uint64])",
+		ve(redis.Uint64Map([]interface{}{uint64(4), uint64(5)}, nil)),
+		ve(map[string]uint64{"1": 4, "2": 5}, nil),
+	},
+	{
+		"Uint64Map([uint64, uint64])",
+		ve(redis.Uint64Map([]interface{}{math.MaxUint64, math.MaxUint64}, nil)),
+		ve(map[string]uint64{"1": math.MaxUint64, "2": math.MaxUint64}, nil),
 	},
 	{
 		"strings([[]byte, []bytev2])",
