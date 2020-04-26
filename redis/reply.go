@@ -56,7 +56,7 @@ func Int(reply interface{}, err error) (int, error) {
 }
 
 // Int64 is a helper that converts a command reply to 64 bit integer. If err is
-// not equal to nil, then Int returns 0, err. Otherwise, Int64 converts the
+// not equal to nil, then Int64 returns 0, err. Otherwise, Int64 converts the
 // reply to an int64 as follows:
 //
 //  Reply type    Result
@@ -82,14 +82,16 @@ func Int64(reply interface{}, err error) (int64, error) {
 	return 0, fmt.Errorf("redigo: unexpected type for Int64, got type %T", reply)
 }
 
-var errNegativeInt = errors.New("redigo: unexpected value for Uint64")
+func errNegativeInt(v int64) error {
+	return fmt.Errorf("redigo: unexpected negative value %v for Uint64", v)
+}
 
-// Uint64 is a helper that converts a command reply to 64 bit integer. If err is
-// not equal to nil, then Int returns 0, err. Otherwise, Int64 converts the
-// reply to an int64 as follows:
+// Uint64 is a helper that converts a command reply to 64 bit unsigned integer.
+// If err is not equal to nil, then Uint64 returns 0, err. Otherwise, Uint64 converts the
+// reply to an uint64 as follows:
 //
 //  Reply type    Result
-//  integer       reply, nil
+//  +integer      reply, nil
 //  bulk string   parsed reply, nil
 //  nil           0, ErrNil
 //  other         0, error
@@ -100,7 +102,7 @@ func Uint64(reply interface{}, err error) (uint64, error) {
 	switch reply := reply.(type) {
 	case int64:
 		if reply < 0 {
-			return 0, errNegativeInt
+			return 0, errNegativeInt(reply)
 		}
 		return uint64(reply), nil
 	case []byte:
@@ -500,7 +502,6 @@ func Uint64s(reply interface{}, err error) ([]uint64, error) {
 	})
 	return result, err
 }
-
 
 // Uint64Map is a helper that converts an array of strings (alternating key, value)
 // into a map[string]uint64. The HGETALL commands return replies in this format.

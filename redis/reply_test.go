@@ -25,6 +25,10 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
+var (
+	maxUint64Str = strconv.FormatUint(math.MaxUint64, 10)
+)
+
 type valueError struct {
 	v   interface{}
 	err error
@@ -70,37 +74,17 @@ var replyTests = []struct {
 		ve([]int64{4, 5}, nil),
 	},
 	{
-		"uint64s([uint64, uint64])",
-		ve(redis.Uint64s([]interface{}{uint64(4), uint64(5)}, nil)),
-		ve([]uint64{4, 5}, nil),
-	},
-	{
-		"uint64s([uint64, uint64])",
-		ve(redis.Uint64s([]interface{}{math.MaxUint64, math.MaxUint64}, nil)),
-		ve([]uint64{math.MaxUint64, math.MaxUint64}, nil),
-	},
-	{
 		"uint64s([[]byte, []byte])",
-		ve(redis.Uint64s([]interface{}{[]byte("4"), []byte("5")}, nil)),
-		ve([]uint64{4, 5}, nil),
+		ve(redis.Uint64s([]interface{}{[]byte(maxUint64Str), []byte("5")}, nil)),
+		ve([]uint64{math.MaxUint64, 5}, nil),
 	},
 	{
 		"Uint64Map([[]byte, []byte])",
-		ve(redis.Uint64Map([]interface{}{[]byte("4"), []byte("5")}, nil)),
-		ve(map[string]uint64{"1": 4, "2": 5}, nil),
+		ve(redis.Uint64Map([]interface{}{[]byte("key1"), []byte(maxUint64Str), []byte("key2"), []byte("5")}, nil)),
+		ve(map[string]uint64{"key1": math.MaxUint64, "key2": 5}, nil),
 	},
 	{
-		"Uint64Map([uint64, uint64])",
-		ve(redis.Uint64Map([]interface{}{uint64(4), uint64(5)}, nil)),
-		ve(map[string]uint64{"1": 4, "2": 5}, nil),
-	},
-	{
-		"Uint64Map([uint64, uint64])",
-		ve(redis.Uint64Map([]interface{}{math.MaxUint64, math.MaxUint64}, nil)),
-		ve(map[string]uint64{"1": math.MaxUint64, "2": math.MaxUint64}, nil),
-	},
-	{
-		"strings([[]byte, []bytev2])",
+		"strings([[]byte, []byte])",
 		ve(redis.Strings([]interface{}{[]byte("v1"), []byte("v2")}, nil)),
 		ve([]string{"v1", "v2"}, nil),
 	},
@@ -147,7 +131,7 @@ var replyTests = []struct {
 	{
 		"uint64(-1)",
 		ve(redis.Uint64(int64(-1), nil)),
-		ve(uint64(0), redis.ErrNegativeInt),
+		ve(uint64(0), redis.ErrNegativeInt(-1)),
 	},
 	{
 		"positions([[1, 2], nil, [3, 4]])",
@@ -171,7 +155,7 @@ func getSlowLog() (redis.SlowLog, error) {
 
 func TestReply(t *testing.T) {
 	for _, rt := range replyTests {
-		if rt.actual.err != rt.expected.err {
+		if rt.actual.err != rt.expected.err && rt.actual.err.Error() != rt.expected.err.Error() {
 			t.Errorf("%s returned err %v, want %v", rt.name, rt.actual.err, rt.expected.err)
 			continue
 		}
