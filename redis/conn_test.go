@@ -38,10 +38,14 @@ type testConn struct {
 	writeDeadline time.Time
 }
 
-func (*testConn) Close() error                         { return nil }
-func (*testConn) LocalAddr() net.Addr                  { return nil }
-func (*testConn) RemoteAddr() net.Addr                 { return nil }
-func (c *testConn) SetDeadline(t time.Time) error      { c.readDeadline = t; c.writeDeadline = t; return nil }
+func (*testConn) Close() error         { return nil }
+func (*testConn) LocalAddr() net.Addr  { return nil }
+func (*testConn) RemoteAddr() net.Addr { return nil }
+func (c *testConn) SetDeadline(t time.Time) error {
+	c.readDeadline = t
+	c.writeDeadline = t
+	return nil
+}
 func (c *testConn) SetReadDeadline(t time.Time) error  { c.readDeadline = t; return nil }
 func (c *testConn) SetWriteDeadline(t time.Time) error { c.writeDeadline = t; return nil }
 
