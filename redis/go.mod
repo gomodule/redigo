@@ -1,5 +1,5 @@
-module github.com/gomodule/redigo/redis/v3
+module github.com/gomodule/redigo/redis
 
-go 1.13
+go 1.14
 
 require github.com/stretchr/testify v1.4.0

@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gomodule/redigo/redis/v3"
+	"github.com/gomodule/redigo/redis"
 )
 
 var (

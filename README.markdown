@@ -2,7 +2,7 @@ Redigo
 ======
 
 [![Build Status](https://travis-ci.org/gomodule/redigo.svg?branch=master)](https://travis-ci.org/gomodule/redigo)
-[![GoDoc](https://godoc.org/github.com/gomodule/redigo/redis?status.svg)](https://pkg.go.dev/github.com/gomodule/redigo/redis/v3)
+[![GoDoc](https://godoc.org/github.com/gomodule/redigo/redis?status.svg)](https://godoc.org/github.com/gomodule/redigo/redis)
 
 Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) database.
 
@@ -28,14 +28,9 @@ Installation
 
 Install Redigo using the "go get" command:
 
-    go get github.com/gomodule/redigo/redis/v3
+    go get github.com/gomodule/redigo/redis
 
 The Go distribution is Redigo's only dependency.
-
-Updating
---------
-
-If you you were using `redigo` prior to the `v3` tag and are using `go mod` you'll need to update your import paths to add the `/v3` suffix as detailed by [Installation](#installation). A community tool [github.com/marwan-at-work/mod](https://github.com/marwan-at-work/mod) helps automate this procedure. See the [repository](https://github.com/marwan-at-work/mod) or the [community tooling FAQ](https://github.com/golang/go/wiki/Modules#what-community-tooling-exists-for-working-with-modules) below for an overview.
 
 Related Projects
 ----------------
