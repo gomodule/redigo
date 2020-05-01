@@ -419,12 +419,14 @@ func ExampleScanSlice() {
 	// [{Earthbound 1} {Beat 4} {Red 5}]
 }
 
+var now = time.Now()
+
 var argsTests = []struct {
 	title    string
 	actual   redis.Args
 	expected redis.Args
 }{
-	{"struct ptr",
+	{"struct-ptr",
 		redis.Args{}.AddFlat(&struct {
 			I    int               `redis:"i"`
 			U    uint              `redis:"u"`
@@ -444,15 +446,23 @@ var argsTests = []struct {
 		redis.Args{}.AddFlat(struct{ I int }{123}),
 		redis.Args{"I", 123},
 	},
-	{"struct with RedisArg",
+	{"struct-with-RedisArg-direct",
 		redis.Args{}.AddFlat(struct{ T CustomTime }{CustomTime{Time: time.Unix(1573231058, 0)}}),
+		redis.Args{"T", int64(1573231058)},
+	},
+	{"struct-with-RedisArg-direct-ptr",
+		redis.Args{}.AddFlat(struct{ T *CustomTime }{&CustomTime{Time: time.Unix(1573231058, 0)}}),
+		redis.Args{"T", int64(1573231058)},
+	},
+	{"struct-with-RedisArg-ptr",
+		redis.Args{}.AddFlat(struct{ T *CustomTimePtr }{&CustomTimePtr{Time: time.Unix(1573231058, 0)}}),
 		redis.Args{"T", int64(1573231058)},
 	},
 	{"slice",
 		redis.Args{}.Add(1).AddFlat([]string{"a", "b", "c"}).Add(2),
 		redis.Args{1, "a", "b", "c", 2},
 	},
-	{"struct omitempty",
+	{"struct-omitempty",
 		redis.Args{}.AddFlat(&struct {
 			Sdp *durationArg `redis:"Sdp,omitempty"`
 		}{
@@ -464,10 +474,20 @@ var argsTests = []struct {
 
 func TestArgs(t *testing.T) {
 	for _, tt := range argsTests {
-		if !reflect.DeepEqual(tt.actual, tt.expected) {
-			t.Fatalf("%s is %v, want %v", tt.title, tt.actual, tt.expected)
-		}
+		t.Run(tt.title, func(t *testing.T) {
+			if !reflect.DeepEqual(tt.actual, tt.expected) {
+				t.Fatalf("is %v, want %v", tt.actual, tt.expected)
+			}
+		})
 	}
+}
+
+type CustomTimePtr struct {
+	time.Time
+}
+
+func (t *CustomTimePtr) RedisArg() interface{} {
+	return t.Unix()
 }
 
 type CustomTime struct {
