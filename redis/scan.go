@@ -646,16 +646,14 @@ func flattenStruct(args Args, v reflect.Value) Args {
 				continue
 			}
 		}
-		if fv.Kind() == reflect.Ptr {
+		if arg, ok := fv.Interface().(Argument); ok {
+			args = append(args, fs.name, arg.RedisArg())
+		} else if fv.Kind() == reflect.Ptr {
 			if !fv.IsNil() {
 				args = append(args, fs.name, fv.Elem().Interface())
 			}
 		} else {
-			if arg, ok := fv.Interface().(Argument); ok {
-				args = append(args, fs.name, arg.RedisArg())
-			} else {
-				args = append(args, fs.name, fv.Interface())
-			}
+			args = append(args, fs.name, fv.Interface())
 		}
 	}
 	return args
