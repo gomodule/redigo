@@ -368,6 +368,23 @@ func TestPoolBorrowCheck(t *testing.T) {
 	d.check("1", p, 10, 1, 0)
 }
 
+func TestPoolBorrowWithContextCheck(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:                 2,
+		Dial:                    d.dial,
+		TestOnBorrowWithContext: func(redis.Conn, time.Time, context.Context) error { return redis.Error("BLAH") },
+	}
+	defer p.Close()
+
+	for i := 0; i < 10; i++ {
+		c := p.Get()
+		c.Do("PING")
+		c.Close()
+	}
+	d.check("1", p, 10, 1, 0)
+}
+
 func TestPoolMaxActive(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
@@ -721,6 +738,54 @@ func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
 		MaxActive: count,
 		Dial:      d.dial,
 		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			return errors.New("No way back into the real world.")
+		},
+	}
+	defer p.Close()
+
+	// Fill the pool with idle connections.
+	conns := make([]redis.Conn, count)
+	for i := range conns {
+		conns[i] = p.Get()
+	}
+	for i := range conns {
+		conns[i].Close()
+	}
+
+	// Spawn a bunch of goroutines to thrash the pool.
+	var wg sync.WaitGroup
+	wg.Add(count)
+	for i := 0; i < count; i++ {
+		go func() {
+			c := p.Get()
+			if c.Err() != nil {
+				t.Errorf("pool get failed: %v", c.Err())
+			}
+			c.Close()
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	if d.dialed != count*2 {
+		t.Errorf("Expected %d dials, got %d", count*2, d.dialed)
+	}
+}
+
+// Borrowing requires us to iterate over the idle connections, unlock the pool,
+// and perform a blocking operation to check the connection still works. If
+// TestOnBorrow fails, we must reacquire the lock and continue iteration. This
+// test ensures that iteration will work correctly if multiple threads are
+// iterating simultaneously.
+func TestLocking_TestOnBorrowWithContextFails_PoolDoesntCrash(t *testing.T) {
+	const count = 100
+
+	// First we'll Create a pool where the pilfering of idle connections fails.
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   count,
+		MaxActive: count,
+		Dial:      d.dial,
+		TestOnBorrowWithContext: func(c redis.Conn, t time.Time, ctx context.Context) error {
 			return errors.New("No way back into the real world.")
 		},
 	}
