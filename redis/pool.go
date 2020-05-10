@@ -198,11 +198,94 @@ func (p *Pool) Get() Conn {
 // If the function completes without error, then the application must close the
 // returned connection.
 func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
-	pc, err := p.get(ctx)
-	if err != nil {
+	// Handle limit for p.Wait == true.
+	var waited time.Duration
+	if p.Wait && p.MaxActive > 0 {
+		p.lazyInit()
+
+		// wait indicates if we believe it will block so its not 100% accurate
+		// however for stats it should be good enough.
+		wait := len(p.ch) == 0
+		var start time.Time
+		if wait {
+			start = time.Now()
+		}
+		if ctx == nil {
+			<-p.ch
+		} else {
+			select {
+			case <-p.ch:
+			case <-ctx.Done():
+				err := ctx.Err()
+				return errorConn{err}, err
+			}
+		}
+		if wait {
+			waited = time.Since(start)
+		}
+	}
+
+	p.mu.Lock()
+
+	if waited > 0 {
+		p.waitCount++
+		p.waitDuration += waited
+	}
+
+	// Prune stale connections at the back of the idle list.
+	if p.IdleTimeout > 0 {
+		n := p.idle.count
+		for i := 0; i < n && p.idle.back != nil && p.idle.back.t.Add(p.IdleTimeout).Before(nowFunc()); i++ {
+			pc := p.idle.back
+			p.idle.popBack()
+			p.mu.Unlock()
+			pc.c.Close()
+			p.mu.Lock()
+			p.active--
+		}
+	}
+
+	// Get idle connection from the front of idle list.
+	for p.idle.front != nil {
+		pc := p.idle.front
+		p.idle.popFront()
+		p.mu.Unlock()
+		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
+			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
+			return &activeConn{p: p, pc: pc}, nil
+		}
+		pc.c.Close()
+		p.mu.Lock()
+		p.active--
+	}
+
+	// Check for pool closed before dialing a new connection.
+	if p.closed {
+		p.mu.Unlock()
+		err := errors.New("redigo: get on closed pool")
 		return errorConn{err}, err
 	}
-	return &activeConn{p: p, pc: pc}, nil
+
+	// Handle limit for p.Wait == false.
+	if !p.Wait && p.MaxActive > 0 && p.active >= p.MaxActive {
+		p.mu.Unlock()
+		return errorConn{ErrPoolExhausted}, ErrPoolExhausted
+	}
+
+	p.active++
+	p.mu.Unlock()
+	c, err := p.dial(ctx)
+	if err != nil {
+		c = nil
+		p.mu.Lock()
+		p.active--
+		if p.ch != nil && !p.closed {
+			p.ch <- struct{}{}
+		}
+		p.mu.Unlock()
+		return errorConn{err}, err
+	}
+	return &activeConn{p: p, pc: &poolConn{c: c, created: nowFunc()}}, nil
 }
 
 // PoolStats contains pool statistics.
@@ -294,97 +377,6 @@ func (p *Pool) lazyInit() {
 		atomic.StoreUint32(&p.chInitialized, 1)
 	}
 	p.mu.Unlock()
-}
-
-// get prunes stale connections and returns a connection from the idle list or
-// creates a new connection.
-func (p *Pool) get(ctx context.Context) (*poolConn, error) {
-
-	// Handle limit for p.Wait == true.
-	var waited time.Duration
-	if p.Wait && p.MaxActive > 0 {
-		p.lazyInit()
-
-		// wait indicates if we believe it will block so its not 100% accurate
-		// however for stats it should be good enough.
-		wait := len(p.ch) == 0
-		var start time.Time
-		if wait {
-			start = time.Now()
-		}
-		if ctx == nil {
-			<-p.ch
-		} else {
-			select {
-			case <-p.ch:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-		if wait {
-			waited = time.Since(start)
-		}
-	}
-
-	p.mu.Lock()
-
-	if waited > 0 {
-		p.waitCount++
-		p.waitDuration += waited
-	}
-
-	// Prune stale connections at the back of the idle list.
-	if p.IdleTimeout > 0 {
-		n := p.idle.count
-		for i := 0; i < n && p.idle.back != nil && p.idle.back.t.Add(p.IdleTimeout).Before(nowFunc()); i++ {
-			pc := p.idle.back
-			p.idle.popBack()
-			p.mu.Unlock()
-			pc.c.Close()
-			p.mu.Lock()
-			p.active--
-		}
-	}
-
-	// Get idle connection from the front of idle list.
-	for p.idle.front != nil {
-		pc := p.idle.front
-		p.idle.popFront()
-		p.mu.Unlock()
-		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
-			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
-			return pc, nil
-		}
-		pc.c.Close()
-		p.mu.Lock()
-		p.active--
-	}
-
-	// Check for pool closed before dialing a new connection.
-	if p.closed {
-		p.mu.Unlock()
-		return nil, errors.New("redigo: get on closed pool")
-	}
-
-	// Handle limit for p.Wait == false.
-	if !p.Wait && p.MaxActive > 0 && p.active >= p.MaxActive {
-		p.mu.Unlock()
-		return nil, ErrPoolExhausted
-	}
-
-	p.active++
-	p.mu.Unlock()
-	c, err := p.dial(ctx)
-	if err != nil {
-		c = nil
-		p.mu.Lock()
-		p.active--
-		if p.ch != nil && !p.closed {
-			p.ch <- struct{}{}
-		}
-		p.mu.Unlock()
-	}
-	return &poolConn{c: c, created: nowFunc()}, err
 }
 
 func (p *Pool) dial(ctx context.Context) (Conn, error) {
