@@ -185,11 +185,8 @@ func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 // getting an underlying connection, then the connection Err, Do, Send, Flush
 // and Receive methods return that error.
 func (p *Pool) Get() Conn {
-	pc, err := p.get(nil)
-	if err != nil {
-		return errorConn{err}
-	}
-	return &activeConn{p: p, pc: pc}
+	c, _ := p.GetContext(context.Background())
+	return c
 }
 
 // GetContext gets a connection using the provided context.
@@ -315,14 +312,10 @@ func (p *Pool) get(ctx context.Context) (*poolConn, error) {
 		if wait {
 			start = time.Now()
 		}
-		if ctx == nil {
-			<-p.ch
-		} else {
-			select {
-			case <-p.ch:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
+		select {
+		case <-p.ch:
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 		if wait {
 			waited = time.Since(start)
