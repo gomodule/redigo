@@ -211,15 +211,11 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 		if wait {
 			start = time.Now()
 		}
-		if ctx == nil {
-			<-p.ch
-		} else {
-			select {
-			case <-p.ch:
-			case <-ctx.Done():
-				err := ctx.Err()
-				return errorConn{err}, err
-			}
+		select {
+		case <-p.ch:
+		case <-ctx.Done():
+			err := ctx.Err()
+			return errorConn{err}, err
 		}
 		if wait {
 			waited = time.Since(start)
