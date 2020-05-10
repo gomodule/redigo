@@ -185,6 +185,7 @@ func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 // getting an underlying connection, then the connection Err, Do, Send, Flush
 // and Receive methods return that error.
 func (p *Pool) Get() Conn {
+	// GetContext returns errorConn in the first argument when an error occurs.
 	c, _ := p.GetContext(context.Background())
 	return c
 }
