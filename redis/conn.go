@@ -78,7 +78,7 @@ type dialOptions struct {
 	readTimeout  time.Duration
 	writeTimeout time.Duration
 	dialer       *net.Dialer
-	dialContext  func(ctx context.Context, network, address string) (net.Conn, error)
+	dialContext  func(ctx context.Context, network, addr string) (net.Conn, error)
 	db           int
 	password     string
 	clientName   string
