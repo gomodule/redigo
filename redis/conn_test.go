@@ -16,6 +16,7 @@ package redis_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -719,6 +720,16 @@ func TestDialClientName(t *testing.T) {
 // Connect to local instance of Redis running on the default port.
 func ExampleDial() {
 	c, err := redis.Dial("tcp", ":6379")
+	if err != nil {
+		// handle error
+	}
+	defer c.Close()
+}
+
+// Connect to local instance of Redis running on the default port using the provided context.
+func ExampleDialContext() {
+	ctx := context.Background()
+	c, err := redis.DialContext(ctx, "tcp", ":6379")
 	if err != nil {
 		// handle error
 	}
