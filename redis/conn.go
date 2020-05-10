@@ -142,6 +142,15 @@ func DialNetDial(dial func(network, addr string) (net.Conn, error)) DialOption {
 	}}
 }
 
+// DialNetDialContext specifies a custom dial function with context for creating TCP
+// connections, otherwise a net.Dialer customized via the other options is used.
+// DialNetDialContext overrides DialConnectTimeout and DialKeepAlive.
+func DialNetDialContext(dialContext func(ctx context.Context, network, addr string) (net.Conn, error)) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.dialContext = dialContext
+	}}
+}
+
 // DialDatabase specifies the database to select when dialing a connection.
 func DialDatabase(db int) DialOption {
 	return DialOption{func(do *dialOptions) {
