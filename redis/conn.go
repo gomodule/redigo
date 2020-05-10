@@ -78,7 +78,6 @@ type dialOptions struct {
 	readTimeout  time.Duration
 	writeTimeout time.Duration
 	dialer       *net.Dialer
-	dial         func(network, addr string) (net.Conn, error)
 	dialContext  func(ctx context.Context, network, address string) (net.Conn, error)
 	db           int
 	password     string
@@ -86,19 +85,6 @@ type dialOptions struct {
 	useTLS       bool
 	skipVerify   bool
 	tlsConfig    *tls.Config
-}
-
-func newDialOptions(options []DialOption) dialOptions {
-	do := dialOptions{
-		dialer: &net.Dialer{
-			KeepAlive: time.Minute * 5,
-		},
-	}
-	for _, option := range options {
-		option.f(&do)
-	}
-
-	return do
 }
 
 // DialReadTimeout specifies the timeout for reading a single command reply.
@@ -138,7 +124,9 @@ func DialKeepAlive(d time.Duration) DialOption {
 // DialNetDial overrides DialConnectTimeout and DialKeepAlive.
 func DialNetDial(dial func(network, addr string) (net.Conn, error)) DialOption {
 	return DialOption{func(do *dialOptions) {
-		do.dial = dial
+		do.dialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			return dial(network, address)
+		}
 	}}
 }
 
@@ -201,25 +189,20 @@ func DialUseTLS(useTLS bool) DialOption {
 // Dial connects to the Redis server at the given network and
 // address using the specified options.
 func Dial(network, address string, options ...DialOption) (Conn, error) {
-	do := newDialOptions(options)
-
-	if do.dial == nil {
-		do.dial = do.dialer.Dial
-	}
-
-	netConn, err := do.dial(network, address)
-	if err != nil {
-		return nil, err
-	}
-
-	return newConnWithDialOptions(do, netConn, address)
+	return DialContext(context.Background(), network, address, options...)
 }
 
 // DialContext connects to the Redis server at the given network and
 // address using the specified options and context.
 func DialContext(ctx context.Context, network, address string, options ...DialOption) (Conn, error) {
-	do := newDialOptions(options)
-
+	do := dialOptions{
+		dialer: &net.Dialer{
+			KeepAlive: time.Minute * 5,
+		},
+	}
+	for _, option := range options {
+		option.f(&do)
+	}
 	if do.dialContext == nil {
 		do.dialContext = do.dialer.DialContext
 	}
@@ -229,7 +212,60 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 		return nil, err
 	}
 
-	return newConnWithDialOptions(do, netConn, address)
+	if do.useTLS {
+		var tlsConfig *tls.Config
+		if do.tlsConfig == nil {
+			tlsConfig = &tls.Config{InsecureSkipVerify: do.skipVerify}
+		} else {
+			tlsConfig = cloneTLSConfig(do.tlsConfig)
+		}
+		if tlsConfig.ServerName == "" {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				netConn.Close()
+				return nil, err
+			}
+			tlsConfig.ServerName = host
+		}
+
+		tlsConn := tls.Client(netConn, tlsConfig)
+		if err := tlsConn.Handshake(); err != nil {
+			netConn.Close()
+			return nil, err
+		}
+		netConn = tlsConn
+	}
+
+	c := &conn{
+		conn:         netConn,
+		bw:           bufio.NewWriter(netConn),
+		br:           bufio.NewReader(netConn),
+		readTimeout:  do.readTimeout,
+		writeTimeout: do.writeTimeout,
+	}
+
+	if do.password != "" {
+		if _, err := c.Do("AUTH", do.password); err != nil {
+			netConn.Close()
+			return nil, err
+		}
+	}
+
+	if do.clientName != "" {
+		if _, err := c.Do("CLIENT", "SETNAME", do.clientName); err != nil {
+			netConn.Close()
+			return nil, err
+		}
+	}
+
+	if do.db != 0 {
+		if _, err := c.Do("SELECT", do.db); err != nil {
+			netConn.Close()
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 var pathDBRegexp = regexp.MustCompile(`/(\d*)\z`)
@@ -301,57 +337,6 @@ func NewConn(netConn net.Conn, readTimeout, writeTimeout time.Duration) Conn {
 		readTimeout:  readTimeout,
 		writeTimeout: writeTimeout,
 	}
-}
-
-func newConnWithDialOptions(do dialOptions, netConn net.Conn, address string) (Conn, error) {
-	if do.useTLS {
-		var tlsConfig *tls.Config
-		if do.tlsConfig == nil {
-			tlsConfig = &tls.Config{InsecureSkipVerify: do.skipVerify}
-		} else {
-			tlsConfig = cloneTLSConfig(do.tlsConfig)
-		}
-		if tlsConfig.ServerName == "" {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				netConn.Close()
-				return nil, err
-			}
-			tlsConfig.ServerName = host
-		}
-
-		tlsConn := tls.Client(netConn, tlsConfig)
-		if err := tlsConn.Handshake(); err != nil {
-			netConn.Close()
-			return nil, err
-		}
-		netConn = tlsConn
-	}
-
-	c := NewConn(netConn, do.readTimeout, do.writeTimeout)
-
-	if do.password != "" {
-		if _, err := c.Do("AUTH", do.password); err != nil {
-			netConn.Close()
-			return nil, err
-		}
-	}
-
-	if do.clientName != "" {
-		if _, err := c.Do("CLIENT", "SETNAME", do.clientName); err != nil {
-			netConn.Close()
-			return nil, err
-		}
-	}
-
-	if do.db != 0 {
-		if _, err := c.Do("SELECT", do.db); err != nil {
-			netConn.Close()
-			return nil, err
-		}
-	}
-
-	return c, nil
 }
 
 func (c *conn) Close() error {
