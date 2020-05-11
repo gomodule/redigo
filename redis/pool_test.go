@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"reflect"
 	"sync"
 	"testing"
@@ -838,6 +839,29 @@ func TestWaitPoolGetContextWithDialContext(t *testing.T) {
 		t.Fatalf("GetContext returned %v", err)
 	}
 	defer c.Close()
+}
+
+func TestPoolGetContext_DialContext(t *testing.T) {
+	var isPassed bool
+	f := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		isPassed = true
+		return &testConn{}, nil
+	}
+
+	p := &redis.Pool{
+		DialContext: func(ctx context.Context) (redis.Conn, error) {
+			return redis.DialContext(ctx, "", "", redis.DialContextFunc(f))
+		},
+	}
+	defer p.Close()
+
+	if _, err := p.GetContext(context.Background()); err != nil {
+		t.Fatalf("GetContext returned %v", err)
+	}
+
+	if !isPassed {
+		t.Fatal("DialContextFunc not passed")
+	}
 }
 
 func TestPoolGetContext_DialContext_CanceledContext(t *testing.T) {
