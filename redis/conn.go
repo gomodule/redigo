@@ -130,12 +130,12 @@ func DialNetDial(dial func(network, addr string) (net.Conn, error)) DialOption {
 	}}
 }
 
-// DialNetDialContext specifies a custom dial function with context for creating TCP
+// DialContextFunc specifies a custom dial function with context for creating TCP
 // connections, otherwise a net.Dialer customized via the other options is used.
-// DialNetDialContext overrides DialConnectTimeout and DialKeepAlive.
-func DialNetDialContext(dialContext func(ctx context.Context, network, addr string) (net.Conn, error)) DialOption {
+// DialContextFunc overrides DialConnectTimeout and DialKeepAlive.
+func DialContextFunc(f func(ctx context.Context, network, addr string) (net.Conn, error)) DialOption {
 	return DialOption{func(do *dialOptions) {
-		do.dialContext = dialContext
+		do.dialContext = f
 	}}
 }
 
