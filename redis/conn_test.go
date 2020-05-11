@@ -532,6 +532,20 @@ func TestReadTimeout(t *testing.T) {
 	}
 }
 
+func TestDialContext_CanceledContext(t *testing.T) {
+	addr, err := redis.DefaultServerAddr()
+	if err != nil {
+		t.Fatalf("redis.DefaultServerAddr returned %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err = redis.DialContext(ctx, "tcp", addr); err == nil {
+		t.Fatalf("DialContext returned nil, expect error")
+	}
+}
+
 var dialErrors = []struct {
 	rawurl        string
 	expectedError string
