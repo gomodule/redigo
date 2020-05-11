@@ -532,6 +532,23 @@ func TestReadTimeout(t *testing.T) {
 	}
 }
 
+func TestDialContextFunc(t *testing.T) {
+	var isPassed bool
+	f := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		isPassed = true
+		return &testConn{}, nil
+	}
+
+	_, err := redis.DialContext(context.Background(), "", "", redis.DialContextFunc(f))
+	if err != nil {
+		t.Fatalf("DialContext returned %v", err)
+	}
+
+	if !isPassed {
+		t.Fatal("DialContextFunc not passed")
+	}
+}
+
 func TestDialContext_CanceledContext(t *testing.T) {
 	addr, err := redis.DefaultServerAddr()
 	if err != nil {
