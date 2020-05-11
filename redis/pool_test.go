@@ -840,6 +840,25 @@ func TestWaitPoolGetContextWithDialContext(t *testing.T) {
 	defer c.Close()
 }
 
+func TestPoolGetContext_DialContext_CanceledContext(t *testing.T) {
+	addr, err := redis.DefaultServerAddr()
+	if err != nil {
+		t.Fatalf("redis.DefaultServerAddr returned %v", err)
+	}
+
+	p := &redis.Pool{
+		DialContext: func(ctx context.Context) (redis.Conn, error) { return redis.DialContext(ctx, "tcp", addr) },
+	}
+	defer p.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := p.GetContext(ctx); err == nil {
+		t.Fatalf("GetContext returned nil, expect error")
+	}
+}
+
 func TestWaitPoolGetAfterClose(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{
