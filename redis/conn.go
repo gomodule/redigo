@@ -124,8 +124,8 @@ func DialKeepAlive(d time.Duration) DialOption {
 // DialNetDial overrides DialConnectTimeout and DialKeepAlive.
 func DialNetDial(dial func(network, addr string) (net.Conn, error)) DialOption {
 	return DialOption{func(do *dialOptions) {
-		do.dialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-			return dial(network, address)
+		do.dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dial(network, addr)
 		}
 	}}
 }
