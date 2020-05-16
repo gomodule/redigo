@@ -1,5 +1,4 @@
 language: go
-sudo: false
 services:
   - redis-server
 
