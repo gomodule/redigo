@@ -80,6 +80,7 @@ type dialOptions struct {
 	dialer       *net.Dialer
 	dialContext  func(ctx context.Context, network, addr string) (net.Conn, error)
 	db           int
+	username     string
 	password     string
 	clientName   string
 	useTLS       bool
@@ -151,6 +152,14 @@ func DialDatabase(db int) DialOption {
 func DialPassword(password string) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.password = password
+	}}
+}
+
+// DialUsername specifies the username to use when connecting to
+// the Redis server when Redis ACLs are used.
+func DialUsername(username string) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.username = username
 	}}
 }
 
@@ -245,7 +254,12 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 	}
 
 	if do.password != "" {
-		if _, err := c.Do("AUTH", do.password); err != nil {
+		authArgs := make([]interface{}, 0, 2)
+		if do.username != "" {
+			authArgs = append(authArgs, do.username)
+		}
+		authArgs = append(authArgs, do.password)
+		if _, err := c.Do("AUTH", authArgs...); err != nil {
 			netConn.Close()
 			return nil, err
 		}
@@ -303,7 +317,7 @@ func DialURL(rawurl string, options ...DialOption) (Conn, error) {
 	if u.User != nil {
 		password, isSet := u.User.Password()
 		if isSet {
-			options = append(options, DialPassword(password))
+			options = append(options, DialUsername(u.User.Username()), DialPassword(password))
 		}
 	}
 

@@ -636,7 +636,9 @@ var dialURLTests = []struct {
 	r           string
 	w           string
 }{
-	{"password", "redis://x:abc123@localhost", "+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n"},
+	{"password", "redis://:abc123@localhost", "+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n"},
+	{"username and password", "redis://user:password@localhost", "+OK\r\n", "*3\r\n$4\r\nAUTH\r\n$4\r\nuser\r\n$8\r\npassword\r\n"},
+	{"username", "redis://x:@localhost", "+OK\r\n", ""},
 	{"database 3", "redis://localhost/3", "+OK\r\n", "*2\r\n$6\r\nSELECT\r\n$1\r\n3\r\n"},
 	{"database 99", "redis://localhost/99", "+OK\r\n", "*2\r\n$6\r\nSELECT\r\n$2\r\n99\r\n"},
 	{"no database", "redis://localhost/", "+OK\r\n", ""},
@@ -709,6 +711,36 @@ func TestDialTLSSKipVerify(t *testing.T) {
 		t.Fatal("dial error:", err)
 	}
 	checkPingPong(t, &buf, c)
+}
+
+func TestDialUseACL(t *testing.T) {
+	var buf bytes.Buffer
+	_, err := redis.Dial("tcp", "localhost:6379",
+		redis.DialUsername("user"),
+		redis.DialPassword("password"),
+		dialTestConn(pingResponse, &buf))
+	if err != nil {
+		t.Fatal("dial error:", err)
+	}
+	if err != nil {
+		t.Fatal("dial error:", err)
+	}
+	expected := "*3\r\n$4\r\nAUTH\r\n$4\r\nuser\r\n$8\r\npassword\r\n"
+	if w := buf.String(); w != expected {
+		t.Errorf("got %q, want %q", w, expected)
+	}
+}
+
+// Connect to an Redis instance using the Redis ACL system
+func ExampleDial_acl() {
+	c, err := redis.Dial("tcp", "localhost:6379",
+		redis.DialUsername("username"),
+		redis.DialPassword("password"),
+	)
+	if err != nil {
+		// handle error
+	}
+	defer c.Close()
 }
 
 func TestDialClientName(t *testing.T) {
