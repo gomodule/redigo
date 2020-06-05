@@ -361,7 +361,7 @@ func (p *Pool) lazyInit() {
 
 // waitVacantConn waits for a vacant connection in pool if waiting
 // is enabled and pool size is limited, otherwise returns instantly.
-// If `ctx` expires before that, an error is returned.
+// If ctx expires before that, an error is returned.
 //
 // If there were no vacant connection in the pool right away it returns the time spent waiting
 // for that connection to appear in the pool.
