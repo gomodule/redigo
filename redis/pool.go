@@ -366,10 +366,8 @@ func (p *Pool) lazyInit() {
 // If there were no vacant connection in the pool right away it returns the time spent waiting
 // for that connection to appear in the pool.
 func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err error) {
-	if !p.Wait {
-		return 0, nil
-	}
-	if p.MaxActive <= 0 {
+	if !p.Wait || p.MaxActive <= 0 {
+		// No wait or no connection limit.
 		return 0, nil
 	}
 
