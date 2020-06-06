@@ -421,6 +421,14 @@ func ExampleScanSlice() {
 
 var now = time.Now()
 
+type Ed struct {
+	EdI int `redis:"edi"`
+}
+
+type Edp struct {
+	EdpI int `redis:"edpi"`
+}
+
 var argsTests = []struct {
 	title    string
 	actual   redis.Args
@@ -469,6 +477,16 @@ var argsTests = []struct {
 			nil,
 		}),
 		redis.Args{},
+	},
+	{"struct-anonymous",
+		redis.Args{}.AddFlat(struct {
+			Ed
+			*Edp
+		}{
+			Ed{EdI: 2},
+			&Edp{EdpI: 3},
+		}),
+		redis.Args{"edi", 2, "edpi", 3},
 	},
 }
 
