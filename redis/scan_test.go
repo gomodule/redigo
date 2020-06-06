@@ -298,67 +298,90 @@ func TestBadScanStructArgs(t *testing.T) {
 	test(&v2)
 }
 
+type sliceScanner struct {
+	Field string
+}
+
+func (ss *sliceScanner) RedisScan(s interface{}) error {
+	v, ok := s.([]interface{})
+	if !ok {
+		return fmt.Errorf("invalid type %T", s)
+	}
+	return redis.ScanStruct(v, ss)
+}
+
 var scanSliceTests = []struct {
+	name       string
 	src        []interface{}
 	fieldNames []string
 	ok         bool
 	dest       interface{}
 }{
 	{
+		"scanner",
+		[]interface{}{[]interface{}{[]byte("Field"), []byte("1")}},
+		nil,
+		true,
+		[]*sliceScanner{{"1"}},
+	},
+	{
+		"int",
 		[]interface{}{[]byte("1"), nil, []byte("-1")},
 		nil,
 		true,
 		[]int{1, 0, -1},
 	},
 	{
+		"uint",
 		[]interface{}{[]byte("1"), nil, []byte("2")},
 		nil,
 		true,
 		[]uint{1, 0, 2},
 	},
 	{
+		"uint-error",
 		[]interface{}{[]byte("-1")},
 		nil,
 		false,
 		[]uint{1},
 	},
 	{
+		"[]byte",
 		[]interface{}{[]byte("hello"), nil, []byte("world")},
 		nil,
 		true,
 		[][]byte{[]byte("hello"), nil, []byte("world")},
 	},
 	{
+		"string",
 		[]interface{}{[]byte("hello"), nil, []byte("world")},
 		nil,
 		true,
 		[]string{"hello", "", "world"},
 	},
 	{
+		"struct",
 		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
 		nil,
 		true,
 		[]struct{ A, B string }{{"a1", "b1"}, {"a2", "b2"}},
 	},
 	{
+		"struct-error",
 		[]interface{}{[]byte("a1"), []byte("b1")},
 		nil,
 		false,
 		[]struct{ A, B, C string }{{"a1", "b1", ""}},
 	},
 	{
-		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
-		nil,
-		true,
-		[]*struct{ A, B string }{{A: "a1", B: "b1"}, {A: "a2", B: "b2"}},
-	},
-	{
+		"struct-field-names",
 		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
 		[]string{"A", "B"},
 		true,
 		[]struct{ A, C, B string }{{"a1", "", "b1"}, {"a2", "", "b2"}},
 	},
 	{
+		"struct-no-fields",
 		[]interface{}{[]byte("a1"), []byte("b1"), []byte("a2"), []byte("b2")},
 		nil,
 		false,
@@ -368,18 +391,18 @@ var scanSliceTests = []struct {
 
 func TestScanSlice(t *testing.T) {
 	for _, tt := range scanSliceTests {
+		t.Run(tt.name, func(t *testing.T) {
+			typ := reflect.ValueOf(tt.dest).Type()
+			dest := reflect.New(typ)
 
-		typ := reflect.ValueOf(tt.dest).Type()
-		dest := reflect.New(typ)
-
-		err := redis.ScanSlice(tt.src, dest.Interface(), tt.fieldNames...)
-		if tt.ok != (err == nil) {
-			t.Errorf("ScanSlice(%v, []%s, %v) returned error %v", tt.src, typ, tt.fieldNames, err)
-			continue
-		}
-		if tt.ok && !reflect.DeepEqual(dest.Elem().Interface(), tt.dest) {
-			t.Errorf("ScanSlice(src, []%s) returned %#v, want %#v", typ, dest.Elem().Interface(), tt.dest)
-		}
+			err := redis.ScanSlice(tt.src, dest.Interface(), tt.fieldNames...)
+			if tt.ok != (err == nil) {
+				t.Fatalf("ScanSlice(%v, []%s, %v) returned error %v", tt.src, typ, tt.fieldNames, err)
+			}
+			if tt.ok && !reflect.DeepEqual(dest.Elem().Interface(), tt.dest) {
+				t.Errorf("ScanSlice(src, []%s) returned %#v, want %#v", typ, dest.Elem().Interface(), tt.dest)
+			}
+		})
 	}
 }
 
