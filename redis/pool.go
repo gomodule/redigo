@@ -199,27 +199,10 @@ func (p *Pool) Get() Conn {
 // If the function completes without error, then the application must close the
 // returned connection.
 func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
-	// Handle limit for p.Wait == true.
-	var waited time.Duration
-	if p.Wait && p.MaxActive > 0 {
-		p.lazyInit()
-
-		// wait indicates if we believe it will block so its not 100% accurate
-		// however for stats it should be good enough.
-		wait := len(p.ch) == 0
-		var start time.Time
-		if wait {
-			start = time.Now()
-		}
-		select {
-		case <-p.ch:
-		case <-ctx.Done():
-			err := ctx.Err()
-			return errorConn{err}, err
-		}
-		if wait {
-			waited = time.Since(start)
-		}
+	// Wait until there is a vacant connection in the pool.
+	waited, err := p.waitVacantConn(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	p.mu.Lock()
@@ -374,6 +357,51 @@ func (p *Pool) lazyInit() {
 		atomic.StoreUint32(&p.chInitialized, 1)
 	}
 	p.mu.Unlock()
+}
+
+// waitVacantConn waits for a vacant connection in pool if waiting
+// is enabled and pool size is limited, otherwise returns instantly.
+// If ctx expires before that, an error is returned.
+//
+// If there were no vacant connection in the pool right away it returns the time spent waiting
+// for that connection to appear in the pool.
+func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err error) {
+	if !p.Wait || p.MaxActive <= 0 {
+		// No wait or no connection limit.
+		return 0, nil
+	}
+
+	p.lazyInit()
+
+	// wait indicates if we believe it will block so its not 100% accurate
+	// however for stats it should be good enough.
+	wait := len(p.ch) == 0
+	var start time.Time
+	if wait {
+		start = time.Now()
+	}
+
+	if ctx == nil {
+		<-p.ch
+	} else {
+		select {
+		case <-p.ch:
+			// Additionally check that context hasn't expired while we were waiting,
+			// because `select` picks a random `case` if several of them are "ready".
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			default:
+			}
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+
+	if wait {
+		return time.Since(start), nil
+	}
+	return 0, nil
 }
 
 func (p *Pool) dial(ctx context.Context) (Conn, error) {

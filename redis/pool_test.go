@@ -899,20 +899,38 @@ func TestWaitPoolGetAfterClose(t *testing.T) {
 }
 
 func TestWaitPoolGetCanceledContext(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
-	ctx, f := context.WithCancel(context.Background())
-	f()
-	c := p.Get()
-	defer c.Close()
-	_, err := p.GetContext(ctx)
-	if err != context.Canceled {
-		t.Fatalf("got error %v, want %v", err, context.Canceled)
-	}
+	t.Run("without vacant connection in the pool", func(t *testing.T) {
+		d := poolDialer{t: t}
+		p := &redis.Pool{
+			MaxIdle:   1,
+			MaxActive: 1,
+			Dial:      d.dial,
+			Wait:      true,
+		}
+		defer p.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		c := p.Get()
+		defer c.Close()
+		_, err := p.GetContext(ctx)
+		if err != context.Canceled {
+			t.Fatalf("got error %v, want %v", err, context.Canceled)
+		}
+	})
+	t.Run("with vacant connection in the pool", func(t *testing.T) {
+		d := poolDialer{t: t}
+		p := &redis.Pool{
+			MaxIdle:   1,
+			MaxActive: 1,
+			Dial:      d.dial,
+			Wait:      true,
+		}
+		defer p.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := p.GetContext(ctx)
+		if err != context.Canceled {
+			t.Fatalf("got error %v, want %v", err, context.Canceled)
+		}
+	})
 }
