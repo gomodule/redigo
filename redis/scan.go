@@ -358,10 +358,14 @@ func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *st
 		case f.PkgPath != "" && !f.Anonymous:
 			// Ignore unexported fields.
 		case f.Anonymous:
-			// TODO: Handle pointers. Requires change to decoder and
-			// protection against infinite recursion.
-			if f.Type.Kind() == reflect.Struct {
+			switch f.Type.Kind() {
+			case reflect.Struct:
 				compileStructSpec(f.Type, depth, append(index, i), ss)
+			case reflect.Ptr:
+				// TODO(steve): Protect against infinite recursion.
+				if f.Type.Elem().Kind() == reflect.Struct {
+					compileStructSpec(f.Type.Elem(), depth, append(index, i), ss)
+				}
 			}
 		default:
 			fs := &fieldSpec{name: f.Name}
