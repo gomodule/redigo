@@ -509,7 +509,7 @@ var (
 // If the target is a slice of types which implement Scanner then the custom
 // RedisScan method is used otherwise the following rules apply:
 //
-// The elements the dest slice must be integer, float, boolean, string, struct
+// The elements in the dest slice must be integer, float, boolean, string, struct
 // or pointer to struct values.
 //
 // Struct fields must be integer, float, boolean or string values. All struct
