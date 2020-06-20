@@ -202,7 +202,7 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 	// Wait until there is a vacant connection in the pool.
 	waited, err := p.waitVacantConn(ctx)
 	if err != nil {
-		return nil, err
+		return errorConn{err}, err
 	}
 
 	p.mu.Lock()
