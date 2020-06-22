@@ -404,6 +404,25 @@ func TestPoolMaxActive(t *testing.T) {
 	d.check("4", p, 2, 2, 1)
 }
 
+func TestPoolWait(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:      2,
+		MaxActive:    2,
+		Wait:         true,
+		WaitTimeout:  time.Millisecond * 10,
+		Dial:         d.dial,
+		TestOnBorrow: func(redis.Conn, time.Time) error { return redis.Error("BLAH") },
+	}
+	defer p.Close()
+
+	for i := 0; i < 10; i++ {
+		c := p.Get()
+		c.Do("PING")
+	}
+	d.check("1", p, 2, 2, 2)
+}
+
 func TestPoolWaitStats(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{

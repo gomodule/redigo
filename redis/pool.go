@@ -21,6 +21,7 @@ import (
 	"crypto/sha1"
 	"errors"
 	"io"
+	"math"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -34,9 +35,10 @@ var (
 
 var nowFunc = time.Now // for testing
 
-// ErrPoolExhausted is returned from a pool connection method (Do, Send,
+// ErrPoolExhausted is returned from a pool connection method (Get, Do, Send,
 // Receive, Flush, Err) when the maximum number of database connections in the
-// pool has been reached.
+// pool has been reached or when the pool does not return a connection within
+// the WaitTimeout period when Wait is true.
 var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
 
 var (
@@ -156,6 +158,10 @@ type Pool struct {
 	// If Wait is true and the pool is at the MaxActive limit, then Get() waits
 	// for a connection to be returned to the pool before returning.
 	Wait bool
+
+	// Maximum duration to wait for a connection to become available in the pool
+	// (when Wait is true) before returning an error.
+	WaitTimeout time.Duration
 
 	// Close connections older than this duration. If the value is zero, then
 	// the pool does not close connections based on age.
@@ -381,8 +387,18 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 		start = time.Now()
 	}
 
+	// Wait for WaitTimeout if its specified, otherwise, wait forever.
+	waitTimeout := p.WaitTimeout
+	if waitTimeout == 0 {
+		waitTimeout = time.Duration(math.MaxInt64)
+	}
+
 	if ctx == nil {
-		<-p.ch
+		select {
+		case <-p.ch:
+		case <-time.After(waitTimeout):
+			return 0, ErrPoolExhausted
+		}
 	} else {
 		select {
 		case <-p.ch:
@@ -395,12 +411,15 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 			}
 		case <-ctx.Done():
 			return 0, ctx.Err()
+		case <-time.After(waitTimeout):
+			return 0, ErrPoolExhausted
 		}
 	}
 
 	if wait {
 		return time.Since(start), nil
 	}
+
 	return 0, nil
 }
 
