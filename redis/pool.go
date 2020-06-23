@@ -381,21 +381,17 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 		start = time.Now()
 	}
 
-	if ctx == nil {
-		<-p.ch
-	} else {
+	select {
+	case <-p.ch:
+		// Additionally check that context hasn't expired while we were waiting,
+		// because `select` picks a random `case` if several of them are "ready".
 		select {
-		case <-p.ch:
-			// Additionally check that context hasn't expired while we were waiting,
-			// because `select` picks a random `case` if several of them are "ready".
-			select {
-			case <-ctx.Done():
-				return 0, ctx.Err()
-			default:
-			}
 		case <-ctx.Done():
 			return 0, ctx.Err()
+		default:
 		}
+	case <-ctx.Done():
+		return 0, ctx.Err()
 	}
 
 	if wait {
