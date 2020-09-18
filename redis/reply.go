@@ -118,7 +118,7 @@ func Uint64(reply interface{}, err error) (uint64, error) {
 
 // Float64 is a helper that converts a command reply to 64 bit float. If err is
 // not equal to nil, then Float64 returns 0, err. Otherwise, Float64 converts
-// the reply to an int as follows:
+// the reply to a float64 as follows:
 //
 //  Reply type    Result
 //  bulk string   parsed reply, nil
