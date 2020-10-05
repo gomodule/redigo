@@ -2,6 +2,7 @@ package redisx
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -9,41 +10,57 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCacherTracking(t *testing.T) {
-	c, cleanup := setupCacher(t)
+func TestCacherTrackingStrategy(t *testing.T) {
+	c, cleanup := setupCacher(t, Tracking)
 	defer cleanup()
 
-	conn := c.Get(nil)
+	matcher := MatcherFunc(func(key string) bool {
+		return key != "nocache"
+	})
 
-	_, err := conn.Do("SET", "k", "v")
-	assert.Nil(t, err)
+	cached := hasBeenCachedHelper(t, c)
 
-	_, err = conn.Do("GET", "k")
-	assert.Nil(t, err)
+	assert.True(t, cached(matcher, "key"), "key should be cached")
+	assert.False(t, cached(matcher, "nocache"), "key shouldn't be cached because it didn't Match")
 
-	value, err := redis.String(conn.Do("GET", "k"))
-	assert.Equal(t, "v", value) // Make sure stored value is correct
-	assert.Nil(t, err)
+	assert.True(t, cached(nil, "anything"), "all keys should be cached when nil matcher is supplied")
+}
 
-	// Should be in cache now
-	time.Sleep(10 * time.Millisecond)
-	assert.Equal(t, 1, c.Stats().Entries)
+func TestCacherBroadcastStrategy(t *testing.T) {
+	c, cleanup := setupCacher(t, Broadcast)
+	defer cleanup()
 
-	_, err = conn.Do("SET", "k", "v2")
-	assert.Nil(t, err)
+	cached := hasBeenCachedHelper(t, c)
 
-	// Value changed. Cache is no longer valid
-	time.Sleep(10 * time.Millisecond)
-	assert.Equal(t, 0, c.Stats().Entries)
+	t.Run("should panic when Matcher is not prefixMatcher", func(t *testing.T) {
+		assert.Panics(t, func() {
+			cached(MatcherFunc(func(_ string) bool { return true }), "key")
+		})
+		assert.Panics(t, func() {
+			cached(nil, "key")
+		})
+	})
+
+	matcher := NewPrefixMatcher([]string{"user:", "object:"})
+
+	assert.True(t, cached(matcher, "user:123"), "key should be in cache")
+	assert.True(t, cached(matcher, "object:"), "key should be in cache")
+
+	assert.False(t, cached(matcher, "admin:blah"), "key without needed prefix shouldn't be in cache")
 }
 
 func TestCacherWithoutInvalidationProcess(t *testing.T) {
-	c, close := setupCacher(t)
+	c, close := setupCacher(t, Tracking)
 	close()
+	time.Sleep(50 * time.Millisecond) // Wait for goroutine to return
 
 	assert.Panics(t, func() {
 		c.Get(nil)
-	}, "should panic")
+	})
+
+	assert.Panics(t, func() {
+		c.Wrap(c.Get(nil), nil)
+	})
 }
 
 func TestCacherNilGetter(t *testing.T) {
@@ -52,21 +69,30 @@ func TestCacherNilGetter(t *testing.T) {
 	}
 
 	assert.Panics(t, func() {
+		c.Run(context.Background(), make(chan<- struct{}))
+	})
+
+	assert.Panics(t, func() {
 		c.Get(nil)
 	})
 }
 
-func setupCacher(t *testing.T) (c *Cacher, cleanup func()) {
+func setupCacher(t *testing.T, strategy cachingStrategy) (c *Cacher, cleanup func()) {
 	getter := ConnGetterFunc(func() redis.Conn {
-		conn, err := redis.Dial("tcp", ":6379")
-		assert.Nil(t, err)
+		ctx, close := context.WithTimeout(context.Background(), time.Second)
+		defer close()
+
+		conn, err := redis.DialContext(ctx, "tcp", ":6379")
+		if !assert.Nil(t, err) {
+			panic(fmt.Sprintf("Failed to connect to redis: %v", err))
+		}
 
 		return conn
 	})
 
 	c = &Cacher{
 		Getter:   getter,
-		Strategy: Tracking,
+		Strategy: strategy,
 	}
 
 	ctx, cleanup := context.WithCancel(context.Background())
@@ -77,12 +103,43 @@ func setupCacher(t *testing.T) (c *Cacher, cleanup func()) {
 		err := c.Run(ctx, setupDone)
 		if err != context.Canceled {
 			t.Errorf("unexpected error: %v", err)
-			panic(123)
 		}
 	}()
 	<-setupDone
 
 	return
+}
+
+func hasBeenCachedHelper(t *testing.T, c *Cacher) func(Matcher, string) bool {
+	return func(m Matcher, key string) bool {
+		conn := c.Get(m)
+
+		beforeCount := c.Stats().Entries
+
+		_, err := conn.Do("SET", key, "value")
+		assert.Nil(t, err)
+
+		_, err = conn.Do("GET", key)
+		assert.Nil(t, err)
+
+		// Key should be cached by now
+		time.Sleep(10 * time.Millisecond)
+		afterCount := c.Stats().Entries
+
+		// Make sure stored value is correct
+		value, err := redis.String(conn.Do("GET", key))
+		assert.Equal(t, "value", value)
+		assert.Nil(t, err)
+
+		// Invalidate cache
+		_, err = conn.Do("SET", key, "another value")
+		assert.Nil(t, err)
+
+		time.Sleep(10 * time.Millisecond)
+		assert.Equal(t, beforeCount, c.Stats().Entries)
+
+		return afterCount == beforeCount+1
+	}
 }
 
 func TestPrefixMatcher(t *testing.T) {

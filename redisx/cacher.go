@@ -2,6 +2,7 @@ package redisx
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 
@@ -33,6 +34,14 @@ type Cacher struct {
 // Allows for custom caching logic.
 type Matcher interface {
 	Match(key string) bool
+}
+
+// PrefixMatcherFunc is an adapter type for Matcher interface
+type MatcherFunc func(string) bool
+
+// Match just calls underlying function
+func (f MatcherFunc) Match(key string) bool {
+	return f(key)
 }
 
 type prefixMatcher []string
@@ -67,11 +76,19 @@ func (f ConnGetterFunc) Get() redis.Conn {
 }
 
 // Run starts cache invalidation process. Must be called before any other
-// method if Tracking strategy is used. Closes provided channel when setup is done
+// method. Closes provided channel when setup is done.
 // Blocks caller.
 func (c *Cacher) Run(ctx context.Context, setupDoneChan chan<- struct{}) error {
+	if c.Getter == nil {
+		panic("redisx cacher: getter is nil")
+	}
+
 	// Connection used for invalidation
 	conn := c.Getter.Get()
+	if conn == nil {
+		close(setupDoneChan)
+		return errors.New("getter returned nil connection")
+	}
 
 	id, err := redis.Int(conn.Do("CLIENT", "ID"))
 	if err != nil {
@@ -109,12 +126,12 @@ outer:
 				continue
 			}
 
-			evType, _ := redis.String(event[0], nil)
+			eventType, _ := redis.String(event[0], nil)
 
-			if evType == "message" {
+			if eventType == "message" {
 				// Remove revoked keys from local cache
 				keys, err := redis.Strings(event[2], nil)
-				if err != nil {
+				if err != nil || err == redis.ErrNil {
 					continue
 				}
 
@@ -134,15 +151,18 @@ outer:
 
 // Get returns a connection with caching enabled for matched keys.
 // If nil Matcher is passed all keys are subjected to cache.
+// When using Broadcast strategy Matcher should be created with NewPrefixMatcher.
 // Caller is responsible for closing connection.
 func (c *Cacher) Get(m Matcher) redis.Conn {
 	if c.Getter == nil {
-		panic("redisx cacher: cannot Get: no getter supplied")
+		panic("redisx cacher: getter is nil")
 	}
 	return c.Wrap(c.Getter.Get(), m)
 }
 
 // Wrap allows wrapping existing connection with caching layer
+// When using Broadcast strategy Matcher should be created with NewPrefixMatcher.
+// Caller is responsible for closing connection.
 func (c *Cacher) Wrap(conn redis.Conn, m Matcher) redis.Conn {
 	c.mu.Lock()
 	cid := c.cid
@@ -152,7 +172,29 @@ func (c *Cacher) Wrap(conn redis.Conn, m Matcher) redis.Conn {
 		panic("redisx cacher: invalidation process is not running")
 	}
 
-	_, err := conn.Do("CLIENT", "TRACKING", "on", "REDIRECT", cid)
+	args := []interface{}{"TRACKING", "on", "REDIRECT", cid}
+
+	// When using Broadcast strategy we just pass list of key prefixes
+	// we are interested in.
+	if c.Strategy == Broadcast {
+		prefixes, ok := m.(prefixMatcher)
+		if !ok {
+			panic("redisx cacher: NewPrefixMatcher is expected when using Broadcast strategy")
+		}
+
+		args = append(args, "BCAST")
+		for _, prefix := range prefixes {
+			args = append(args, "PREFIX", prefix)
+		}
+	}
+
+	// If matcher if supplied we want to pass OPTIN flag so we can munually
+	// decide whether we want to cache certain key
+	if c.Strategy == Tracking && m != nil {
+		args = append(args, "OPTIN")
+	}
+
+	_, err := conn.Do("CLIENT", args...)
 	if err != nil {
 		return errorConn{err}
 	}
@@ -160,7 +202,7 @@ func (c *Cacher) Wrap(conn redis.Conn, m Matcher) redis.Conn {
 	return wrappedConn{c, conn, m}
 }
 
-// Stats return aggregated stats about local cache
+// Stats returns aggregated stats about local cache
 func (c *Cacher) Stats() CacheStats {
 	entries := 0
 	c.cache.Range(func(key, value interface{}) bool {
@@ -172,6 +214,7 @@ func (c *Cacher) Stats() CacheStats {
 
 // CacheStats contain statistics about local cache
 type CacheStats struct {
+	// Number of cached keys
 	Entries int
 }
 
@@ -185,35 +228,40 @@ func (w wrappedConn) Close() error { return w.conn.Close() }
 
 func (w wrappedConn) Err() error { return w.conn.Err() }
 
-func (w wrappedConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+func (w wrappedConn) Do(commandName string, args ...interface{}) (interface{}, error) {
 	// Only GET is supported for now
-	if commandName == "GET" {
-		key, ok := args[0].(string)
-
-		if !ok {
-			return w.conn.Do(commandName, args...)
-		}
-
-		if w.matcher != nil && !w.matcher.Match(key) {
-			return w.conn.Do(commandName, args...)
-		}
-
-		// Happy path
-		if entry, ok := w.c.cache.Load(key); ok {
-			return entry, nil
-		}
-
-		reply, err := w.conn.Do(commandName, args...)
-		if err != nil {
-			return reply, err
-		}
-
-		// Cache response
-		w.c.cache.Store(key, reply)
-		return reply, nil
+	if commandName != "GET" {
+		return w.conn.Do(commandName, args...)
 	}
 
-	return w.conn.Do(commandName, args...)
+	key, ok := args[0].(string)
+	if !ok { // Invalid command
+		return w.conn.Do(commandName, args...)
+	}
+
+	// Cache is present: just return
+	if entry, ok := w.c.cache.Load(key); ok {
+		return entry, nil
+	}
+
+	if w.c.Strategy == Tracking && w.matcher != nil && w.matcher.Match(key) {
+		// If matcher is supplied ask redis to remember that we cached next command
+		resp, err := w.conn.Do("CLIENT", "CACHING", "YES")
+		if err != nil {
+			return resp, err
+		}
+	}
+
+	reply, err := w.conn.Do(commandName, args...)
+	if err != nil {
+		return reply, err
+	}
+
+	// Cache response
+	if w.matcher == nil || (w.matcher != nil && w.matcher.Match(key)) {
+		w.c.cache.Store(key, reply)
+	}
+	return reply, nil
 }
 
 func (w wrappedConn) Send(commandName string, args ...interface{}) error {
