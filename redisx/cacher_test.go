@@ -116,17 +116,22 @@ func TestCacherTTL(t *testing.T) {
 	conn := c.Get(nil)
 
 	// Cache some keys
-	conn.Do("SET", "key", "value", "EX", 1)
-	conn.Do("GET", "key")
-
-	conn.Do("SET", "foo", "bar")
+	conn.Do("SET", "foo", "value", "EX", 1)
 	conn.Do("GET", "foo")
 
+	conn.Do("SET", "bar", "value")
+	conn.Do("GET", "bar")
+
 	assert.Equal(t, 2, c.Stats().Entries)
+	time.Sleep(time.Millisecond * 1100)
 
-	time.Sleep(time.Millisecond * 1500)
-
+	// Cache will actually get invalidated by redis notification rather that
+	// local purge. Nevertheless Redis docs suggest to store key's TTL locally
+	// redis.io/topics/client-side-caching#other-hints-about-client-libraries-implementation
+	//
+	// Also related: https://github.com/redis/redis/issues/6833
 	assert.Equal(t, 1, c.Stats().Entries)
+	assert.True(t, false)
 }
 
 var dialGetter = ConnGetterFunc(func() redis.Conn {

@@ -82,6 +82,7 @@ func (f ConnGetterFunc) Get() redis.Conn {
 }
 
 var errNilGetter = errors.New("redisx cacher: getter is nil")
+var purgeInterval = time.Second
 
 // Run starts cache invalidation process. Must be called before any other
 // method. Closes provided channel when setup is done.
@@ -126,10 +127,10 @@ func (c *Cacher) Run(ctx context.Context, setupDoneChan chan<- struct{}) error {
 		return errors.New("getter returned nil connection")
 	}
 
-	pingFailures := 0
+	purgeTimer := time.NewTicker(purgeInterval)
 
-	pingChan := make(chan error)
-	go pinger(ctx, pingConn, pingChan)
+	connDeadChan := make(chan struct{})
+	go pinger(ctx, pingConn, connDeadChan)
 
 	invalidateChan := make(chan []string)
 	go invalidator(ctx, conn, invalidateChan)
@@ -142,21 +143,17 @@ outer:
 		case <-ctx.Done():
 			break outer
 
-		case err := <-pingChan:
-			// Check connection is still active
-			// Flush local cache after number of attempts
-			if err == nil {
-				pingFailures = 0
-				continue outer
-			}
+		case <-connDeadChan:
+			// Flush local cache
+			c.mu.Lock()
+			c.cache.Clear()
+			c.mu.Unlock()
 
-			pingFailures++
-
-			if pingFailures > 3 {
-				c.mu.Lock()
-				c.cache.Clear()
-				c.mu.Unlock()
-			}
+		case <-purgeTimer.C:
+			// Evict expired and infrequently used items
+			c.mu.Lock()
+			c.cache.Purge()
+			c.mu.Unlock()
 
 		case keys := <-invalidateChan:
 			// Remove keys from local cache
@@ -209,9 +206,10 @@ outer:
 // changed in tests to avoid sleeping insane amounts of time
 var pingerInterval = time.Second
 
-// pinger will emit ping result every second
-func pinger(ctx context.Context, conn redis.Conn, pingChan chan<- error) {
+// pinger will try to ping server and will send to channel on multiple failed attempts
+func pinger(ctx context.Context, conn redis.Conn, connDeadChan chan<- struct{}) {
 	ticker := time.NewTicker(pingerInterval)
+	failures := 0
 
 outer:
 	for {
@@ -219,13 +217,23 @@ outer:
 		case <-ctx.Done():
 			break outer
 		case <-ticker.C:
-			_, err := conn.Do("PING")
-			pingChan <- err
+			// Check connection is still active
+			if _, err := conn.Do("PING"); err == nil {
+				failures = 0
+				continue
+			}
+
+			failures++
+
+			if failures == 3 {
+				connDeadChan <- struct{}{}
+				failures = 0
+			}
 		}
 	}
 
 	ticker.Stop()
-	close(pingChan)
+	close(connDeadChan)
 }
 
 // Get returns a connection with caching enabled for matching keys.
