@@ -79,8 +79,6 @@ func TestCacherNilGetter(t *testing.T) {
 }
 
 func TestCacherNoConnection(t *testing.T) {
-	t.Parallel()
-
 	calls := 0
 	getter := ConnGetterFunc(func() redis.Conn {
 		if calls == 0 {
@@ -89,6 +87,8 @@ func TestCacherNoConnection(t *testing.T) {
 		}
 		return errorConn{errors.New("sorry no network")}
 	})
+
+	pingerInterval = time.Millisecond
 
 	c, cleanup := setupCacher(t, getter, Tracking)
 	defer cleanup()
@@ -104,21 +104,30 @@ func TestCacherNoConnection(t *testing.T) {
 
 	assert.Equal(t, 2, c.Stats().Entries)
 
-	time.Sleep(time.Second * 4) // sorry for that
+	time.Sleep(time.Millisecond * 4)
 
 	assert.Equal(t, 0, c.Stats().Entries)
 }
 
-type mockConn struct {
-	c redis.Conn
-}
+func TestCacherTTL(t *testing.T) {
+	c, cleanup := setupCacher(t, dialGetter, Tracking)
+	defer cleanup()
 
-func (c mockConn) Close() error                                         { return c.c.Close() }
-func (c mockConn) Err() error                                           { return c.c.Err() }
-func (c mockConn) Send(cmd string, a ...interface{}) error              { return c.c.Send(cmd, a...) }
-func (c mockConn) Do(cmd string, a ...interface{}) (interface{}, error) { return c.c.Do(cmd, a...) }
-func (c mockConn) Flush() error                                         { return c.c.Flush() }
-func (c mockConn) Receive() (reply interface{}, err error)              { return c.c.Receive() }
+	conn := c.Get(nil)
+
+	// Cache some keys
+	conn.Do("SET", "key", "value", "EX", 1)
+	conn.Do("GET", "key")
+
+	conn.Do("SET", "foo", "bar")
+	conn.Do("GET", "foo")
+
+	assert.Equal(t, 2, c.Stats().Entries)
+
+	time.Sleep(time.Millisecond * 1500)
+
+	assert.Equal(t, 1, c.Stats().Entries)
+}
 
 var dialGetter = ConnGetterFunc(func() redis.Conn {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

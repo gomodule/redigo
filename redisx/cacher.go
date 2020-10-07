@@ -3,7 +3,6 @@ package redisx
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -195,7 +194,6 @@ outer:
 				continue outer
 			}
 
-			// Remove revoked keys from local cache
 			keys, err := redis.Strings(event[2], nil)
 			if err != nil || err == redis.ErrNil {
 				continue outer
@@ -208,9 +206,12 @@ outer:
 	close(invalidateChan)
 }
 
+// changed in tests to avoid sleeping insane amounts of time
+var pingerInterval = time.Second
+
 // pinger will emit ping result every second
 func pinger(ctx context.Context, conn redis.Conn, pingChan chan<- error) {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(pingerInterval)
 
 outer:
 	for {
@@ -219,9 +220,6 @@ outer:
 			break outer
 		case <-ticker.C:
 			_, err := conn.Do("PING")
-			if err != nil {
-				fmt.Println(err)
-			}
 			pingChan <- err
 		}
 	}
@@ -316,7 +314,7 @@ func (w wrappedConn) Do(commandName string, args ...interface{}) (interface{}, e
 	}
 
 	key, ok := args[0].(string)
-	if !ok { // Invalid command
+	if !ok {
 		return w.conn.Do(commandName, args...)
 	}
 
@@ -328,27 +326,74 @@ func (w wrappedConn) Do(commandName string, args ...interface{}) (interface{}, e
 	}
 	w.c.mu.Unlock()
 
-	if w.c.Strategy == Tracking && w.matcher != nil && w.matcher.Match(key) {
-		// If matcher is supplied ask redis to remember that we cached next command
-		resp, err := w.conn.Do("CLIENT", "CACHING", "YES")
-		if err != nil {
-			return resp, err
+	return w.exec(key, commandName, args...)
+}
+
+func (w wrappedConn) exec(key string, commandName string, args ...interface{}) (interface{}, error) {
+	// 1
+	if w.shouldTrack(key) {
+		if err := w.conn.Send("CLIENT", "CACHING", "yes"); err != nil {
+			return nil, err
 		}
 	}
 
-	reply, err := w.conn.Do(commandName, args...)
+	// 2
+	if err := w.conn.Send(commandName, args...); err != nil {
+		return nil, err
+	}
+
+	// 3
+	if w.shouldCache(key) {
+		if err := w.conn.Send("TTL", key); err != nil {
+			return nil, err
+		}
+	}
+
+	// Flush command buffer
+	if err := w.conn.Flush(); err != nil {
+		return nil, err
+	}
+
+	// 1
+	if w.shouldTrack(key) {
+		if _, err := w.conn.Receive(); err != nil {
+			return nil, err
+		}
+	}
+
+	// 2
+	reply, err := w.conn.Receive()
 	if err != nil {
 		return reply, err
 	}
 
-	// Cache response
-	if w.matcher == nil || (w.matcher != nil && w.matcher.Match(key)) {
-		ttl := 600 // TODO request TTL
+	// 3
+	if w.shouldCache(key) {
+		ttl, err := redis.Int(w.conn.Receive())
+		if err != nil {
+			return nil, err
+		}
+
+		if ttl < 0 {
+			ttl = 600 // Default TTL is 10 minutes
+		}
+
 		w.c.mu.Lock()
 		w.c.cache.Set(key, reply, ttl)
 		w.c.mu.Unlock()
 	}
+
 	return reply, nil
+}
+
+// whether opt-in caching is enabled
+func (w wrappedConn) shouldTrack(key string) bool {
+	return w.c.Strategy == Tracking && w.matcher != nil && w.matcher.Match(key)
+}
+
+// whether key should be stored in local cache
+func (w wrappedConn) shouldCache(key string) bool {
+	return w.matcher == nil || (w.matcher != nil && w.matcher.Match(key))
 }
 
 func (w wrappedConn) Send(commandName string, args ...interface{}) error {
