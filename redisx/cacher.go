@@ -3,8 +3,10 @@ package redisx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/gomodule/redigo/redisx/internal"
@@ -109,17 +111,29 @@ func (c *Cacher) Run(ctx context.Context, setupDoneChan chan<- struct{}) error {
 	c.mu.Unlock()
 
 	// Subscribe to revocation channel
-	err = conn.Send("SUBSCRIBE", "__redis__:invalidate")
-	if err != nil {
+	if err = conn.Send("SUBSCRIBE", "__redis__:invalidate"); err != nil {
 		close(setupDoneChan)
 		return err
 	}
 
-	conn.Flush()
-	if err != nil {
+	if err = conn.Flush(); err != nil {
 		close(setupDoneChan)
 		return err
 	}
+
+	pingConn := c.Getter.Get()
+	if conn == nil {
+		close(setupDoneChan)
+		return errors.New("getter returned nil connection")
+	}
+
+	pingFailures := 0
+
+	pingChan := make(chan error)
+	go pinger(ctx, pingConn, pingChan)
+
+	invalidateChan := make(chan []string)
+	go invalidator(ctx, conn, invalidateChan)
 
 	close(setupDoneChan)
 
@@ -128,27 +142,30 @@ outer:
 		select {
 		case <-ctx.Done():
 			break outer
-		default:
-			event, err := redis.Values(conn.Receive())
-			if err != nil {
-				continue
+
+		case err := <-pingChan:
+			// Check connection is still active
+			// Flush local cache after number of attempts
+			if err == nil {
+				pingFailures = 0
+				continue outer
 			}
 
-			eventType, _ := redis.String(event[0], nil)
+			pingFailures++
 
-			if eventType == "message" {
-				// Remove revoked keys from local cache
-				keys, err := redis.Strings(event[2], nil)
-				if err != nil || err == redis.ErrNil {
-					continue
-				}
-
+			if pingFailures > 3 {
 				c.mu.Lock()
-				for _, key := range keys {
-					c.cache.Delete(key)
-				}
+				c.cache.Clear()
 				c.mu.Unlock()
 			}
+
+		case keys := <-invalidateChan:
+			// Remove keys from local cache
+			c.mu.Lock()
+			for _, key := range keys {
+				c.cache.Delete(key)
+			}
+			c.mu.Unlock()
 		}
 	}
 
@@ -159,7 +176,61 @@ outer:
 	return ctx.Err()
 }
 
-// Get returns a connection with caching enabled for matched keys.
+// invalidator polls invalidate messages in separate goroutine since conn.Receive blocks
+func invalidator(ctx context.Context, conn redis.Conn, invalidateChan chan<- []string) {
+outer:
+	for {
+		select {
+		case <-ctx.Done():
+			break outer
+		default:
+			event, err := redis.Values(conn.Receive())
+			if err != nil {
+				continue outer
+			}
+
+			etype, _ := redis.String(event[0], nil)
+
+			if etype != "message" {
+				continue outer
+			}
+
+			// Remove revoked keys from local cache
+			keys, err := redis.Strings(event[2], nil)
+			if err != nil || err == redis.ErrNil {
+				continue outer
+			}
+
+			invalidateChan <- keys
+		}
+	}
+
+	close(invalidateChan)
+}
+
+// pinger will emit ping result every second
+func pinger(ctx context.Context, conn redis.Conn, pingChan chan<- error) {
+	ticker := time.NewTicker(time.Second)
+
+outer:
+	for {
+		select {
+		case <-ctx.Done():
+			break outer
+		case <-ticker.C:
+			_, err := conn.Do("PING")
+			if err != nil {
+				fmt.Println(err)
+			}
+			pingChan <- err
+		}
+	}
+
+	ticker.Stop()
+	close(pingChan)
+}
+
+// Get returns a connection with caching enabled for matching keys.
 // If nil Matcher is passed all keys are subjected to cache.
 // When using Broadcast strategy Matcher should be created with NewPrefixMatcher.
 // Caller is responsible for closing connection.

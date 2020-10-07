@@ -2,6 +2,7 @@ package redisx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 )
 
 func TestCacherTrackingStrategy(t *testing.T) {
-	c, cleanup := setupCacher(t, Tracking)
+	c, cleanup := setupCacher(t, dialGetter, Tracking)
 	defer cleanup()
 
 	matcher := MatcherFunc(func(key string) bool {
@@ -27,7 +28,7 @@ func TestCacherTrackingStrategy(t *testing.T) {
 }
 
 func TestCacherBroadcastStrategy(t *testing.T) {
-	c, cleanup := setupCacher(t, Broadcast)
+	c, cleanup := setupCacher(t, dialGetter, Broadcast)
 	defer cleanup()
 
 	cached := hasBeenCachedHelper(t, c)
@@ -77,23 +78,65 @@ func TestCacherNilGetter(t *testing.T) {
 	})
 }
 
-func setupCacher(t *testing.T, strategy cachingStrategy) (c *Cacher, cleanup func()) {
+func TestCacherNoConnection(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
 	getter := ConnGetterFunc(func() redis.Conn {
-		ctx, close := context.WithTimeout(context.Background(), time.Second)
-		defer close()
-
-		conn, err := redis.DialContext(ctx, "tcp", ":6379")
-		if !assert.Nil(t, err) {
-			panic(fmt.Sprintf("Failed to connect to redis: %v", err))
+		if calls == 0 {
+			calls++
+			return dialGetter()
 		}
-
-		return conn
+		return errorConn{errors.New("sorry no network")}
 	})
 
+	c, cleanup := setupCacher(t, getter, Tracking)
+	defer cleanup()
+
+	conn := c.Wrap(dialGetter(), nil)
+
+	// Cache some keys
+	conn.Do("SET", "key", "value")
+	conn.Do("GET", "key")
+
+	conn.Do("SET", "foo", "bar")
+	conn.Do("GET", "foo")
+
+	assert.Equal(t, 2, c.Stats().Entries)
+
+	time.Sleep(time.Second * 4) // sorry for that
+
+	assert.Equal(t, 0, c.Stats().Entries)
+}
+
+type mockConn struct {
+	c redis.Conn
+}
+
+func (c mockConn) Close() error                                         { return c.c.Close() }
+func (c mockConn) Err() error                                           { return c.c.Err() }
+func (c mockConn) Send(cmd string, a ...interface{}) error              { return c.c.Send(cmd, a...) }
+func (c mockConn) Do(cmd string, a ...interface{}) (interface{}, error) { return c.c.Do(cmd, a...) }
+func (c mockConn) Flush() error                                         { return c.c.Flush() }
+func (c mockConn) Receive() (reply interface{}, err error)              { return c.c.Receive() }
+
+var dialGetter = ConnGetterFunc(func() redis.Conn {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	conn, err := redis.DialContext(ctx, "tcp", ":6379")
+	if err != nil {
+		panic(fmt.Sprintf("Failed to connect to redis: %v", err))
+	}
+
+	return conn
+})
+
+func setupCacher(t *testing.T, getter ConnGetter, strategy cachingStrategy) (c *Cacher, cleanup func()) {
 	c = &Cacher{
 		Getter:   getter,
 		Strategy: strategy,
-		MaxSize:  1000,
+		MaxSize:  9999,
 	}
 
 	ctx, cleanup := context.WithCancel(context.Background())
