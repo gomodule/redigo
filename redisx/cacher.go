@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/gomodule/redigo/redis"
+	"github.com/gomodule/redigo/redisx/internal"
 )
 
 type cachingStrategy int
@@ -14,20 +15,24 @@ type cachingStrategy int
 const (
 	// Tracking strategy lets server to keep track of keys request by client
 	Tracking cachingStrategy = iota
+
 	// Broadcast strategy allows client to manually subscribe
 	// to invalidation broadcasts for interested keys
+	// More efficient in terms of Redis memory & cpu usage but requires
+	// client to know what keys need to be cached beforehand
+	// See https://redis.io/topics/client-side-caching#broadcasting-mode
 	Broadcast
 )
 
 // Cacher implements client-side caching first appeared in Redis 6.0
 type Cacher struct {
-	Getter   ConnGetter
-	Strategy cachingStrategy
+	Getter   ConnGetter      // Interface used for obtaining connections
+	Strategy cachingStrategy // Caching strategy (see docs)
+	MaxSize  int             // Max number of keys in local cache. Must be positive
 
-	cache sync.Map // Actual cache. Not yet replaceble
-
-	mu  sync.Mutex // Guard for fields below
-	cid int        // Connection ID of invalidator process
+	mu    sync.Mutex      // Guard for fields below
+	cid   int             // Connection ID of invalidator process
+	cache *internal.Cache // Actual cache
 }
 
 // Matcher interface is used to determine whether key should be cached.
@@ -100,6 +105,7 @@ func (c *Cacher) Run(ctx context.Context, setupDoneChan chan<- struct{}) error {
 
 	c.mu.Lock()
 	c.cid = id
+	c.cache = internal.NewCache(c.MaxSize)
 	c.mu.Unlock()
 
 	// Subscribe to revocation channel
@@ -137,9 +143,11 @@ outer:
 					continue
 				}
 
+				c.mu.Lock()
 				for _, key := range keys {
 					c.cache.Delete(key)
 				}
+				c.mu.Unlock()
 			}
 		}
 	}
@@ -209,18 +217,15 @@ func (c *Cacher) Wrap(conn redis.Conn, m Matcher) redis.Conn {
 
 // Stats returns aggregated stats about local cache
 func (c *Cacher) Stats() CacheStats {
-	entries := 0
-	c.cache.Range(func(key, value interface{}) bool {
-		entries++
-		return true
-	})
-	return CacheStats{entries}
+	size, hits, misses := c.cache.Stats()
+	return CacheStats{size, hits, misses}
 }
 
 // CacheStats contain statistics about local cache
 type CacheStats struct {
-	// Number of cached keys
-	Entries int
+	Entries int // Number of keys in the cache
+	Hits    int // Number of cache hits
+	Misses  int // Number of cache misses
 }
 
 type wrappedConn struct {
@@ -245,9 +250,12 @@ func (w wrappedConn) Do(commandName string, args ...interface{}) (interface{}, e
 	}
 
 	// Cache is present: just return
-	if entry, ok := w.c.cache.Load(key); ok {
+	w.c.mu.Lock()
+	if entry := w.c.cache.Get(key); entry != nil {
+		w.c.mu.Unlock()
 		return entry, nil
 	}
+	w.c.mu.Unlock()
 
 	if w.c.Strategy == Tracking && w.matcher != nil && w.matcher.Match(key) {
 		// If matcher is supplied ask redis to remember that we cached next command
@@ -264,7 +272,10 @@ func (w wrappedConn) Do(commandName string, args ...interface{}) (interface{}, e
 
 	// Cache response
 	if w.matcher == nil || (w.matcher != nil && w.matcher.Match(key)) {
-		w.c.cache.Store(key, reply)
+		ttl := 600 // TODO request TTL
+		w.c.mu.Lock()
+		w.c.cache.Set(key, reply, ttl)
+		w.c.mu.Unlock()
 	}
 	return reply, nil
 }

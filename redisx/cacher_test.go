@@ -93,6 +93,7 @@ func setupCacher(t *testing.T, strategy cachingStrategy) (c *Cacher, cleanup fun
 	c = &Cacher{
 		Getter:   getter,
 		Strategy: strategy,
+		MaxSize:  1000,
 	}
 
 	ctx, cleanup := context.WithCancel(context.Background())
