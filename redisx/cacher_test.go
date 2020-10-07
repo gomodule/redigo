@@ -33,10 +33,10 @@ func TestCacherBroadcastStrategy(t *testing.T) {
 	cached := hasBeenCachedHelper(t, c)
 
 	t.Run("should panic when Matcher is not prefixMatcher", func(t *testing.T) {
-		assert.Panics(t, func() {
+		assert.PanicsWithValue(t, errPrefixMatcherExpected, func() {
 			cached(MatcherFunc(func(_ string) bool { return true }), "key")
 		})
-		assert.Panics(t, func() {
+		assert.PanicsWithValue(t, errPrefixMatcherExpected, func() {
 			cached(nil, "key")
 		})
 	})
@@ -50,15 +50,15 @@ func TestCacherBroadcastStrategy(t *testing.T) {
 }
 
 func TestCacherWithoutInvalidationProcess(t *testing.T) {
-	c, close := setupCacher(t, Tracking)
-	close()
-	time.Sleep(50 * time.Millisecond) // Wait for goroutine to return
+	c := &Cacher{
+		Getter: ConnGetterFunc(func() redis.Conn { return nil }),
+	}
 
-	assert.Panics(t, func() {
+	assert.PanicsWithValue(t, errNotRunning, func() {
 		c.Get(nil)
 	})
 
-	assert.Panics(t, func() {
+	assert.PanicsWithValue(t, errNotRunning, func() {
 		c.Wrap(c.Get(nil), nil)
 	})
 }
@@ -68,11 +68,11 @@ func TestCacherNilGetter(t *testing.T) {
 		Getter: nil,
 	}
 
-	assert.Panics(t, func() {
+	assert.PanicsWithValue(t, errNilGetter, func() {
 		c.Run(context.Background(), make(chan<- struct{}))
 	})
 
-	assert.Panics(t, func() {
+	assert.PanicsWithValue(t, errNilGetter, func() {
 		c.Get(nil)
 	})
 }
@@ -113,6 +113,7 @@ func setupCacher(t *testing.T, strategy cachingStrategy) (c *Cacher, cleanup fun
 func hasBeenCachedHelper(t *testing.T, c *Cacher) func(Matcher, string) bool {
 	return func(m Matcher, key string) bool {
 		conn := c.Get(m)
+		defer conn.Close()
 
 		beforeCount := c.Stats().Entries
 

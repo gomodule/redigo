@@ -36,7 +36,7 @@ type Matcher interface {
 	Match(key string) bool
 }
 
-// PrefixMatcherFunc is an adapter type for Matcher interface
+// MatcherFunc is an adapter type for Matcher interface
 type MatcherFunc func(string) bool
 
 // Match just calls underlying function
@@ -75,12 +75,14 @@ func (f ConnGetterFunc) Get() redis.Conn {
 	return f()
 }
 
+var errNilGetter = errors.New("redisx cacher: getter is nil")
+
 // Run starts cache invalidation process. Must be called before any other
 // method. Closes provided channel when setup is done.
 // Blocks caller.
 func (c *Cacher) Run(ctx context.Context, setupDoneChan chan<- struct{}) error {
 	if c.Getter == nil {
-		panic("redisx cacher: getter is nil")
+		panic(errNilGetter)
 	}
 
 	// Connection used for invalidation
@@ -155,10 +157,13 @@ outer:
 // Caller is responsible for closing connection.
 func (c *Cacher) Get(m Matcher) redis.Conn {
 	if c.Getter == nil {
-		panic("redisx cacher: getter is nil")
+		panic(errNilGetter)
 	}
 	return c.Wrap(c.Getter.Get(), m)
 }
+
+var errNotRunning = errors.New("redisx cacher: invalidation process is not running")
+var errPrefixMatcherExpected = errors.New("redisx cacher: NewPrefixMatcher is expected when using Broadcast strategy")
 
 // Wrap allows wrapping existing connection with caching layer
 // When using Broadcast strategy Matcher should be created with NewPrefixMatcher.
@@ -169,7 +174,7 @@ func (c *Cacher) Wrap(conn redis.Conn, m Matcher) redis.Conn {
 	c.mu.Unlock()
 
 	if cid == 0 {
-		panic("redisx cacher: invalidation process is not running")
+		panic(errNotRunning)
 	}
 
 	args := []interface{}{"TRACKING", "on", "REDIRECT", cid}
@@ -179,7 +184,7 @@ func (c *Cacher) Wrap(conn redis.Conn, m Matcher) redis.Conn {
 	if c.Strategy == Broadcast {
 		prefixes, ok := m.(prefixMatcher)
 		if !ok {
-			panic("redisx cacher: NewPrefixMatcher is expected when using Broadcast strategy")
+			panic(errPrefixMatcherExpected)
 		}
 
 		args = append(args, "BCAST")
