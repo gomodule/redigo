@@ -292,3 +292,35 @@ func ExampleString() {
 	// Output:
 	// "world"
 }
+
+func BenchmarkIntForByte(b *testing.B) {
+	b.StopTimer()
+	c, err := dial()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	c.Do("SET", "k1", "456")
+	reply, err := c.Do("GET", "k1")
+	defer c.Close()
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		redis.Int(reply, err)
+	}
+}
+
+func BenchmarkString(b *testing.B) {
+	b.StopTimer()
+	c, err := dial()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	c.Do("SET", "k1", "abcd")
+	reply, err := c.Do("GET", "k1")
+	defer c.Close()
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		redis.String(reply, err)
+	}
+}

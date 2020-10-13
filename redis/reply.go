@@ -17,8 +17,10 @@ package redis
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"time"
+	"unsafe"
 )
 
 // ErrNil indicates that a reply value is nil.
@@ -45,7 +47,7 @@ func Int(reply interface{}, err error) (int, error) {
 		}
 		return x, nil
 	case []byte:
-		n, err := strconv.ParseInt(string(reply), 10, 0)
+		n, err := strconv.ParseInt(bytesToString(reply), 10, 0)
 		return int(n), err
 	case nil:
 		return 0, ErrNil
@@ -72,7 +74,7 @@ func Int64(reply interface{}, err error) (int64, error) {
 	case int64:
 		return reply, nil
 	case []byte:
-		n, err := strconv.ParseInt(string(reply), 10, 64)
+		n, err := strconv.ParseInt(bytesToString(reply), 10, 64)
 		return n, err
 	case nil:
 		return 0, ErrNil
@@ -106,7 +108,7 @@ func Uint64(reply interface{}, err error) (uint64, error) {
 		}
 		return uint64(reply), nil
 	case []byte:
-		n, err := strconv.ParseUint(string(reply), 10, 64)
+		n, err := strconv.ParseUint(bytesToString(reply), 10, 64)
 		return n, err
 	case nil:
 		return 0, ErrNil
@@ -130,7 +132,7 @@ func Float64(reply interface{}, err error) (float64, error) {
 	}
 	switch reply := reply.(type) {
 	case []byte:
-		n, err := strconv.ParseFloat(string(reply), 64)
+		n, err := strconv.ParseFloat(bytesToString(reply), 64)
 		return n, err
 	case nil:
 		return 0, ErrNil
@@ -155,7 +157,7 @@ func String(reply interface{}, err error) (string, error) {
 	}
 	switch reply := reply.(type) {
 	case []byte:
-		return string(reply), nil
+		return bytesToString(reply), nil
 	case string:
 		return reply, nil
 	case nil:
@@ -183,7 +185,7 @@ func Bytes(reply interface{}, err error) ([]byte, error) {
 	case []byte:
 		return reply, nil
 	case string:
-		return []byte(reply), nil
+		return stringToBytes(reply), nil
 	case nil:
 		return nil, ErrNil
 	case Error:
@@ -281,7 +283,7 @@ func Float64s(reply interface{}, err error) ([]float64, error) {
 		if !ok {
 			return fmt.Errorf("redigo: unexpected element type for Floats64, got type %T", v)
 		}
-		f, err := strconv.ParseFloat(string(p), 64)
+		f, err := strconv.ParseFloat(bytesToString(p), 64)
 		result[i] = f
 		return err
 	})
@@ -300,7 +302,7 @@ func Strings(reply interface{}, err error) ([]string, error) {
 			result[i] = v
 			return nil
 		case []byte:
-			result[i] = string(v)
+			result[i] = bytesToString(v)
 			return nil
 		default:
 			return fmt.Errorf("redigo: unexpected element type for Strings, got type %T", v)
@@ -338,7 +340,7 @@ func Int64s(reply interface{}, err error) ([]int64, error) {
 			result[i] = v
 			return nil
 		case []byte:
-			n, err := strconv.ParseInt(string(v), 10, 64)
+			n, err := strconv.ParseInt(bytesToString(v), 10, 64)
 			result[i] = n
 			return err
 		default:
@@ -364,7 +366,7 @@ func Ints(reply interface{}, err error) ([]int, error) {
 			result[i] = n
 			return nil
 		case []byte:
-			n, err := strconv.Atoi(string(v))
+			n, err := strconv.Atoi(bytesToString(v))
 			result[i] = n
 			return err
 		default:
@@ -392,7 +394,7 @@ func StringMap(result interface{}, err error) (map[string]string, error) {
 		if !okKey || !okValue {
 			return nil, errors.New("redigo: StringMap key not a bulk string value")
 		}
-		m[string(key)] = string(value)
+		m[bytesToString(key)] = bytesToString(value)
 	}
 	return m, nil
 }
@@ -418,7 +420,7 @@ func IntMap(result interface{}, err error) (map[string]int, error) {
 		if err != nil {
 			return nil, err
 		}
-		m[string(key)] = value
+		m[bytesToString(key)] = value
 	}
 	return m, nil
 }
@@ -444,7 +446,7 @@ func Int64Map(result interface{}, err error) (map[string]int64, error) {
 		if err != nil {
 			return nil, err
 		}
-		m[string(key)] = value
+		m[bytesToString(key)] = value
 	}
 	return m, nil
 }
@@ -493,7 +495,7 @@ func Uint64s(reply interface{}, err error) ([]uint64, error) {
 			result[i] = v
 			return nil
 		case []byte:
-			n, err := strconv.ParseUint(string(v), 10, 64)
+			n, err := strconv.ParseUint(bytesToString(v), 10, 64)
 			result[i] = n
 			return err
 		default:
@@ -524,7 +526,7 @@ func Uint64Map(result interface{}, err error) (map[string]uint64, error) {
 		if err != nil {
 			return nil, err
 		}
-		m[string(key)] = value
+		m[bytesToString(key)] = value
 	}
 	return m, nil
 }
@@ -580,4 +582,16 @@ func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
 		logs[i] = log
 	}
 	return logs, nil
+}
+
+func bytesToString(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
+}
+
+func stringToBytes(s string) []byte {
+	var b []byte
+	sh := *(*reflect.StringHeader)(unsafe.Pointer(&s))
+	bh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	bh.Data, bh.Len, bh.Cap = sh.Data, sh.Len, sh.Len
+	return b
 }
