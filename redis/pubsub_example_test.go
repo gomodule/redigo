@@ -84,7 +84,7 @@ func listenPubSubChannels(ctx context.Context, redisServerAddr string,
 	ticker := time.NewTicker(healthCheckPeriod)
 	defer ticker.Stop()
 loop:
-	for err == nil {
+	for {
 		select {
 		case <-ticker.C:
 			// Send ping to test health of connection and server. If
