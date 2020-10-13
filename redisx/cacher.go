@@ -14,7 +14,7 @@ import (
 type cachingStrategy int
 
 const (
-	// Tracking strategy lets server to keep track of keys request by client
+	// Tracking strategy lets server keep track of keys request by client
 	Tracking cachingStrategy = iota
 
 	// Broadcast strategy allows client to manually subscribe
@@ -294,6 +294,9 @@ func (c *Cacher) Wrap(conn redis.Conn, m Matcher) redis.Conn {
 
 // Stats returns aggregated stats about local cache
 func (c *Cacher) Stats() CacheStats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	size, hits, misses := c.cache.Stats()
 	return CacheStats{size, hits, misses}
 }
@@ -311,106 +314,112 @@ type wrappedConn struct {
 	matcher Matcher
 }
 
-func (w wrappedConn) Close() error { return w.conn.Close() }
+func (wc wrappedConn) Close() error                            { return wc.conn.Close() }
+func (wc wrappedConn) Err() error                              { return wc.conn.Err() }
+func (wc wrappedConn) Send(cmd string, a ...interface{}) error { return wc.conn.Send(cmd, a...) }
+func (wc wrappedConn) Flush() error                            { return wc.conn.Flush() }
+func (wc wrappedConn) Receive() (reply interface{}, err error) { return wc.conn.Receive() }
 
-func (w wrappedConn) Err() error { return w.conn.Err() }
+// Indicates that cache is curently being populated.
+// See https://redis.io/topics/client-side-caching#avoiding-race-conditions
+type cachingInProgressPlaceholder struct{}
 
-func (w wrappedConn) Do(commandName string, args ...interface{}) (interface{}, error) {
-	// Only GET is supported for now
-	if commandName != "GET" {
-		return w.conn.Do(commandName, args...)
+func (wc wrappedConn) Do(cmd string, args ...interface{}) (interface{}, error) {
+	if strings.ToLower(cmd) != "get" || len(args) == 0 {
+		return wc.conn.Do(cmd, args...)
 	}
 
 	key, ok := args[0].(string)
 	if !ok {
-		return w.conn.Do(commandName, args...)
+		return wc.conn.Do(cmd, args...)
 	}
 
-	// Cache is present: just return
-	w.c.mu.Lock()
-	if entry := w.c.cache.Get(key); entry != nil {
-		w.c.mu.Unlock()
+	wc.c.mu.Lock()
+	entry := wc.c.cache.Get(key)
+	wc.c.mu.Unlock()
+
+	if entry != nil {
 		return entry, nil
 	}
-	w.c.mu.Unlock()
 
-	return w.exec(key, commandName, args...)
+	return wc.exec(key, cmd, args...)
 }
 
-func (w wrappedConn) exec(key string, commandName string, args ...interface{}) (interface{}, error) {
+const defaultTTL = 600 // 10 minutes
+
+func (wc wrappedConn) exec(key string, cmd string, args ...interface{}) (interface{}, error) {
 	// 1
-	if w.shouldTrack(key) {
-		if err := w.conn.Send("CLIENT", "CACHING", "yes"); err != nil {
+	if wc.shouldTrack(key) {
+		if err := wc.conn.Send("CLIENT", "CACHING", "yes"); err != nil {
 			return nil, err
 		}
 	}
 
 	// 2
-	if err := w.conn.Send(commandName, args...); err != nil {
+	if err := wc.conn.Send(cmd, args...); err != nil {
 		return nil, err
 	}
 
 	// 3
-	if w.shouldCache(key) {
-		if err := w.conn.Send("TTL", key); err != nil {
+	if wc.shouldCache(key) {
+		wc.c.mu.Lock()
+		wc.c.cache.Set(key, cachingInProgressPlaceholder{}, defaultTTL)
+		wc.c.mu.Unlock()
+
+		if err := wc.conn.Send("TTL", key); err != nil {
 			return nil, err
 		}
 	}
 
 	// Flush command buffer
-	if err := w.conn.Flush(); err != nil {
+	if err := wc.conn.Flush(); err != nil {
 		return nil, err
 	}
 
 	// 1
-	if w.shouldTrack(key) {
-		if _, err := w.conn.Receive(); err != nil {
+	if wc.shouldTrack(key) {
+		if _, err := wc.conn.Receive(); err != nil {
 			return nil, err
 		}
 	}
 
 	// 2
-	reply, err := w.conn.Receive()
+	reply, err := wc.conn.Receive()
 	if err != nil {
 		return reply, err
 	}
 
 	// 3
-	if w.shouldCache(key) {
-		ttl, err := redis.Int(w.conn.Receive())
+	if wc.shouldCache(key) {
+		ttl, err := redis.Int(wc.conn.Receive())
 		if err != nil {
 			return nil, err
 		}
 
 		if ttl < 0 {
-			ttl = 600 // Default TTL is 10 minutes
+			ttl = defaultTTL
 		}
 
-		w.c.mu.Lock()
-		w.c.cache.Set(key, reply, ttl)
-		w.c.mu.Unlock()
+		wc.c.mu.Lock()
+		// avoid caching stale responses
+		if _, ok := wc.c.cache.Get(key).(cachingInProgressPlaceholder); ok {
+			wc.c.cache.Set(key, reply, ttl)
+		}
+		wc.c.mu.Unlock()
 	}
 
 	return reply, nil
 }
 
 // whether opt-in caching is enabled
-func (w wrappedConn) shouldTrack(key string) bool {
-	return w.c.Strategy == Tracking && w.matcher != nil && w.matcher.Match(key)
+func (wc wrappedConn) shouldTrack(key string) bool {
+	return wc.c.Strategy == Tracking && wc.matcher != nil && wc.matcher.Match(key)
 }
 
 // whether key should be stored in local cache
-func (w wrappedConn) shouldCache(key string) bool {
-	return w.matcher == nil || (w.matcher != nil && w.matcher.Match(key))
+func (wc wrappedConn) shouldCache(key string) bool {
+	return wc.matcher == nil || (wc.matcher != nil && wc.matcher.Match(key))
 }
-
-func (w wrappedConn) Send(commandName string, args ...interface{}) error {
-	return w.conn.Send(commandName, args...)
-}
-
-func (w wrappedConn) Flush() error { return w.conn.Flush() }
-
-func (w wrappedConn) Receive() (reply interface{}, err error) { return w.conn.Receive() }
 
 //
 type errorConn struct{ err error }

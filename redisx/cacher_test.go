@@ -96,11 +96,15 @@ func TestCacherNoConnection(t *testing.T) {
 	conn := c.Wrap(dialGetter(), nil)
 
 	// Cache some keys
-	conn.Do("SET", "key", "value")
-	conn.Do("GET", "key")
+	_, err := conn.Do("SET", "key", "value")
+	assert.Nil(t, err)
+	_, err = conn.Do("GET", "key")
+	assert.Nil(t, err)
 
-	conn.Do("SET", "foo", "bar")
-	conn.Do("GET", "foo")
+	_, err = conn.Do("SET", "foo", "bar")
+	assert.Nil(t, err)
+	_, err = conn.Do("GET", "foo")
+	assert.Nil(t, err)
 
 	assert.Equal(t, 2, c.Stats().Entries)
 
@@ -116,11 +120,15 @@ func TestCacherTTL(t *testing.T) {
 	conn := c.Get(nil)
 
 	// Cache some keys
-	conn.Do("SET", "foo", "value", "EX", 1)
-	conn.Do("GET", "foo")
+	_, err := conn.Do("SET", "foo", "value", "EX", 1)
+	assert.Nil(t, err)
+	_, err = conn.Do("GET", "foo")
+	assert.Nil(t, err)
 
-	conn.Do("SET", "bar", "value")
-	conn.Do("GET", "bar")
+	_, err = conn.Do("SET", "bar", "value")
+	assert.Nil(t, err)
+	_, err = conn.Do("GET", "bar")
+	assert.Nil(t, err)
 
 	assert.Equal(t, 2, c.Stats().Entries)
 	time.Sleep(time.Millisecond * 1100)
@@ -131,7 +139,6 @@ func TestCacherTTL(t *testing.T) {
 	//
 	// Also related: https://github.com/redis/redis/issues/6833
 	assert.Equal(t, 1, c.Stats().Entries)
-	assert.True(t, false)
 }
 
 var dialGetter = ConnGetterFunc(func() redis.Conn {
