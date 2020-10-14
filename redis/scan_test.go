@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/gomodule/redigo/redis"
-	"github.com/stretchr/testify/require"
 )
 
 type durationScan struct {
@@ -595,8 +594,12 @@ func TestScanPtrRedisScan(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := redis.Scan(tc.src, &tc.dest.Inner)
-			require.NoError(t, err)
-			require.Equal(t, tc.expected, tc.dest)
+			if err != nil {
+				t.Fatalf("scan error:%s", err)
+			}
+			if !reflect.DeepEqual(tc.expected, tc.dest) {
+				t.Fatalf("is %+v want:%+v", tc.expected, tc.dest)
+			}
 		})
 	}
 }
