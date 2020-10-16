@@ -348,7 +348,7 @@ func Int64s(reply interface{}, err error) ([]int64, error) {
 	return result, err
 }
 
-// Ints is a helper that converts an array command reply to a []in.
+// Ints is a helper that converts an array command reply to a []int.
 // If err is not equal to nil, then Ints returns nil, err. Nil array
 // items are stay nil. Ints returns an error if an array item is not a
 // bulk string or nil.
