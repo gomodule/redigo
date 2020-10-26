@@ -377,6 +377,7 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 		// because `select` picks a random `case` if several of them are "ready".
 		select {
 		case <-ctx.Done():
+			p.ch <- struct{}{}
 			return 0, ctx.Err()
 		default:
 		}
