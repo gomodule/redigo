@@ -825,6 +825,32 @@ func TestWaitPoolGetContext(t *testing.T) {
 	defer c.Close()
 }
 
+func TestWaitPoolGetContextIssue520(t *testing.T) {
+	d := poolDialer{t: t}
+	p := &redis.Pool{
+		MaxIdle:   1,
+		MaxActive: 1,
+		Dial:      d.dial,
+		Wait:      true,
+	}
+	defer p.Close()
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel1()
+	c, err := p.GetContext(ctx1)
+	if err != context.DeadlineExceeded {
+		t.Fatalf("GetContext returned %v", err)
+	}
+	defer c.Close()
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	c2, err := p.GetContext(ctx2)
+	if err != nil {
+		t.Fatalf("Get context returned %v", err)
+	}
+	defer c2.Close()
+}
+
 func TestWaitPoolGetContextWithDialContext(t *testing.T) {
 	d := poolDialer{t: t}
 	p := &redis.Pool{

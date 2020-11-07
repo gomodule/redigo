@@ -23,7 +23,6 @@ import (
 	"io"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -161,11 +160,10 @@ type Pool struct {
 	// the pool does not close connections based on age.
 	MaxConnLifetime time.Duration
 
-	chInitialized uint32 // set to 1 when field ch is initialized
-
 	mu           sync.Mutex    // mu protects the following fields
 	closed       bool          // set to true when the pool is closed.
 	active       int           // the number of open connections in the pool
+	initOnce     sync.Once     // the init ch once func
 	ch           chan struct{} // limits open connections when p.Wait is true
 	idle         idleList      // idle connections
 	waitCount    int64         // total number of connections waited for.
@@ -339,13 +337,7 @@ func (p *Pool) Close() error {
 }
 
 func (p *Pool) lazyInit() {
-	// Fast path.
-	if atomic.LoadUint32(&p.chInitialized) == 1 {
-		return
-	}
-	// Slow path.
-	p.mu.Lock()
-	if p.chInitialized == 0 {
+	p.initOnce.Do(func() {
 		p.ch = make(chan struct{}, p.MaxActive)
 		if p.closed {
 			close(p.ch)
@@ -354,9 +346,7 @@ func (p *Pool) lazyInit() {
 				p.ch <- struct{}{}
 			}
 		}
-		atomic.StoreUint32(&p.chInitialized, 1)
-	}
-	p.mu.Unlock()
+	})
 }
 
 // waitVacantConn waits for a vacant connection in pool if waiting
@@ -387,6 +377,7 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 		// because `select` picks a random `case` if several of them are "ready".
 		select {
 		case <-ctx.Done():
+			p.ch <- struct{}{}
 			return 0, ctx.Err()
 		default:
 		}
