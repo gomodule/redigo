@@ -257,21 +257,18 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 		}
 
 		tlsConn := tls.Client(netConn, tlsConfig)
-
-		errc := make(chan error, 2)
-		var timer *time.Timer // for cancelling TLS handshake
+		errc := make(chan error, 2) // buffered so we don't block timeout or Handshake
 		if d := do.tlsHandshakeTimeout; d != 0 {
-			timer = time.AfterFunc(d, func() {
+			timer := time.AfterFunc(d, func() {
 				errc <- tlsHandshakeTimeoutError{}
 			})
+			defer timer.Stop()
 		}
 		go func() {
-			if timer != nil {
-				defer timer.Stop()
-			}
 			errc <- tlsConn.Handshake()
 		}()
 		if err := <-errc; err != nil {
+			// Timeout or Handshake error.
 			netConn.Close() // nolint: errcheck
 			return nil, err
 		}
