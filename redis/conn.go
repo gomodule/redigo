@@ -266,11 +266,10 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 			})
 		}
 		go func() {
-			err := tlsConn.Handshake()
 			if timer != nil {
-				timer.Stop()
+				defer timer.Stop()
 			}
-			errc <- err
+			errc <- tlsConn.Handshake()
 		}()
 		if err := <-errc; err != nil {
 			netConn.Close() // nolint: errcheck
