@@ -701,6 +701,45 @@ func TestDialUseTLS(t *testing.T) {
 	checkPingPong(t, &buf, c)
 }
 
+type blockedReader struct {
+	ch chan struct{}
+}
+
+func (b blockedReader) Read(p []byte) (n int, err error) {
+	<-b.ch
+	return 0, nil
+}
+
+func dialTestBlockedConn(ch chan struct{}, w io.Writer) redis.DialOption {
+	return redis.DialNetDial(func(network, addr string) (net.Conn, error) {
+		return &testConn{Reader: blockedReader{ch: ch}, Writer: w}, nil
+	})
+}
+
+func TestDialTLSHandshakeTimeout(t *testing.T) {
+	var buf bytes.Buffer
+	ch := make(chan struct{})
+	var err error
+	go func() {
+		_, err = redis.Dial("tcp", "example.com:6379",
+			redis.DialTLSConfig(&clientTLSConfig),
+			redis.DialTLSHandshakeTimeout(time.Millisecond),
+			dialTestBlockedConn(ch, &buf),
+			redis.DialUseTLS(true))
+		close(ch)
+	}()
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("dial didn't timeout")
+	case <-ch:
+		if err == nil {
+			t.Fatal("dial didn't error")
+		} else if err.Error() != "TLS handshake timeout" {
+			t.Fatal("dial unexpected error:", err)
+		}
+	}
+}
+
 func TestDialTLSSKipVerify(t *testing.T) {
 	var buf bytes.Buffer
 	c, err := redis.Dial("tcp", "example.com:6379",
