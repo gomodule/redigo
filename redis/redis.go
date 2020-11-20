@@ -15,6 +15,7 @@
 package redis
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -33,6 +34,7 @@ type Conn interface {
 	Err() error
 
 	// Do sends a command to the server and returns the received reply.
+	// This function will use the timeout which was setted when the connection is created
 	Do(commandName string, args ...interface{}) (reply interface{}, err error)
 
 	// Send writes the command to the client's output buffer.
@@ -82,17 +84,54 @@ type Scanner interface {
 type ConnWithTimeout interface {
 	Conn
 
-	// Do sends a command to the server and returns the received reply.
-	// The timeout overrides the read timeout set when dialing the
-	// connection.
+	// DoWithTimeout sends a command to the server and returns the received reply.
+	// The timeout overrides the readtimeout set when dialing the connection.
 	DoWithTimeout(timeout time.Duration, commandName string, args ...interface{}) (reply interface{}, err error)
 
-	// Receive receives a single reply from the Redis server. The timeout
-	// overrides the read timeout set when dialing the connection.
+	// ReceiveWithTimeout receives a single reply from the Redis server.
+	// The timeout overrides the readtimeout set when dialing the connection.
 	ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error)
 }
 
+// ConnWithContext is an optional interface that allows the caller to control the command's life with context
+type ConnWithContext interface {
+	Conn
+
+	// DoContext sends a command to server and returns the received reply.
+	// This function will use the timeout in this rule:
+	// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
+	// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
+	// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
+	// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+	DoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error)
+
+	// ReceiveContext receives a single reply from the Redis server.
+	// This function will use the timeout in this rule:
+	// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
+	// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
+	// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
+	// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+	ReceiveContext(ctx context.Context) (reply interface{}, err error)
+}
+
 var errTimeoutNotSupported = errors.New("redis: connection does not support ConnWithTimeout")
+var errContextNotSupported = errors.New("redis: connection does not support ConnWithContext")
+
+var ErrContextCacneled = errors.New("redis: context canceled")
+
+// DoContext sends a command to server and returns the received reply.
+// This function will use the timeout in this rule:
+// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
+// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
+// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
+// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+func DoContext(c Conn, ctx context.Context, cmd string, args ...interface{}) (interface{}, error) {
+	cwt, ok := c.(ConnWithContext)
+	if !ok {
+		return nil, errContextNotSupported
+	}
+	return cwt.DoContext(ctx, cmd, args...)
+}
 
 // DoWithTimeout executes a Redis command with the specified read timeout. If
 // the connection does not satisfy the ConnWithTimeout interface, then an error
@@ -103,6 +142,20 @@ func DoWithTimeout(c Conn, timeout time.Duration, cmd string, args ...interface{
 		return nil, errTimeoutNotSupported
 	}
 	return cwt.DoWithTimeout(timeout, cmd, args...)
+}
+
+// ReceiveContext receives a single reply from the Redis server.
+// This function will use the timeout in this rule:
+// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
+// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
+// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
+// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+func ReceiveContext(c Conn, ctx context.Context) (interface{}, error) {
+	cwt, ok := c.(ConnWithContext)
+	if !ok {
+		return nil, errContextNotSupported
+	}
+	return cwt.ReceiveContext(ctx)
 }
 
 // ReceiveWithTimeout receives a reply with the specified read timeout. If the

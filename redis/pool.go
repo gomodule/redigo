@@ -496,6 +496,19 @@ func (ac *activeConn) Err() error {
 	}
 	return pc.c.Err()
 }
+func (ac *activeConn) DoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error) {
+	pc := ac.pc
+	if pc == nil {
+		return nil, errConnClosed
+	}
+	cwt, ok := pc.c.(ConnWithContext)
+	if !ok {
+		return nil, errContextNotSupported
+	}
+	ci := lookupCommandInfo(commandName)
+	ac.state = (ac.state | ci.Set) &^ ci.Clear
+	return cwt.DoContext(ctx, commandName, args...)
+}
 
 func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	pc := ac.pc
@@ -546,7 +559,17 @@ func (ac *activeConn) Receive() (reply interface{}, err error) {
 	}
 	return pc.c.Receive()
 }
-
+func (ac *activeConn) ReceiveContext(ctx context.Context) (reply interface{}, err error) {
+	pc := ac.pc
+	if pc == nil {
+		return nil, errConnClosed
+	}
+	cwt, ok := pc.c.(ConnWithContext)
+	if !ok {
+		return nil, errContextNotSupported
+	}
+	return cwt.ReceiveContext(ctx)
+}
 func (ac *activeConn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
@@ -562,6 +585,9 @@ func (ac *activeConn) ReceiveWithTimeout(timeout time.Duration) (reply interface
 type errorConn struct{ err error }
 
 func (ec errorConn) Do(string, ...interface{}) (interface{}, error) { return nil, ec.err }
+func (ec errorConn) DoContext(context.Context, string, ...interface{}) (interface{}, error) {
+	return nil, ec.err
+}
 func (ec errorConn) DoWithTimeout(time.Duration, string, ...interface{}) (interface{}, error) {
 	return nil, ec.err
 }
@@ -570,6 +596,7 @@ func (ec errorConn) Err() error                                            { ret
 func (ec errorConn) Close() error                                          { return nil }
 func (ec errorConn) Flush() error                                          { return ec.err }
 func (ec errorConn) Receive() (interface{}, error)                         { return nil, ec.err }
+func (ec errorConn) ReceiveContext(context.Context) (interface{}, error)   { return nil, ec.err }
 func (ec errorConn) ReceiveWithTimeout(time.Duration) (interface{}, error) { return nil, ec.err }
 
 type idleList struct {

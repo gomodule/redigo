@@ -1,4 +1,5 @@
 // Copyright 2017 Gary Burd
+
 //
 // Licensed under the Apache License, Version 2.0 (the "License"): you may
 // not use this file except in compliance with the License. You may obtain
@@ -15,6 +16,7 @@
 package redis_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -23,6 +25,13 @@ import (
 
 type timeoutTestConn int
 
+func (tc timeoutTestConn) DoContext(ctx context.Context, cms string, args ...interface{}) (interface{}, error) {
+	if dl, ok := ctx.Deadline(); ok {
+		return time.Until(dl), nil
+	} else {
+		return time.Duration(-1), nil
+	}
+}
 func (tc timeoutTestConn) Do(string, ...interface{}) (interface{}, error) {
 	return time.Duration(-1), nil
 }
@@ -30,6 +39,13 @@ func (tc timeoutTestConn) DoWithTimeout(timeout time.Duration, cmd string, args 
 	return timeout, nil
 }
 
+func (tc timeoutTestConn) ReceiveContext(ctx context.Context) (interface{}, error) {
+	if dl, ok := ctx.Deadline(); ok {
+		return time.Until(dl), nil
+	} else {
+		return time.Duration(-1), nil
+	}
+}
 func (tc timeoutTestConn) Receive() (interface{}, error) {
 	return time.Duration(-1), nil
 }
