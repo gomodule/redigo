@@ -32,9 +32,11 @@ func (tc timeoutTestConn) DoContext(ctx context.Context, cms string, args ...int
 		return time.Duration(-1), nil
 	}
 }
+
 func (tc timeoutTestConn) Do(string, ...interface{}) (interface{}, error) {
 	return time.Duration(-1), nil
 }
+
 func (tc timeoutTestConn) DoWithTimeout(timeout time.Duration, cmd string, args ...interface{}) (interface{}, error) {
 	return timeout, nil
 }
@@ -46,9 +48,11 @@ func (tc timeoutTestConn) ReceiveContext(ctx context.Context) (interface{}, erro
 		return time.Duration(-1), nil
 	}
 }
+
 func (tc timeoutTestConn) Receive() (interface{}, error) {
 	return time.Duration(-1), nil
 }
+
 func (tc timeoutTestConn) ReceiveWithTimeout(timeout time.Duration) (interface{}, error) {
 	return timeout, nil
 }

@@ -496,6 +496,7 @@ func (ac *activeConn) Err() error {
 	}
 	return pc.c.Err()
 }
+
 func (ac *activeConn) DoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
@@ -559,6 +560,7 @@ func (ac *activeConn) Receive() (reply interface{}, err error) {
 	}
 	return pc.c.Receive()
 }
+
 func (ac *activeConn) ReceiveContext(ctx context.Context) (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
@@ -570,6 +572,7 @@ func (ac *activeConn) ReceiveContext(ctx context.Context) (reply interface{}, er
 	}
 	return cwt.ReceiveContext(ctx)
 }
+
 func (ac *activeConn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
