@@ -677,6 +677,7 @@ func (c *conn) Flush() error {
 func (c *conn) Receive() (interface{}, error) {
 	return c.ReceiveWithTimeout(c.readTimeout)
 }
+
 func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	var realtimeout time.Duration
 	if dl, ok := ctx.Deadline(); ok {
@@ -691,12 +692,13 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	} else {
 		realtimeout = c.readTimeout
 	}
-	endch := make(chan struct{}, 1)
+	endch := make(chan struct{})
 	var r interface{}
 	var e error
 	go func() {
+		defer close(endch)
+
 		r, e = c.ReceiveWithTimeout(realtimeout)
-		endch <- struct{}{}
 	}()
 	select {
 	case <-ctx.Done():
@@ -705,6 +707,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 		return r, e
 	}
 }
+
 func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
 	var deadline time.Time
 	if timeout != 0 {
@@ -736,6 +739,7 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	return c.DoWithTimeout(c.readTimeout, cmd, args...)
 }
+
 func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (interface{}, error) {
 	var realtimeout time.Duration
 	if dl, ok := ctx.Deadline(); ok {
@@ -750,12 +754,13 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 	} else {
 		realtimeout = c.readTimeout
 	}
-	endch := make(chan struct{}, 1)
+	endch := make(chan struct{})
 	var r interface{}
 	var e error
 	go func() {
+		defer close(endch)
+
 		r, e = c.DoWithTimeout(realtimeout, cmd, args)
-		endch <- struct{}{}
 	}()
 	select {
 	case <-ctx.Done():
@@ -764,6 +769,7 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 		return r, e
 	}
 }
+
 func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...interface{}) (interface{}, error) {
 	c.mu.Lock()
 	pending := c.pending
