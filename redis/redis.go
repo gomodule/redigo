@@ -98,19 +98,11 @@ type ConnWithContext interface {
 	Conn
 
 	// DoContext sends a command to server and returns the received reply.
-	// This function will use the timeout in this rule:
-	// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
-	// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
-	// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
-	// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+	// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
 	DoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error)
 
 	// ReceiveContext receives a single reply from the Redis server.
-	// This function will use the timeout in this rule:
-	// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
-	// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
-	// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
-	// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+	// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
 	ReceiveContext(ctx context.Context) (reply interface{}, err error)
 }
 
@@ -120,11 +112,7 @@ var errContextNotSupported = errors.New("redis: connection does not support Conn
 var ErrContextCacneled = errors.New("redis: context canceled")
 
 // DoContext sends a command to server and returns the received reply.
-// This function will use the timeout in this rule:
-// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
-// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
-// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
-// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
 func DoContext(c Conn, ctx context.Context, cmd string, args ...interface{}) (interface{}, error) {
 	cwt, ok := c.(ConnWithContext)
 	if !ok {
@@ -145,11 +133,7 @@ func DoWithTimeout(c Conn, timeout time.Duration, cmd string, args ...interface{
 }
 
 // ReceiveContext receives a single reply from the Redis server.
-// This function will use the timeout in this rule:
-// If ctx doesn't have a timeout(ctx is context.Background or context.TODO),then the readtimeout which was setted when the connection is created will be used
-// If ctx has a timeout(ctx is created by context.WithTimeout or context.WithDeadline)
-// If ctx's timeout is bigger then the readtimeout which was setted when the connection is created,then the readtimeout will be used
-// If ctx's timeout is smaller then the readtimeout which was setted when the connection is created,then the ctx's timeout will be used
+// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
 func ReceiveContext(c Conn, ctx context.Context) (interface{}, error) {
 	cwt, ok := c.(ConnWithContext)
 	if !ok {
