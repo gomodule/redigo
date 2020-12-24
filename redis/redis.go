@@ -109,7 +109,7 @@ type ConnWithContext interface {
 var errTimeoutNotSupported = errors.New("redis: connection does not support ConnWithTimeout")
 var errContextNotSupported = errors.New("redis: connection does not support ConnWithContext")
 
-var ErrContextCacneled = errors.New("redis: context canceled")
+var ErrContextCanceled = errors.New("redis: context canceled")
 
 // DoContext sends a command to server and returns the received reply.
 // The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
