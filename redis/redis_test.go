@@ -79,7 +79,7 @@ type contextDeadTestConn int
 func (cc contextDeadTestConn) Do(string, ...interface{}) (interface{}, error) {
 	return -1, nil
 }
-func (cc contextDeadTestConn) DoContext(ctx context.Context) (interface{}, error) {
+func (cc contextDeadTestConn) DoContext(ctx context.Context, cmd string, args ...interface{}) (interface{}, error) {
 	return 1, nil
 }
 func (cc contextDeadTestConn) Receive() (interface{}, error) {
@@ -92,29 +92,32 @@ func (cc contextDeadTestConn) Send(string, ...interface{}) error { return nil }
 func (cc contextDeadTestConn) Err() error                        { return nil }
 func (cc contextDeadTestConn) Close() error                      { return nil }
 func (cc contextDeadTestConn) Flush() error                      { return nil }
+
 func testcontext(t *testing.T, c redis.Conn) {
 	r, e := c.Do("PING")
 	if r != -1 || e != nil {
-		t.Errorf("Do() = %v, %v, want %v, %v", r, err, -1, nil)
+		t.Errorf("Do() = %v, %v, want %v, %v", r, e, -1, nil)
 	}
 	ctx, f := context.WithTimeout(context.Background(), time.Minute)
 	defer f()
 	r, e = redis.DoContext(c, ctx, "PING")
 	if r != 1 || e != nil {
-		t.Errorf("DoContext() = %v, %v, want %v, %v", r, err, 1, nil)
+		t.Errorf("DoContext() = %v, %v, want %v, %v", r, e, 1, nil)
 	}
 	r, e = c.Receive()
 	if r != -1 || e != nil {
-		t.Errorf("Receive() = %v, %v, want %v, %v", r, err, -1, nil)
+		t.Errorf("Receive() = %v, %v, want %v, %v", r, e, -1, nil)
 	}
 	r, e = redis.ReceiveContext(c, ctx)
 	if r != 1 || e != nil {
-		t.Errorf("ReceiveContext() = %v, %v, want %v, %v", r, err, 1, nil)
+		t.Errorf("ReceiveContext() = %v, %v, want %v, %v", r, e, 1, nil)
 	}
 }
+
 func TestConnContext(t *testing.T) {
 	testcontext(t, contextDeadTestConn(0))
 }
+
 func TestPoolConnContext(t *testing.T) {
 	p := redis.Pool{Dial: func() (redis.Conn, error) { return contextDeadTestConn(0), nil }}
 	testcontext(t, p.Get())
