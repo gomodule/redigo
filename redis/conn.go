@@ -685,7 +685,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 		if timeout >= c.readTimeout && c.readTimeout != 0 {
 			realtimeout = c.readTimeout
 		} else if timeout <= 0 {
-			return nil, c.fatal(ErrContextCacneled)
+			return nil, c.fatal(ErrContextCanceled)
 		} else {
 			realtimeout = timeout
 		}
@@ -702,7 +702,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	}()
 	select {
 	case <-ctx.Done():
-		return nil, c.fatal(ErrContextCacneled)
+		return nil, c.fatal(ErrContextCanceled)
 	case <-endch:
 		return r, e
 	}
@@ -747,7 +747,7 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 		if timeout >= c.readTimeout && c.readTimeout != 0 {
 			realtimeout = c.readTimeout
 		} else if timeout <= 0 {
-			return nil, c.fatal(ErrContextCacneled)
+			return nil, c.fatal(ErrContextCanceled)
 		} else {
 			realtimeout = timeout
 		}
@@ -764,7 +764,7 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 	}()
 	select {
 	case <-ctx.Done():
-		return nil, c.fatal(ErrContextCacneled)
+		return nil, c.fatal(ErrContextCanceled)
 	case <-endch:
 		return r, e
 	}
