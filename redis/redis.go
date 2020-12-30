@@ -93,26 +93,36 @@ type ConnWithTimeout interface {
 	ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error)
 }
 
-// ConnWithContext is an optional interface that allows the caller to control the command's life with context
+// ConnWithContext is an optional interface that allows the caller to control the command's life with context.
 type ConnWithContext interface {
 	Conn
 
 	// DoContext sends a command to server and returns the received reply.
-	// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
+	// min(ctx,DialReadTimeout()) will be used as the deadline.
+	// The connection will be closed if DialReadTimeout() timeout or ctx timeout or ctx canceled when this function is running.
+	// DailReadTimeout() timeout return err can be checked by strings.Contains(e.Error(), "io/timeout").
+	// ctx timeout return err context.DeadlineExceeded.
+	// ctx canceled return err context.Canceled.
 	DoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error)
 
 	// ReceiveContext receives a single reply from the Redis server.
-	// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
+	// min(ctx,DialReadTimeout()) will be used as the deadline.
+	// The connection will be closed if DialReadTimeout() timeout or ctx timeout or ctx canceled when this function is running.
+	// DailReadTimeout() timeout return err can be checked by strings.Contains(e.Error(), "io/timeout").
+	// ctx timeout return err context.DeadlineExceeded.
+	// ctx canceled return err context.Canceled.
 	ReceiveContext(ctx context.Context) (reply interface{}, err error)
 }
 
 var errTimeoutNotSupported = errors.New("redis: connection does not support ConnWithTimeout")
 var errContextNotSupported = errors.New("redis: connection does not support ConnWithContext")
 
-//var ErrContextCanceled = errors.New("redis: context canceled")
-
 // DoContext sends a command to server and returns the received reply.
-// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
+// min(ctx,DialReadTimeout()) will be used as the deadline.
+// The connection will be closed if DialReadTimeout() timeout or ctx timeout or ctx canceled when this function is running.
+// DailReadTimeout() timeout return err can be checked by strings.Contains(e.Error(), "io/timeout").
+// ctx timeout return err context.DeadlineExceeded.
+// ctx canceled return err context.Canceled.
 func DoContext(c Conn, ctx context.Context, cmd string, args ...interface{}) (interface{}, error) {
 	cwt, ok := c.(ConnWithContext)
 	if !ok {
@@ -133,7 +143,11 @@ func DoWithTimeout(c Conn, timeout time.Duration, cmd string, args ...interface{
 }
 
 // ReceiveContext receives a single reply from the Redis server.
-// The connection will be closed if ctx timeout or cancel when this function is running and an error "ErrContextCacneled" will return
+// min(ctx,DialReadTimeout()) will be used as the deadline.
+// The connection will be closed if DialReadTimeout() timeout or ctx timeout or ctx canceled when this function is running.
+// DailReadTimeout() timeout return err can be checked by strings.Contains(e.Error(), "io/timeout").
+// ctx timeout return err context.DeadlineExceeded.
+// ctx canceled return err context.Canceled.
 func ReceiveContext(c Conn, ctx context.Context) (interface{}, error) {
 	cwt, ok := c.(ConnWithContext)
 	if !ok {
