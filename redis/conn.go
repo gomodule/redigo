@@ -679,18 +679,18 @@ func (c *conn) Receive() (interface{}, error) {
 }
 
 func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
-	var realtimeout time.Duration
+	var realTimeout time.Duration
 	if dl, ok := ctx.Deadline(); ok {
 		timeout := time.Until(dl)
 		if timeout >= c.readTimeout && c.readTimeout != 0 {
-			realtimeout = c.readTimeout
+			realTimeout = c.readTimeout
 		} else if timeout <= 0 {
 			return nil, c.fatal(context.DeadlineExceeded)
 		} else {
-			realtimeout = timeout
+			realTimeout = timeout
 		}
 	} else {
-		realtimeout = c.readTimeout
+		realTimeout = c.readTimeout
 	}
 	endch := make(chan struct{})
 	var r interface{}
@@ -698,7 +698,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	go func() {
 		defer close(endch)
 
-		r, e = c.ReceiveWithTimeout(realtimeout)
+		r, e = c.ReceiveWithTimeout(realTimeout)
 	}()
 	select {
 	case <-ctx.Done():
@@ -741,18 +741,18 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 }
 
 func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (interface{}, error) {
-	var realtimeout time.Duration
+	var realTimeout time.Duration
 	if dl, ok := ctx.Deadline(); ok {
 		timeout := time.Until(dl)
 		if timeout >= c.readTimeout && c.readTimeout != 0 {
-			realtimeout = c.readTimeout
+			realTimeout = c.readTimeout
 		} else if timeout <= 0 {
 			return nil, c.fatal(context.DeadlineExceeded)
 		} else {
-			realtimeout = timeout
+			realTimeout = timeout
 		}
 	} else {
-		realtimeout = c.readTimeout
+		realTimeout = c.readTimeout
 	}
 	endch := make(chan struct{})
 	var r interface{}
@@ -760,7 +760,7 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 	go func() {
 		defer close(endch)
 
-		r, e = c.DoWithTimeout(realtimeout, cmd, args)
+		r, e = c.DoWithTimeout(realTimeout, cmd, args)
 	}()
 	select {
 	case <-ctx.Done():
