@@ -238,8 +238,16 @@ func ExampleBool() {
 	}
 	defer c.Close()
 
-	c.Do("SET", "foo", 1)
-	exists, _ := redis.Bool(c.Do("EXISTS", "foo"))
+	if _, err = c.Do("SET", "foo", 1); err != nil {
+		fmt.Println(err)
+		return
+	}
+	exists, err := redis.Bool(c.Do("EXISTS", "foo"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	fmt.Printf("%#v\n", exists)
 	// Output:
 	// true
@@ -253,10 +261,22 @@ func ExampleInt() {
 	}
 	defer c.Close()
 
-	c.Do("SET", "k1", 1)
-	n, _ := redis.Int(c.Do("GET", "k1"))
+	_, err = c.Do("SET", "k1", 1)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	n, err := redis.Int(c.Do("GET", "k1"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	fmt.Printf("%#v\n", n)
-	n, _ = redis.Int(c.Do("INCR", "k1"))
+	n, err = redis.Int(c.Do("INCR", "k1"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	fmt.Printf("%#v\n", n)
 	// Output:
 	// 1
@@ -271,8 +291,16 @@ func ExampleInts() {
 	}
 	defer c.Close()
 
-	c.Do("SADD", "set_with_integers", 4, 5, 6)
-	ints, _ := redis.Ints(c.Do("SMEMBERS", "set_with_integers"))
+	_, err = c.Do("SADD", "set_with_integers", 4, 5, 6)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	ints, err := redis.Ints(c.Do("SMEMBERS", "set_with_integers"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	fmt.Printf("%#v\n", ints)
 	// Output:
 	// []int{4, 5, 6}
@@ -286,8 +314,16 @@ func ExampleString() {
 	}
 	defer c.Close()
 
-	c.Do("SET", "hello", "world")
+	_, err = c.Do("SET", "hello", "world")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	s, err := redis.String(c.Do("GET", "hello"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	fmt.Printf("%#v\n", s)
 	// Output:
 	// "world"

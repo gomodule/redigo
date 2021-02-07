@@ -115,7 +115,7 @@ func TestScanConversion(t *testing.T) {
 	for _, tt := range scanConversionTests {
 		values := []interface{}{tt.src}
 		dest := reflect.New(reflect.TypeOf(tt.dest))
-		values, err := redis.Scan(values, dest.Interface())
+		_, err := redis.Scan(values, dest.Interface())
 		if err != nil {
 			t.Errorf("Scan(%v) returned error %v", tt, err)
 			continue
@@ -144,7 +144,7 @@ func TestScanConversionError(t *testing.T) {
 	for _, tt := range scanConversionErrorTests {
 		values := []interface{}{tt.src}
 		dest := reflect.New(reflect.TypeOf(tt.dest))
-		values, err := redis.Scan(values, dest.Interface())
+		_, err := redis.Scan(values, dest.Interface())
 		if err == nil {
 			t.Errorf("Scan(%v) did not return error", tt)
 		}
@@ -159,12 +159,30 @@ func ExampleScan() {
 	}
 	defer c.Close()
 
-	c.Send("HMSET", "album:1", "title", "Red", "rating", 5)
-	c.Send("HMSET", "album:2", "title", "Earthbound", "rating", 1)
-	c.Send("HMSET", "album:3", "title", "Beat")
-	c.Send("LPUSH", "albums", "1")
-	c.Send("LPUSH", "albums", "2")
-	c.Send("LPUSH", "albums", "3")
+	if err = c.Send("HMSET", "album:1", "title", "Red", "rating", 5); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("HMSET", "album:2", "title", "Earthbound", "rating", 1); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("HMSET", "album:3", "title", "Beat"); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("LPUSH", "albums", "1"); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("LPUSH", "albums", "2"); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("LPUSH", "albums", "3"); err != nil {
+		fmt.Println(err)
+		return
+	}
 	values, err := redis.Values(c.Do("SORT", "albums",
 		"BY", "album:*->rating",
 		"GET", "album:*->title",
@@ -414,12 +432,30 @@ func ExampleScanSlice() {
 	}
 	defer c.Close()
 
-	c.Send("HMSET", "album:1", "title", "Red", "rating", 5)
-	c.Send("HMSET", "album:2", "title", "Earthbound", "rating", 1)
-	c.Send("HMSET", "album:3", "title", "Beat", "rating", 4)
-	c.Send("LPUSH", "albums", "1")
-	c.Send("LPUSH", "albums", "2")
-	c.Send("LPUSH", "albums", "3")
+	if err = c.Send("HMSET", "album:1", "title", "Red", "rating", 5); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("HMSET", "album:2", "title", "Earthbound", "rating", 1); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("HMSET", "album:3", "title", "Beat", "rating", 4); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("LPUSH", "albums", "1"); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("LPUSH", "albums", "2"); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err = c.Send("LPUSH", "albums", "3"); err != nil {
+		fmt.Println(err)
+		return
+	}
 	values, err := redis.Values(c.Do("SORT", "albums",
 		"BY", "album:*->rating",
 		"GET", "album:*->title",
@@ -441,8 +477,6 @@ func ExampleScanSlice() {
 	// Output:
 	// [{Earthbound 1} {Beat 4} {Red 5}]
 }
-
-var now = time.Now()
 
 type Ed struct {
 	EdI int `redis:"edi"`

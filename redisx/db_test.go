@@ -42,7 +42,10 @@ func (t testConn) Close() error {
 // stomping on real data, DialTestDB fails if database 9 contains data. The
 // returned connection flushes database 9 on close.
 func DialTest() (redis.Conn, error) {
-	c, err := redis.DialTimeout("tcp", ":6379", 0, 1*time.Second, 1*time.Second)
+	c, err := redis.Dial("tcp", ":6379",
+		redis.DialReadTimeout(time.Second),
+		redis.DialWriteTimeout(time.Second),
+	)
 	if err != nil {
 		return nil, err
 	}

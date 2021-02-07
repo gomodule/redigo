@@ -107,13 +107,17 @@ func (s *Server) watch(r io.Reader, ready chan error) {
 	if !listening {
 		ready <- fmt.Errorf("server exited: %s", text)
 	}
-	s.cmd.Wait()
+	if err := s.cmd.Wait(); err != nil {
+		if listening {
+			ready <- err
+		}
+	}
 	fmt.Fprintf(serverLog, "%d STOP %s \n", s.cmd.Process.Pid, s.name)
 	close(s.done)
 }
 
 func (s *Server) Stop() {
-	s.cmd.Process.Signal(os.Interrupt)
+	s.cmd.Process.Signal(os.Interrupt) // nolint: errcheck
 	<-s.done
 }
 
@@ -156,7 +160,9 @@ func DialDefaultServer(options ...DialOption) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.Do("FLUSHDB")
+	if _, err = c.Do("FLUSHDB"); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 

@@ -39,7 +39,6 @@ var nowFunc = time.Now // for testing
 var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
 
 var (
-	errPoolClosed = errors.New("redigo: connection pool closed")
 	errConnClosed = errors.New("redigo: connection closed")
 )
 
@@ -254,7 +253,6 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 	p.mu.Unlock()
 	c, err := p.dial(ctx)
 	if err != nil {
-		c = nil
 		p.mu.Lock()
 		p.active--
 		if p.ch != nil && !p.closed {
@@ -445,8 +443,8 @@ func initSentinel() {
 		sentinel = p
 	} else {
 		h := sha1.New()
-		io.WriteString(h, "Oops, rand failed. Use time instead.")
-		io.WriteString(h, strconv.FormatInt(time.Now().UnixNano(), 10))
+		io.WriteString(h, "Oops, rand failed. Use time instead.")       // nolint: errcheck
+		io.WriteString(h, strconv.FormatInt(time.Now().UnixNano(), 10)) // nolint: errcheck
 		sentinel = h.Sum(nil)
 	}
 }
@@ -458,21 +456,23 @@ func (ac *activeConn) Close() error {
 	}
 	ac.pc = nil
 
+	// Currently since we're closing the connection anyway we use best effort sends.
+	// TODO(steve): Is it useful to not and return any encountered errors?
 	if ac.state&connectionMultiState != 0 {
-		pc.c.Send("DISCARD")
+		pc.c.Send("DISCARD") // nolint: errcheck
 		ac.state &^= (connectionMultiState | connectionWatchState)
 	} else if ac.state&connectionWatchState != 0 {
-		pc.c.Send("UNWATCH")
+		pc.c.Send("UNWATCH") // nolint: errcheck
 		ac.state &^= connectionWatchState
 	}
 	if ac.state&connectionSubscribeState != 0 {
-		pc.c.Send("UNSUBSCRIBE")
-		pc.c.Send("PUNSUBSCRIBE")
+		pc.c.Send("UNSUBSCRIBE")  // nolint: errcheck
+		pc.c.Send("PUNSUBSCRIBE") // nolint: errcheck
 		// To detect the end of the message stream, ask the server to echo
 		// a sentinel value and read until we see that value.
 		sentinelOnce.Do(initSentinel)
-		pc.c.Send("ECHO", sentinel)
-		pc.c.Flush()
+		pc.c.Send("ECHO", sentinel) // nolint: errcheck
+		pc.c.Flush()                // nolint: errcheck
 		for {
 			p, err := pc.c.Receive()
 			if err != nil {
@@ -484,8 +484,8 @@ func (ac *activeConn) Close() error {
 			}
 		}
 	}
-	pc.c.Do("")
-	ac.p.put(pc, ac.state != 0 || pc.c.Err() != nil)
+	pc.c.Do("")                                      // nolint: errcheck
+	ac.p.put(pc, ac.state != 0 || pc.c.Err() != nil) // nolint: errcheck
 	return nil
 }
 
@@ -594,7 +594,6 @@ func (l *idleList) pushFront(pc *poolConn) {
 	}
 	l.front = pc
 	l.count++
-	return
 }
 
 func (l *idleList) popFront() {

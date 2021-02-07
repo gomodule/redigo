@@ -78,6 +78,9 @@ func TestScript(t *testing.T) {
 	}
 
 	v, err = c.Receive()
+	if err != nil {
+		t.Errorf("s.Recieve() returned %v", err)
+	}
 	if !reflect.DeepEqual(v, reply) {
 		t.Errorf("s.SendHash(c, ..); c.Receive() = %v, want %v", v, reply)
 	}
@@ -93,6 +96,9 @@ func TestScript(t *testing.T) {
 	}
 
 	v, err = c.Receive()
+	if err != nil {
+		t.Errorf("s.Recieve() returned %v", err)
+	}
 	if !reflect.DeepEqual(v, reply) {
 		t.Errorf("s.Send(c, ..); c.Receive() = %v, want %v", v, reply)
 	}

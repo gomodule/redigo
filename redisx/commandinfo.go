@@ -18,13 +18,6 @@ import (
 	"strings"
 )
 
-const (
-	connectionWatchState = 1 << iota
-	connectionMultiState
-	connectionSubscribeState
-	connectionMonitorState
-)
-
 type commandInfo struct {
 	notMuxable bool
 }
