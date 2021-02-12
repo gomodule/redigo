@@ -449,33 +449,45 @@ func initSentinel() {
 	}
 }
 
-func (ac *activeConn) Close() error {
+func (ac *activeConn) firstError(errs ...error) error {
+	for _, err := range errs[:len(errs)-1] {
+		if err != nil {
+			return err
+		}
+	}
+	return errs[len(errs)-1]
+}
+
+func (ac *activeConn) Close() (err error) {
 	pc := ac.pc
 	if pc == nil {
 		return nil
 	}
 	ac.pc = nil
 
-	// Currently since we're closing the connection anyway we use best effort sends.
-	// TODO(steve): Is it useful to not and return any encountered errors?
 	if ac.state&connectionMultiState != 0 {
-		pc.c.Send("DISCARD") // nolint: errcheck
+		err = pc.c.Send("DISCARD")
 		ac.state &^= (connectionMultiState | connectionWatchState)
 	} else if ac.state&connectionWatchState != 0 {
-		pc.c.Send("UNWATCH") // nolint: errcheck
+		err = pc.c.Send("UNWATCH")
 		ac.state &^= connectionWatchState
 	}
 	if ac.state&connectionSubscribeState != 0 {
-		pc.c.Send("UNSUBSCRIBE")  // nolint: errcheck
-		pc.c.Send("PUNSUBSCRIBE") // nolint: errcheck
+		err = ac.firstError(err,
+			pc.c.Send("UNSUBSCRIBE"),
+			pc.c.Send("PUNSUBSCRIBE"),
+		)
 		// To detect the end of the message stream, ask the server to echo
 		// a sentinel value and read until we see that value.
 		sentinelOnce.Do(initSentinel)
-		pc.c.Send("ECHO", sentinel) // nolint: errcheck
-		pc.c.Flush()                // nolint: errcheck
+		err = ac.firstError(err,
+			pc.c.Send("ECHO", sentinel),
+			pc.c.Flush(),
+		)
 		for {
-			p, err := pc.c.Receive()
-			if err != nil {
+			p, err2 := pc.c.Receive()
+			if err2 != nil {
+				err = ac.firstError(err, err2)
 				break
 			}
 			if p, ok := p.([]byte); ok && bytes.Equal(p, sentinel) {
@@ -484,9 +496,12 @@ func (ac *activeConn) Close() error {
 			}
 		}
 	}
-	pc.c.Do("")                                      // nolint: errcheck
-	ac.p.put(pc, ac.state != 0 || pc.c.Err() != nil) // nolint: errcheck
-	return nil
+	_, err2 := pc.c.Do("")
+	return ac.firstError(
+		err,
+		err2,
+		ac.p.put(pc, ac.state != 0 || pc.c.Err() != nil),
+	)
 }
 
 func (ac *activeConn) Err() error {
