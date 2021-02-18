@@ -26,7 +26,7 @@ func zpop(c redis.Conn, key string) (result string, err error) {
 	defer func() {
 		// Return connection to normal state on error.
 		if err != nil {
-			c.Do("DISCARD")
+			c.Do("DISCARD") // nolint: errcheck
 		}
 	}()
 
@@ -44,8 +44,12 @@ func zpop(c redis.Conn, key string) (result string, err error) {
 			return "", redis.ErrNil
 		}
 
-		c.Send("MULTI")
-		c.Send("ZREM", key, members[0])
+		if err = c.Send("MULTI"); err != nil {
+			return "", err
+		}
+		if err = c.Send("ZREM", key, members[0]); err != nil {
+			return "", err
+		}
 		queued, err := c.Do("EXEC")
 		if err != nil {
 			return "", err
@@ -83,8 +87,12 @@ func Example_zpop() {
 	// Add test data using a pipeline.
 
 	for i, member := range []string{"red", "blue", "green"} {
-		c.Send("ZADD", "zset", i, member)
+		if err = c.Send("ZADD", "zset", i, member); err != nil {
+			fmt.Println(err)
+			return
+		}
 	}
+
 	if _, err := c.Do(""); err != nil {
 		fmt.Println(err)
 		return

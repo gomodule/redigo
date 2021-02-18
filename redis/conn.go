@@ -432,15 +432,23 @@ func (c *conn) writeLen(prefix byte, n int) error {
 }
 
 func (c *conn) writeString(s string) error {
-	c.writeLen('$', len(s))
-	c.bw.WriteString(s)
+	if err := c.writeLen('$', len(s)); err != nil {
+		return err
+	}
+	if _, err := c.bw.WriteString(s); err != nil {
+		return err
+	}
 	_, err := c.bw.WriteString("\r\n")
 	return err
 }
 
 func (c *conn) writeBytes(p []byte) error {
-	c.writeLen('$', len(p))
-	c.bw.Write(p)
+	if err := c.writeLen('$', len(p)); err != nil {
+		return err
+	}
+	if _, err := c.bw.Write(p); err != nil {
+		return err
+	}
 	_, err := c.bw.WriteString("\r\n")
 	return err
 }
@@ -454,7 +462,9 @@ func (c *conn) writeFloat64(n float64) error {
 }
 
 func (c *conn) writeCommand(cmd string, args []interface{}) error {
-	c.writeLen('*', 1+len(args))
+	if err := c.writeLen('*', 1+len(args)); err != nil {
+		return err
+	}
 	if err := c.writeString(cmd); err != nil {
 		return err
 	}
@@ -656,7 +666,9 @@ func (c *conn) Send(cmd string, args ...interface{}) error {
 	c.pending += 1
 	c.mu.Unlock()
 	if c.writeTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+			return c.fatal(err)
+		}
 	}
 	if err := c.writeCommand(cmd, args); err != nil {
 		return c.fatal(err)
@@ -666,7 +678,9 @@ func (c *conn) Send(cmd string, args ...interface{}) error {
 
 func (c *conn) Flush() error {
 	if c.writeTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+			return c.fatal(err)
+		}
 	}
 	if err := c.bw.Flush(); err != nil {
 		return c.fatal(err)
@@ -683,7 +697,9 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 	if timeout != 0 {
 		deadline = time.Now().Add(timeout)
 	}
-	c.conn.SetReadDeadline(deadline)
+	if err := c.conn.SetReadDeadline(deadline); err != nil {
+		return nil, c.fatal(err)
+	}
 
 	if reply, err = c.readReply(); err != nil {
 		return nil, c.fatal(err)
@@ -721,7 +737,9 @@ func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...inte
 	}
 
 	if c.writeTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+			return nil, c.fatal(err)
+		}
 	}
 
 	if cmd != "" {
@@ -738,7 +756,9 @@ func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...inte
 	if readTimeout != 0 {
 		deadline = time.Now().Add(readTimeout)
 	}
-	c.conn.SetReadDeadline(deadline)
+	if err := c.conn.SetReadDeadline(deadline); err != nil {
+		return nil, c.fatal(err)
+	}
 
 	if cmd == "" {
 		reply := make([]interface{}, pending)

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	"github.com/stretchr/testify/require"
 )
 
 func expectPushed(t *testing.T, c redis.PubSubConn, message string, expected interface{}) {
@@ -44,29 +45,30 @@ func TestPushed(t *testing.T) {
 
 	c := redis.PubSubConn{Conn: sc}
 
-	c.Subscribe("c1")
+	require.NoError(t, c.Subscribe("c1"))
 	expectPushed(t, c, "Subscribe(c1)", redis.Subscription{Kind: "subscribe", Channel: "c1", Count: 1})
-	c.Subscribe("c2")
+	require.NoError(t, c.Subscribe("c2"))
 	expectPushed(t, c, "Subscribe(c2)", redis.Subscription{Kind: "subscribe", Channel: "c2", Count: 2})
-	c.PSubscribe("p1")
+	require.NoError(t, c.PSubscribe("p1"))
 	expectPushed(t, c, "PSubscribe(p1)", redis.Subscription{Kind: "psubscribe", Channel: "p1", Count: 3})
-	c.PSubscribe("p2")
+	require.NoError(t, c.PSubscribe("p2"))
 	expectPushed(t, c, "PSubscribe(p2)", redis.Subscription{Kind: "psubscribe", Channel: "p2", Count: 4})
-	c.PUnsubscribe()
+	require.NoError(t, c.PUnsubscribe())
 	expectPushed(t, c, "Punsubscribe(p1)", redis.Subscription{Kind: "punsubscribe", Channel: "p1", Count: 3})
 	expectPushed(t, c, "Punsubscribe()", redis.Subscription{Kind: "punsubscribe", Channel: "p2", Count: 2})
 
-	pc.Do("PUBLISH", "c1", "hello")
+	_, err = pc.Do("PUBLISH", "c1", "hello")
+	require.NoError(t, err)
 	expectPushed(t, c, "PUBLISH c1 hello", redis.Message{Channel: "c1", Data: []byte("hello")})
 
-	c.Ping("hello")
+	require.NoError(t, c.Ping("hello"))
 	expectPushed(t, c, `Ping("hello")`, redis.Pong{Data: "hello"})
 
-	c.Conn.Send("PING")
+	require.NoError(t, c.Conn.Send("PING"))
 	c.Conn.Flush()
 	expectPushed(t, c, `Send("PING")`, redis.Pong{})
 
-	c.Ping("timeout")
+	require.NoError(t, c.Ping("timeout"))
 	got := c.ReceiveWithTimeout(time.Minute)
 	if want := (redis.Pong{Data: "timeout"}); want != got {
 		t.Errorf("recv /w timeout got %v, want %v", got, want)
