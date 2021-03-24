@@ -581,3 +581,33 @@ func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
 	}
 	return logs, nil
 }
+
+// Entries is a helper that converts an array of stream entries into Entry values.
+// Requires two values in each entry result, and an even number of field values.
+func Entries(reply interface{}, err error) ([]Entry, error) {
+	vs, err := Values(reply, err)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]Entry, len(vs))
+	for i, v := range vs {
+		evs, ok := v.([]interface{})
+		if !ok || len(evs) != 2 {
+			return nil, errors.New("redigo: Entry expects two value result")
+		}
+		id, err := String(evs[0], nil)
+		if err != nil {
+			return nil, err
+		}
+		sm, err := StringMap(evs[1], nil)
+		if err != nil {
+			return nil, err
+		}
+		entries[i] = Entry{
+			ID:     id,
+			Fields: sm,
+		}
+	}
+	return entries, nil
+}
