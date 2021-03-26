@@ -244,37 +244,38 @@ func TestSlowLog(t *testing.T) {
 func TestEntries(t *testing.T) {
 	c, err := dial()
 	if err != nil {
-		t.Errorf("TestEntries failed during dial with error " + err.Error())
+		t.Errorf("Failed during dial with error " + err.Error())
 		return
 	}
 	defer c.Close()
 
 	resultStr, err := redis.Strings(c.Do("CONFIG", "GET", "stream-node-max-entries"))
 	if err != nil {
-		t.Errorf("TestEntries failed during CONFIG GET stream-node-max-entries with error " + err.Error())
+		t.Errorf("Failed during CONFIG GET stream-node-max-entries with error " + err.Error())
 		return
 	}
 	// in case of older verion < 5.0 where streams are not supported don't run the test
 	if len(resultStr) == 0 {
-		return
+		t.Skip("Skipped, stream feature not supported")
 	}
 
 	n := 3
 	for i := 0; i < n; i++ {
 		_, err = redis.String(c.Do("XADD", "teststream", fmt.Sprintf("0-%d", i+1), "index", fmt.Sprintf("%d", i)))
 		if err != nil {
-			t.Errorf("TestEntries failed during XADD with error " + err.Error())
+			t.Errorf("Failed during XADD with error " + err.Error())
 			return
 		}
 	}
 
 	entries, err := redis.Entries(c.Do("XRANGE", "teststream", "-", "+"))
 	if err != nil {
-		t.Errorf("TestEntries failed during XRANGE with error " + err.Error())
+		t.Errorf("Failed during XRANGE with error " + err.Error())
 		return
 	}
 	if len(entries) != n {
-		t.Errorf("TestEntries expected %d entries in result, got %d", n, len(entries))
+		t.Errorf("Expected %d entries in result, got %d", n, len(entries))
+		return
 	}
 	for i, entry := range entries {
 		expectedID := fmt.Sprintf("0-%d", i+1)
@@ -283,11 +284,11 @@ func TestEntries(t *testing.T) {
 		}
 
 		if entry.ID != expectedID {
-			t.Errorf("TestEntries expected entry ID to equal %s, got %s", expectedID, entry.ID)
+			t.Errorf("Expected entry ID to equal %s, got %s", expectedID, entry.ID)
 			return
 		}
 		if !reflect.DeepEqual(expectedFields, entry.Fields) {
-			t.Errorf("TestEntries expected entry to have fields %v, got %v", expectedFields, entry.Fields)
+			t.Errorf("Expected entry to have fields %v, got %v", expectedFields, entry.Fields)
 			return
 		}
 	}
