@@ -640,6 +640,13 @@ var dialURLTests = []struct {
 	w           string
 }{
 	{"password", "redis://:abc123@localhost", "+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n"},
+	{"password redis-cli compat", "redis://abc123@localhost", "+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n"},
+	{"password db1", "redis://:abc123@localhost/1", "+OK\r\n+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n"},
+	{"password db1 redis-cli compat", "redis://abc123@localhost/1", "+OK\r\n+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n"},
+	{"password no host db0", "redis://:abc123@/0", "+OK\r\n+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n"},
+	{"password no host db0 redis-cli compat", "redis://abc123@/0", "+OK\r\n+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n"},
+	{"password no host db1", "redis://:abc123@/1", "+OK\r\n+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n"},
+	{"password no host db1 redis-cli compat", "redis://abc123@/1", "+OK\r\n+OK\r\n", "*2\r\n$4\r\nAUTH\r\n$6\r\nabc123\r\n*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n"},
 	{"username and password", "redis://user:password@localhost", "+OK\r\n", "*3\r\n$4\r\nAUTH\r\n$4\r\nuser\r\n$8\r\npassword\r\n"},
 	{"username", "redis://x:@localhost", "+OK\r\n", ""},
 	{"database 3", "redis://localhost/3", "+OK\r\n", "*2\r\n$6\r\nSELECT\r\n$1\r\n3\r\n"},
@@ -649,16 +656,18 @@ var dialURLTests = []struct {
 
 func TestDialURL(t *testing.T) {
 	for _, tt := range dialURLTests {
-		var buf bytes.Buffer
-		// UseTLS should be ignored in all of these tests.
-		_, err := redis.DialURL(tt.url, dialTestConn(tt.r, &buf), redis.DialUseTLS(true))
-		if err != nil {
-			t.Errorf("%s dial error: %v", tt.description, err)
-			continue
-		}
-		if w := buf.String(); w != tt.w {
-			t.Errorf("%s commands = %q, want %q", tt.description, w, tt.w)
-		}
+		t.Run(tt.description, func(t *testing.T) {
+			var buf bytes.Buffer
+			// UseTLS should be ignored in all of these tests.
+			_, err := redis.DialURL(tt.url, dialTestConn(tt.r, &buf), redis.DialUseTLS(true))
+			if err != nil {
+				t.Errorf("%s dial error: %v, buf: %v", tt.description, err, buf.String())
+				return
+			}
+			if w := buf.String(); w != tt.w {
+				t.Errorf("%s commands = %q, want %q", tt.description, w, tt.w)
+			}
+		})
 	}
 }
 
