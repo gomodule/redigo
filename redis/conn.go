@@ -168,6 +168,7 @@ func DialPassword(password string) DialOption {
 
 // DialUsername specifies the username to use when connecting to
 // the Redis server when Redis ACLs are used.
+// A DialPassword must also be passed otherwise this option will have no effect.
 func DialUsername(username string) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.username = username
@@ -347,8 +348,18 @@ func DialURL(rawurl string, options ...DialOption) (Conn, error) {
 
 	if u.User != nil {
 		password, isSet := u.User.Password()
+		username := u.User.Username()
 		if isSet {
-			options = append(options, DialUsername(u.User.Username()), DialPassword(password))
+			if username != "" {
+				// ACL
+				options = append(options, DialUsername(username), DialPassword(password))
+			} else {
+				// requirepass - user-info username:password with blank username
+				options = append(options, DialPassword(password))
+			}
+		} else if username != "" {
+			// requirepass - redis-cli compatibility which treats as single arg in user-info as a password
+			options = append(options, DialPassword(username))
 		}
 	}
 
