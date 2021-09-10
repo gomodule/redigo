@@ -151,6 +151,9 @@ type Pool struct {
 	// the timeout to a value less than the server's timeout.
 	IdleTimeout time.Duration
 
+	// idle connection in the pool method, True: pushBack, False: pushFront, default False
+	Lifo bool
+
 	// If Wait is true and the pool is at the MaxActive limit, then Get() waits
 	// for a connection to be returned to the pool before returning.
 	Wait bool
@@ -403,7 +406,13 @@ func (p *Pool) put(pc *poolConn, forceClose bool) error {
 	p.mu.Lock()
 	if !p.closed && !forceClose {
 		pc.t = nowFunc()
-		p.idle.pushFront(pc)
+
+		if !p.Lifo {
+			p.idle.pushFront(pc)
+		} else {
+			p.idle.pushBack(pc)
+		}
+
 		if p.idle.count > p.MaxIdle {
 			pc = p.idle.back
 			p.idle.popBack()
@@ -621,6 +630,22 @@ func (l *idleList) popFront() {
 		l.front = pc.next
 	}
 	pc.next, pc.prev = nil, nil
+}
+
+// idle connect push list back
+func (l *idleList) pushBack(pc *poolConn) {
+	if l.count == 0 {
+		l.front = pc
+		l.back = pc
+		pc.prev = nil
+		pc.next = nil
+	} else {
+		pc.prev = l.back
+		l.back.next = pc
+		l.back = pc
+		pc.next = nil
+	}
+	l.count++
 }
 
 func (l *idleList) popBack() {
