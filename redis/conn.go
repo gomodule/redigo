@@ -87,6 +87,7 @@ type dialOptions struct {
 	useTLS              bool
 	skipVerify          bool
 	tlsConfig           *tls.Config
+	ctx                 context.Context
 }
 
 // DialTLSHandshakeTimeout specifies the maximum amount of time waiting to
@@ -200,17 +201,19 @@ func DialTLSSkipVerify(skip bool) DialOption {
 }
 
 // DialUseTLS specifies whether TLS should be used when connecting to the
-// server. This option is ignore by DialURL.
+// server. This option is ignored by DialURL.
 func DialUseTLS(useTLS bool) DialOption {
 	return DialOption{func(do *dialOptions) {
 		do.useTLS = useTLS
 	}}
 }
 
-// Dial connects to the Redis server at the given network and
-// address using the specified options.
-func Dial(network, address string, options ...DialOption) (Conn, error) {
-	return DialContext(context.Background(), network, address, options...)
+// DialCtx specifies the context to use for the dial.
+// If not specified context.Background() is used.
+func DialCtx(ctx context.Context) DialOption {
+	return DialOption{func(do *dialOptions) {
+		do.ctx = ctx
+	}}
 }
 
 type tlsHandshakeTimeoutError struct{}
@@ -221,13 +224,22 @@ func (tlsHandshakeTimeoutError) Error() string   { return "TLS handshake timeout
 
 // DialContext connects to the Redis server at the given network and
 // address using the specified options and context.
+//
+// Deprecated: Use the DialCtx DialOption instead.
 func DialContext(ctx context.Context, network, address string, options ...DialOption) (Conn, error) {
+	return Dial(network, address, append(options, DialCtx(ctx))...)
+}
+
+// Dial connects to the Redis server at the given network and
+// address using the specified options.
+func Dial(network, address string, options ...DialOption) (Conn, error) {
 	do := dialOptions{
 		dialer: &net.Dialer{
 			Timeout:   time.Second * 30,
 			KeepAlive: time.Minute * 5,
 		},
 		tlsHandshakeTimeout: time.Second * 10,
+		ctx:                 context.Background(),
 	}
 	for _, option := range options {
 		option.f(&do)
@@ -236,7 +248,7 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 		do.dialContext = do.dialer.DialContext
 	}
 
-	netConn, err := do.dialContext(ctx, network, address)
+	netConn, err := do.dialContext(do.ctx, network, address)
 	if err != nil {
 		return nil, err
 	}
