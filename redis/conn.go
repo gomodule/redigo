@@ -320,6 +320,15 @@ var pathDBRegexp = regexp.MustCompile(`/(\d*)\z`)
 // URI scheme. URLs should follow the draft IANA specification for the
 // scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
 func DialURL(rawurl string, options ...DialOption) (Conn, error) {
+	ctx := context.Background()
+
+	return DialURLContext(ctx, rawurl, options...)
+}
+
+// DialURLContext connects to a Redis server at the given URL using the Redis
+// URI scheme. URLs should follow the draft IANA specification for the
+// scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
+func DialURLContext(ctx context.Context, rawurl string, options ...DialOption) (Conn, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return nil, err
@@ -381,7 +390,7 @@ func DialURL(rawurl string, options ...DialOption) (Conn, error) {
 
 	options = append(options, DialUseTLS(u.Scheme == "rediss"))
 
-	return Dial("tcp", address, options...)
+	return DialContext(ctx, "tcp", address, options...)
 }
 
 // NewConn returns a new Redigo connection for the given net connection.
