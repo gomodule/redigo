@@ -320,9 +320,7 @@ var pathDBRegexp = regexp.MustCompile(`/(\d*)\z`)
 // URI scheme. URLs should follow the draft IANA specification for the
 // scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
 func DialURL(rawurl string, options ...DialOption) (Conn, error) {
-	ctx := context.Background()
-
-	return DialURLContext(ctx, rawurl, options...)
+	return DialURLContext(context.Background(), rawurl, options...)
 }
 
 // DialURLContext connects to a Redis server at the given URL using the Redis
