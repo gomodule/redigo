@@ -316,9 +316,7 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 
 var pathDBRegexp = regexp.MustCompile(`/(\d*)\z`)
 
-// DialURL connects to a Redis server at the given URL using the Redis
-// URI scheme. URLs should follow the draft IANA specification for the
-// scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
+// DialURL wraps DialURLContext using context.Background.
 func DialURL(rawurl string, options ...DialOption) (Conn, error) {
 	ctx := context.Background()
 
