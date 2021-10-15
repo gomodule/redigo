@@ -794,7 +794,7 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 	go func() {
 		defer close(endch)
 
-		r, e = c.DoWithTimeout(realTimeout, cmd, args)
+		r, e = c.DoWithTimeout(realTimeout, cmd, args...)
 	}()
 	select {
 	case <-ctx.Done():
