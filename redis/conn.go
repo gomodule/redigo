@@ -770,6 +770,7 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 	return
 }
 
+//go:noinline
 func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	return c.DoWithTimeout(c.readTimeout, cmd, args...)
 }
