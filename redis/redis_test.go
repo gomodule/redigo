@@ -36,7 +36,7 @@ func (tc timeoutTestConn) Receive() (interface{}, error) {
 	return time.Duration(-1), nil
 }
 
-func (tc timeoutTestConn) ReceiveWithTimeout(timeout time.Duration) (interface{}, error) {
+func (tc timeoutTestConn) receiveInternal(timeout time.Duration) (interface{}, error) {
 	return timeout, nil
 }
 
@@ -58,9 +58,9 @@ func testTimeout(t *testing.T, c redis.Conn) {
 	if r != time.Duration(-1) || err != nil {
 		t.Errorf("Receive() = %v, %v, want %v, %v", r, err, time.Duration(-1), nil)
 	}
-	r, err = redis.ReceiveWithTimeout(c, time.Minute)
+	r, err = redis.receiveInternal(c, time.Minute)
 	if r != time.Minute || err != nil {
-		t.Errorf("ReceiveWithTimeout() = %v, %v, want %v, %v", r, err, time.Minute, nil)
+		t.Errorf("receiveInternal() = %v, %v, want %v, %v", r, err, time.Minute, nil)
 	}
 }
 

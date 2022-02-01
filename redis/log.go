@@ -152,8 +152,8 @@ func (c *loggingConn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	return reply, err
 }
 
-func (c *loggingConn) ReceiveWithTimeout(timeout time.Duration) (interface{}, error) {
-	reply, err := ReceiveWithTimeout(c.Conn, timeout)
-	c.print("ReceiveWithTimeout", "", nil, reply, err)
+func (c *loggingConn) ReceiveContext(timeout time.Duration) (interface{}, error) {
+	reply, err := ReceiveContext(c.Conn, timeout)
+	c.print("ReceiveContext", "", nil, reply, err)
 	return reply, err
 }

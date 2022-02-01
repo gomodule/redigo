@@ -588,7 +588,7 @@ func (ac *activeConn) ReceiveContext(ctx context.Context) (reply interface{}, er
 	return cwt.ReceiveContext(ctx)
 }
 
-func (ac *activeConn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
+func (ac *activeConn) ReceiveContext(timeout time.Duration) (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
 		return nil, errConnClosed
@@ -597,7 +597,7 @@ func (ac *activeConn) ReceiveWithTimeout(timeout time.Duration) (reply interface
 	if !ok {
 		return nil, errTimeoutNotSupported
 	}
-	return cwt.ReceiveWithTimeout(timeout)
+	return cwt.ReceiveContext(timeout)
 }
 
 type errorConn struct{ err error }
@@ -615,7 +615,7 @@ func (ec errorConn) Close() error                                          { ret
 func (ec errorConn) Flush() error                                          { return ec.err }
 func (ec errorConn) Receive() (interface{}, error)                         { return nil, ec.err }
 func (ec errorConn) ReceiveContext(context.Context) (interface{}, error)   { return nil, ec.err }
-func (ec errorConn) ReceiveWithTimeout(time.Duration) (interface{}, error) { return nil, ec.err }
+func (ec errorConn) ReceiveContext(time.Duration) (interface{}, error) { return nil, ec.err }
 
 type idleList struct {
 	count       int

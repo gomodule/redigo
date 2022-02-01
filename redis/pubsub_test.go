@@ -69,7 +69,7 @@ func TestPushed(t *testing.T) {
 	expectPushed(t, c, `Send("PING")`, redis.Pong{})
 
 	require.NoError(t, c.Ping("timeout"))
-	got := c.ReceiveWithTimeout(time.Minute)
+	got := c.receiveInternal(time.Minute)
 	if want := (redis.Pong{Data: "timeout"}); want != got {
 		t.Errorf("recv /w timeout got %v, want %v", got, want)
 	}

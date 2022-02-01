@@ -707,7 +707,7 @@ func (c *conn) Flush() error {
 }
 
 func (c *conn) Receive() (interface{}, error) {
-	return c.ReceiveWithTimeout(c.readTimeout)
+	return c.ReceiveContext(c.readTimeout)
 }
 
 func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
@@ -730,7 +730,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	go func() {
 		defer close(endch)
 
-		r, e = c.ReceiveWithTimeout(realTimeout)
+		r, e = c.ReceiveContext(realTimeout)
 	}()
 	select {
 	case <-ctx.Done():
@@ -740,7 +740,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	}
 }
 
-func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
+func (c *conn) ReceiveContext(timeout time.Duration) (reply interface{}, err error) {
 	var deadline time.Time
 	if timeout != 0 {
 		deadline = time.Now().Add(timeout)

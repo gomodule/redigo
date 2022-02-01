@@ -45,6 +45,7 @@ func listenPubSubChannels(ctx context.Context, redisServerAddr string,
 	defer c.Close()
 
 	psc := redis.PubSubConn{Conn: c}
+	// psc := psc.ReceiveContext(...)
 
 	if err := psc.Subscribe(redis.Args{}.AddFlat(channels)...); err != nil {
 		return err

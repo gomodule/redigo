@@ -106,14 +106,18 @@ func (c PubSubConn) Ping(data string) error {
 // Receive returns a pushed message as a Subscription, Message, Pong or error.
 // The return value is intended to be used directly in a type switch as
 // illustrated in the PubSubConn example.
+
+//here you should use ReceiveContext instead of receiveInternal
 func (c PubSubConn) Receive() interface{} {
-	return c.receiveInternal(c.Conn.Receive())
+	return c.ReceiveContext(c.Conn.Receive())
 }
 
-// ReceiveWithTimeout is like Receive, but it allows the application to
+// receiveInternal is like Receive, but it allows the application to
 // override the connection's default timeout.
-func (c PubSubConn) ReceiveWithTimeout(timeout time.Duration) interface{} {
-	return c.receiveInternal(ReceiveWithTimeout(c.Conn, timeout))
+
+//here you should use ReceiveContext instead of receiveInternal
+func (c PubSubConn) receiveInternal(timeout time.Duration) interface{} {
+	return c.ReceiveContext(ReceiveContext(c.Conn, timeout))
 }
 
 func (c PubSubConn) receiveInternal(replyArg interface{}, errArg error) interface{} {

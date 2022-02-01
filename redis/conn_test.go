@@ -1065,7 +1065,7 @@ func TestWithTimeout(t *testing.T) {
 					timeout := 10 * time.Minute
 					minDeadline = time.Now().Add(timeout)
 					if recv {
-						_, err = redis.ReceiveWithTimeout(c, timeout)
+						_, err = redis.ReceiveContext(c, timeout)
 					} else {
 						_, err = redis.DoWithTimeout(c, timeout, "PING")
 					}

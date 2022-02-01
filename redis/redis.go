@@ -79,7 +79,7 @@ type Scanner interface {
 // All of the Conn implementations in this package satisfy the ConnWithTimeout
 // interface.
 //
-// Use the DoWithTimeout and ReceiveWithTimeout helper functions to simplify
+// Use the DoWithTimeout and receiveInternal helper functions to simplify
 // use of this interface.
 type ConnWithTimeout interface {
 	Conn
@@ -88,9 +88,9 @@ type ConnWithTimeout interface {
 	// The timeout overrides the readtimeout set when dialing the connection.
 	DoWithTimeout(timeout time.Duration, commandName string, args ...interface{}) (reply interface{}, err error)
 
-	// ReceiveWithTimeout receives a single reply from the Redis server.
+	// receiveInternal receives a single reply from the Redis server.
 	// The timeout overrides the readtimeout set when dialing the connection.
-	ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error)
+	receiveInternal(timeout time.Duration) (reply interface{}, err error)
 }
 
 // ConnWithContext is an optional interface that allows the caller to control the command's life with context.
@@ -156,15 +156,15 @@ func ReceiveContext(c Conn, ctx context.Context) (interface{}, error) {
 	return cwt.ReceiveContext(ctx)
 }
 
-// ReceiveWithTimeout receives a reply with the specified read timeout. If the
+// receiveInternal receives a reply with the specified read timeout. If the
 // connection does not satisfy the ConnWithTimeout interface, then an error is
 // returned.
-func ReceiveWithTimeout(c Conn, timeout time.Duration) (interface{}, error) {
+func receiveInternal(c Conn, timeout time.Duration) (interface{}, error) {
 	cwt, ok := c.(ConnWithTimeout)
 	if !ok {
 		return nil, errTimeoutNotSupported
 	}
-	return cwt.ReceiveWithTimeout(timeout)
+	return cwt.receiveInternal(timeout)
 }
 
 // SlowLog represents a redis SlowLog
