@@ -27,12 +27,40 @@ var (
 	scannerType = reflect.TypeOf((*Scanner)(nil)).Elem()
 )
 
+// I think this lines that I Add will help you to your bugs
+type ipS struct {
+        Addr addr
+}
+
+type addr struct {
+        net.IP
+}
+
+func (t *addr) RedisScan(src interface{}) error {
+        if t == nil {
+                return errors.New("nil pointer")
+        }
+
+        switch src := src.(type) {
+        case string:
+                return t.UnmarshalText([]byte(src))
+        case []byte:
+                return t.UnmarshalText(src)
+        default:
+                return fmt.Errorf("cannot convert from %T to %T", src, t)
+        }
+}
+
 func ensureLen(d reflect.Value, n int) {
-	if n > d.Cap() {
+	if(n!=nil && d!=nil)
+	{
+if n > d.Cap() {
 		d.Set(reflect.MakeSlice(d.Type(), n, n))
 	} else {
 		d.SetLen(n)
 	}
+	}
+	
 }
 
 func cannotConvert(d reflect.Value, s interface{}) error {
