@@ -764,7 +764,9 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 	//
 	// The pending field is decremented after the reply is read to handle the
 	// case where Receive is called before Send.
-	c.mu.Lock()
+	if (c!=nil)
+	{
+c.mu.Lock()
 	if c.pending > 0 {
 		c.pending -= 1
 	}
@@ -772,6 +774,8 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 	if err, ok := reply.(Error); ok {
 		return nil, err
 	}
+	}
+	
 	return
 }
 
@@ -794,6 +798,8 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 		realTimeout = c.readTimeout
 	}
 	endch := make(chan struct{})
+	stop := make(chan struct{})
+	wait := make(chan struct{})
 	var r interface{}
 	var e error
 	go func() {
@@ -810,10 +816,14 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 }
 
 func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...interface{}) (interface{}, error) {
+	if(c !=nil)
+	{
 	c.mu.Lock()
 	pending := c.pending
 	c.pending = 0
 	c.mu.Unlock()
+	}
+
 
 	if cmd == "" && pending == 0 {
 		return nil, nil
