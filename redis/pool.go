@@ -539,11 +539,11 @@ func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interfa
 func (ac *activeConn) DoWithTimeout(timeout time.Duration, commandName string, args ...interface{}) (reply interface{}, err error) {
 	pc := ac.pc
 	if pc == nil {
-		return nil, errConnClosed
+		return nil, errTimeoutNotSupported
 	}
 	cwt, ok := pc.c.(ConnWithTimeout)
 	if !ok {
-		return nil, errTimeoutNotSupported
+		return nil, errConnClosed
 	}
 	ci := lookupCommandInfo(commandName)
 	ac.state = (ac.state | ci.Set) &^ ci.Clear

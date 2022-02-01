@@ -403,9 +403,9 @@ func NewConn(netConn net.Conn, readTimeout, writeTimeout time.Duration) Conn {
 }
 
 func (c *conn) Close() error {
-	c.mu.Lock()
 	err := c.err
 	if c.err == nil {
+		c.mu.Lock()
 		c.err = errors.New("redigo: closed")
 		err = c.conn.Close()
 	}
@@ -414,8 +414,9 @@ func (c *conn) Close() error {
 }
 
 func (c *conn) fatal(err error) error {
-	c.mu.Lock()
+	
 	if c.err == nil {
+		c.mu.Lock()
 		c.err = err
 		// Close connection to force errors on subsequent calls and to unblock
 		// other reader or writer.
@@ -426,9 +427,13 @@ func (c *conn) fatal(err error) error {
 }
 
 func (c *conn) Err() error {
-	c.mu.Lock()
-	err := c.err
-	c.mu.Unlock()
+	if(c.err !=nil)
+	{
+		c.mu.Lock()
+		err := c.err
+		c.mu.Unlock()
+	}
+
 	return err
 }
 
