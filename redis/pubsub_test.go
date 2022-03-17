@@ -15,6 +15,8 @@
 package redis_test
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -72,5 +74,27 @@ func TestPushed(t *testing.T) {
 	got := c.ReceiveWithTimeout(time.Minute)
 	if want := (redis.Pong{Data: "timeout"}); want != got {
 		t.Errorf("recv /w timeout got %v, want %v", got, want)
+	}
+}
+
+func TestPubSubReceiveContext(t *testing.T) {
+	sc, err := redis.DialDefaultServer()
+	if err != nil {
+		t.Fatalf("error connection to database, %v", err)
+	}
+	defer sc.Close()
+
+	c := redis.PubSubConn{Conn: sc}
+
+	require.NoError(t, c.Subscribe("c1"))
+	expectPushed(t, c, "Subscribe(c1)", redis.Subscription{Kind: "subscribe", Channel: "c1", Count: 1})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got := c.ReceiveContext(ctx)
+	if err, ok := got.(error); !ok {
+		t.Errorf("recv w/canceled expected Canceled got non-error type %T", got)
+	} else if !errors.Is(err, context.Canceled) {
+		t.Errorf("recv w/canceled expected Canceled got %v", err)
 	}
 }
