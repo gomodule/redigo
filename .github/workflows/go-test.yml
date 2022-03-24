@@ -1,0 +1,58 @@
+name: go-test
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - master
+  pull_request:
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        go-version:
+        - '1.17.x'
+        - '1.18.x'
+        os:
+        - 'ubuntu-latest'
+        redis:
+        - '6.2'
+        - '6.0'
+        - '5.0'
+        - '4.0'
+    name: Test go ${{ matrix.go-version }} redis ${{ matrix.redis }} on ${{ matrix.os }}
+    steps:
+      - name: Setup redis
+        uses: shogo82148/actions-setup-redis@v1
+        with:
+          redis-version: ${{ matrix.redis }}
+
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Go Cache Paths
+        id: go-cache-paths
+        run: |
+          echo "::set-output name=go-build::$(go env GOCACHE)"
+          echo "::set-output name=go-mod::$(go env GOMODCACHE)"
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Go Build Cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go-build }}
+          key: ${{ runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
+
+      - name: Go Mod Cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go-mod }}
+          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+
+      - name: Go Test
+        run: go test -v ./...
