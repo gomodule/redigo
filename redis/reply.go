@@ -140,6 +140,36 @@ func Float64(reply interface{}, err error) (float64, error) {
 	return 0, fmt.Errorf("redigo: unexpected type for Float64, got type %T", reply)
 }
 
+// Float64Map is a helper that converts an array of strings (alternating key, value)
+// into a map[string]Float64. The HGETALL commands return replies in this format.
+// Requires an even number of values in result.
+func Float64Map(result interface{}, err error) (map[string]float64, error) {
+	values, err := Values(result, err)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(values)%2 != 0 {
+		return nil, fmt.Errorf("redigo: Float64Map expects even number of values result, got %d", len(values))
+	}
+
+	m := make(map[string]float64, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		key, ok := values[i].([]byte)
+		if !ok {
+			return nil, fmt.Errorf("redigo: Float64Map key[%d] not a bulk string value, got %T", i, values[i])
+		}
+
+		value, err := Float64(values[i+1], nil)
+		if err != nil {
+			return nil, err
+		}
+
+		m[string(key)] = value
+	}
+	return m, nil
+}
+
 // String is a helper that converts a command reply to a string. If err is not
 // equal to nil, then String returns "", err. Otherwise String converts the
 // reply to a string as follows:

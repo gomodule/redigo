@@ -124,6 +124,11 @@ var replyTests = []struct {
 		ve(float64(0.0), redis.ErrNil),
 	},
 	{
+		"float64Map([[]byte, []byte])",
+		ve(redis.Float64Map([]interface{}{[]byte("key1"), []byte("1.234"), []byte("key2"), []byte("5.678")}, nil)),
+		ve(map[string]float64{"key1": 1.234, "key2": 5.678}, nil),
+	},
+	{
 		"uint64(1)",
 		ve(redis.Uint64(int64(1), nil)),
 		ve(uint64(1), nil),
