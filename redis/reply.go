@@ -477,7 +477,7 @@ func Int64Map(result interface{}, err error) (map[string]int64, error) {
 }
 
 // Float64Map is a helper that converts an array of strings (alternating key, value)
-// into a map[string]Float64. The HGETALL commands return replies in this format.
+// into a map[string]float64. The HGETALL commands return replies in this format.
 // Requires an even number of values in result.
 func Float64Map(result interface{}, err error) (map[string]float64, error) {
 	values, err := Values(result, err)
