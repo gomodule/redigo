@@ -645,3 +645,88 @@ func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
 	}
 	return logs, nil
 }
+
+// Latency is a helper that parse the LATENCY LATEST command output and
+// return the array of Latency
+func Latencies(result interface{}, err error) ([]Latency, error) {
+	rawLatencies, err := Values(result, err)
+	if err != nil {
+		return nil, err
+	}
+	latencies := make([]Latency, len(rawLatencies))
+	for i, e := range rawLatencies {
+		rawLatency, ok := e.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("redigo: rawLatency element is not an array, got %T", e)
+		}
+
+		var event Latency
+		if len(rawLatency) != 4 {
+			return nil, fmt.Errorf("redigo: LATENCY LATEST element has %d elements, expected 4", len(rawLatency))
+		}
+
+		event.Event, err = String(rawLatency[0], nil)
+		if err != nil {
+			return nil, fmt.Errorf("redigo: LATENCY LATEST element[0] is not a string: %w", err)
+		}
+
+		timestamp, ok := rawLatency[1].(int64)
+		if !ok {
+			return nil, fmt.Errorf("redigo: LATENCY LATEST element[1] not an int64, got %T", rawLatency[1])
+		}
+
+		event.Time = time.Unix(timestamp, 0)
+
+		latestDuration, ok := rawLatency[2].(int64)
+		if !ok {
+			return nil, fmt.Errorf("redigo: LATENCY LATEST element[2] not an int64, got %T", rawLatency[2])
+		}
+
+		event.LatestExecutionTime = time.Duration(latestDuration) * time.Millisecond
+
+		maxDuration, ok := rawLatency[3].(int64)
+		if !ok {
+			return nil, fmt.Errorf("redigo: LATENCY LATEST element[3] not an int64, got %T", rawLatency[3])
+		}
+
+		event.MaxExecutionTime = time.Duration(maxDuration) * time.Millisecond
+
+		latencies[i] = event
+	}
+	return latencies, nil
+}
+
+// LatencyHistories is a helper that parse the LATENCY HISTORY command output and
+// return the array of LatencyHistory
+func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
+	rawLogs, err := Values(result, err)
+	if err != nil {
+		return nil, err
+	}
+	latencyHistories := make([]LatencyHistory, len(rawLogs))
+	for i, e := range rawLogs {
+		rawLog, ok := e.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("LATENCY HISTORY: latencyHistory element is not an array, got %T", e)
+		}
+
+		var event LatencyHistory
+
+		timestamp, ok := rawLog[0].(int64)
+		if !ok {
+			return nil, fmt.Errorf("redigo: LATENCY HISTORY element[0] not an int64, got %T", rawLog[0])
+		}
+
+		event.Time = time.Unix(timestamp, 0)
+
+		duration, ok := rawLog[1].(int64)
+		if !ok {
+			return nil, fmt.Errorf("redigo: LATENCY HISTORY element[1] not an int64, got %T", rawLog[1])
+		}
+
+		event.ExecutionTime = time.Duration(duration) * time.Millisecond
+
+		latencyHistories[i] = event
+	}
+	return latencyHistories, nil
+}
