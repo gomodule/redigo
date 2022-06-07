@@ -614,13 +614,13 @@ func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
 
 		timestamp, ok := rawLog[1].(int64)
 		if !ok {
-			return nil, fmt.Errorf("redigo: slowlog element[1] not an int64, got %T", rawLog[0])
+			return nil, fmt.Errorf("redigo: slowlog element[1] not an int64, got %T", rawLog[1])
 		}
 
 		log.Time = time.Unix(timestamp, 0)
 		duration, ok := rawLog[2].(int64)
 		if !ok {
-			return nil, fmt.Errorf("redigo: slowlog element[2] not an int64, got %T", rawLog[0])
+			return nil, fmt.Errorf("redigo: slowlog element[2] not an int64, got %T", rawLog[2])
 		}
 
 		log.ExecutionTime = time.Duration(duration) * time.Microsecond
