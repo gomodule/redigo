@@ -646,8 +646,8 @@ func SlowLogs(result interface{}, err error) ([]SlowLog, error) {
 	return logs, nil
 }
 
-// Latency is a helper that parse the LATENCY LATEST command output and
-// return the array of Latency
+// Latencies is a helper that parses the LATENCY LATEST command output and
+// return the slice of Latency values.
 func Latencies(result interface{}, err error) ([]Latency, error) {
 	rawLatencies, err := Values(result, err)
 	if err != nil {
@@ -665,7 +665,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 			return nil, fmt.Errorf("redigo: LATENCY LATEST element has %d elements, expected 4", len(rawLatency))
 		}
 
-		event.Event, err = String(rawLatency[0], nil)
+		event.EventType, err = String(rawLatency[0], nil)
 		if err != nil {
 			return nil, fmt.Errorf("redigo: LATENCY LATEST element[0] is not a string: %w", err)
 		}
@@ -682,14 +682,14 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 			return nil, fmt.Errorf("redigo: LATENCY LATEST element[2] not an int64, got %T", rawLatency[2])
 		}
 
-		event.LatestExecutionTime = time.Duration(latestDuration) * time.Millisecond
+		event.Latest = time.Duration(latestDuration) * time.Millisecond
 
 		maxDuration, ok := rawLatency[3].(int64)
 		if !ok {
 			return nil, fmt.Errorf("redigo: LATENCY LATEST element[3] not an int64, got %T", rawLatency[3])
 		}
 
-		event.MaxExecutionTime = time.Duration(maxDuration) * time.Millisecond
+		event.Max = time.Duration(maxDuration) * time.Millisecond
 
 		latencies[i] = event
 	}
@@ -697,7 +697,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 }
 
 // LatencyHistories is a helper that parse the LATENCY HISTORY command output and
-// return the array of LatencyHistory
+// return the array of LatencyHistory.
 func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 	rawLogs, err := Values(result, err)
 	if err != nil {

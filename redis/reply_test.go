@@ -16,6 +16,7 @@ package redis_test
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"math"
 	"reflect"
 	"strconv"
@@ -227,126 +228,77 @@ func TestSlowLog(t *testing.T) {
 
 func TestLatency(t *testing.T) {
 	c, err := dial()
-	if err != nil {
-		t.Errorf("TestLatency failed during dial with error " + err.Error())
-		return
-	}
+	require.NoError(t, err, "TestLatency failed during dial.")
 	defer c.Close()
 
 	resultStr, err := redis.Strings(c.Do("CONFIG", "GET", "latency-monitor-threshold"))
-	if err != nil {
-		t.Errorf("TestLatency failed during CONFIG GET latency-monitor-threshold with error " + err.Error())
-		return
-	}
-	// in case of older verion < 2.8.13 where LATENCY command is not supported
-	// don't run the test
+	require.NoError(t, err, "TestLatency failed during CONFIG GET latency-monitor-threshold.")
+	// LATENCY commands were added in 2.8.13 so might not be supported.
 	if len(resultStr) == 0 {
-		return
+		t.Skip("Latency commands not supported")
 	}
 	latencyMonitorThresholdOldCfg, err := strconv.Atoi(resultStr[1])
-	if err != nil {
-		t.Errorf("TestLatency failed during strconv.Atoi with error " + err.Error())
-		return
-	}
-	// Enable latency monitoring for events that take 1ms or longer
+	require.NoError(t, err, "TestLatency failed during strconv.Atoi.")
+	// Enable latency monitoring for events that take 1ms or longer.
 	result, err := c.Do("CONFIG", "SET", "latency-monitor-threshold", "1")
-	if err != nil && result != "OK" {
-		t.Errorf("TestLatency failed during CONFIG SET with error " + err.Error())
-		return
-	}
-	// Sleep for 1ms to register a slow event
+	require.NoError(t, err)
+	require.Equal(t, "OK", result, "TestLatency failed during CONFIG SET")
+
+	// Sleep for 1ms to register a slow event.
 	_, err = c.Do("DEBUG", "SLEEP", 0.001)
-	if err != nil {
-		t.Errorf("TestLatency failed during DEBUG SLEEP 0.001 with error " + err.Error())
-		return
-	}
-
+	require.NoError(t, err, "TestLatency failed during DEBUG SLEEP 0.001")
 	result, err = c.Do("LATENCY", "LATEST")
-	if err != nil {
-		t.Errorf("TestLatency failed during LATENCY LATEST with error " + err.Error())
-		return
-	}
+	require.NoError(t, err, "TestLatency failed during LATENCY LATEST")
 	latestLatencies, err := redis.Latencies(result, err)
-	if err != nil {
-		t.Errorf("TestLatency failed during redis.Latencies with error " + err.Error())
-		return
-	}
-	latencyEvent := latestLatencies[0]
-	if len(latestLatencies) != 1 ||
-		latencyEvent.Event != "command" ||
-		latencyEvent.LatestExecutionTime != time.Millisecond ||
-		latencyEvent.MaxExecutionTime != time.Millisecond {
-		t.Errorf("%s=%+v, want %+v", "TestLatency test failed : ",
-			fmt.Sprint(len(latestLatencies))+" "+fmt.Sprint(latencyEvent.Event)+" "+fmt.Sprint(latencyEvent.LatestExecutionTime)+" "+fmt.Sprint(latencyEvent.MaxExecutionTime), "1 command 1ms 1ms")
-	}
+	require.NoError(t, err, "TestLatency failed during redis.Latencies")
 
-	// reset the old configuration after test
+	require.Equal(t, 1, len(latestLatencies))
+	latencyEvent := latestLatencies[0]
+	require.Equal(t, "command", latencyEvent.EventType)
+	require.Equal(t, time.Millisecond, latencyEvent.Latest)
+	require.Equal(t, time.Millisecond, latencyEvent.Max)
+
+	// reset the old configuration after test.
 	result, err = c.Do("CONFIG", "SET", "latency-monitor-threshold", latencyMonitorThresholdOldCfg)
-	if err != nil && result != "OK" {
-		t.Errorf("TestLatency failed during CONFIG SET with error " + err.Error())
-		return
-	}
+	require.NoError(t, err)
+	require.Equal(t, "OK", result, "TestLatency failed during CONFIG SET")
 }
 
 func TestLatencyHistories(t *testing.T) {
 	c, err := dial()
-	if err != nil {
-		t.Errorf("TestLatencyHistories failed during dial with error " + err.Error())
-		return
-	}
+	require.NoError(t, err, "TestLatencyHistories failed during dial")
 	defer c.Close()
 
 	resultStr, err := redis.Strings(c.Do("CONFIG", "GET", "latency-monitor-threshold"))
-	if err != nil {
-		t.Errorf("TestLatencyHistories failed during CONFIG GET latency-monitor-threshold with error " + err.Error())
-		return
-	}
-	// in case of older verion < 2.8.13 where LATENCY command is not supported
-	// don't run the test
+	require.NoError(t, err, "TestLatencyHistories failed during CONFIG GET latency-monitor-threshold")
+	// LATENCY commands were added in 2.8.13 so might not be supported.
 	if len(resultStr) == 0 {
-		return
+		t.Skip("Latency commands not supported")
 	}
 	latencyMonitorThresholdOldCfg, err := strconv.Atoi(resultStr[1])
-	if err != nil {
-		t.Errorf("TestLatencyHistories failed during strconv.Atoi with error " + err.Error())
-		return
-	}
+	require.NoError(t, err, "TestLatencyHistories failed during strconv.Atoi")
 	// Enable latency monitoring for events that take 1ms or longer
 	result, err := c.Do("CONFIG", "SET", "latency-monitor-threshold", "1")
-	if err != nil && result != "OK" {
-		t.Errorf("TestLatencyHistories failed during CONFIG SET with error " + err.Error())
-		return
-	}
+	require.NoError(t, err)
+	require.Equal(t, "OK", result)
+
 	// Sleep for 1ms to register a slow event
 	_, err = c.Do("DEBUG", "SLEEP", 0.001)
-	if err != nil {
-		t.Errorf("TestLatencyHistories failed during DEBUG SLEEP 0.001 with error " + err.Error())
-		return
-	}
+	require.NoError(t, err, "TestLatencyHistories failed during DEBUG SLEEP 0.001")
 
 	result, err = c.Do("LATENCY", "HISTORY", "command")
-	if err != nil {
-		t.Errorf("TestLatencyHistories failed during LATENCY HISTORY command with error " + err.Error())
-		return
-	}
+	require.NoError(t, err, "TestLatencyHistories failed during LATENCY HISTORY command")
 	latencyHistory, err := redis.LatencyHistories(result, err)
-	if err != nil {
-		t.Errorf("TestLatencyHistories failed during redis.LatencyHistories with error " + err.Error())
-		return
-	}
+	require.NoError(t, err, "TestLatencyHistories failed during redis.LatencyHistories")
+
+	require.Len(t, latencyHistory, 1)
 	latencyEvent := latencyHistory[0]
-	if len(latencyHistory) != 1 ||
-		latencyEvent.ExecutionTime != time.Millisecond {
-		t.Errorf("%s=%+v, want %+v", "TestLatencyHistories test failed : ",
-			fmt.Sprint(len(latencyHistory))+" "+fmt.Sprint(latencyEvent.ExecutionTime), "1 1ms")
-	}
+	require.Equal(t, time.Millisecond, latencyEvent.ExecutionTime)
 
 	// reset the old configuration after test
 	result, err = c.Do("CONFIG", "SET", "latency-monitor-threshold", latencyMonitorThresholdOldCfg)
-	if err != nil && result != "OK" {
-		t.Errorf("TestLatencyHistories failed during CONFIG SET with error " + err.Error())
-		return
-	}
+	require.NoError(t, err)
+	require.Equal(t, "OK", result, "TestLatencyHistories failed during CONFIG SET")
 }
 
 // dial wraps DialDefaultServer() with a more suitable function name for examples.

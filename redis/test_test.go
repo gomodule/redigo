@@ -39,7 +39,7 @@ var (
 
 	serverPath     = flag.String("redis-server", "redis-server", "Path to redis server binary")
 	serverAddress  = flag.String("redis-address", "127.0.0.1", "The address of the server")
-	serverBasePort = flag.Int("redis-port", 16379, "Beginning of port range for test servers")
+	serverBasePort = flag.Int("redis-port", 16112, "Beginning of port range for test servers")
 	serverLogName  = flag.String("redis-log", "", "Write Redis server logs to `filename`")
 	serverLog      = ioutil.Discard
 
