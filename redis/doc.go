@@ -142,8 +142,8 @@
 //
 // Reply Helpers
 //
-// The Bool, Int, Bytes, String, Strings and Values functions convert a reply
-// to a value of a specific type. To allow convenient wrapping of calls to the
+// The Bool, Int, Bytes, String, Strings, Values, Map and Entries functions convert
+// a reply to a value of a specific type. To allow convenient wrapping of calls to the
 // connection Do and Receive methods, the functions take a second argument of
 // type error.  If the error is non-nil, then the helper function returns the
 // error. If the error is nil, the function converts the reply to the specified

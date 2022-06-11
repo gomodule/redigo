@@ -187,3 +187,9 @@ type SlowLog struct {
 	// ClientName is the name set via the CLIENT SETNAME command (4.0 only).
 	ClientName string
 }
+
+// Entry represents a single stream entry.
+type Entry struct {
+	ID     string
+	Fields map[string]string
+}

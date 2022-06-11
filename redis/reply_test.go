@@ -148,6 +148,27 @@ var replyTests = []struct {
 		ve(getSlowLog()),
 		ve(redis.SlowLog{ID: 1, Time: time.Unix(1579625870, 0), ExecutionTime: time.Duration(3) * time.Microsecond, Args: []string{"set", "x", "y"}, ClientAddr: "localhost:1234", ClientName: "testClient"}, nil),
 	},
+	{
+		"[Entry(0-1, name, Anna), Entry(1-1, name, Bruce)]",
+		ve(redis.Entries([]interface{}{
+			[]interface{}{[]byte("0-1"), []interface{}{[]byte("name"), []byte("Anna")}},
+			[]interface{}{[]byte("1-1"), []interface{}{[]byte("name"), []byte("Bruce")}},
+		}, nil)),
+		ve([]redis.Entry{
+			{
+				ID: "0-1",
+				Fields: map[string]string{
+					"name": "Anna",
+				},
+			},
+			{
+				ID: "1-1",
+				Fields: map[string]string{
+					"name": "Bruce",
+				},
+			},
+		}, nil),
+	},
 }
 
 func getSlowLog() (redis.SlowLog, error) {
@@ -222,6 +243,59 @@ func TestSlowLog(t *testing.T) {
 	if err != nil && result != "OK" {
 		t.Errorf("TestSlowLog failed during CONFIG SET with error " + err.Error())
 		return
+	}
+}
+
+func TestEntries(t *testing.T) {
+	c, err := dial()
+	if err != nil {
+		t.Errorf("Failed during dial with error " + err.Error())
+		return
+	}
+	defer c.Close()
+
+	resultStr, err := redis.Strings(c.Do("CONFIG", "GET", "stream-node-max-entries"))
+	if err != nil {
+		t.Errorf("Failed during CONFIG GET stream-node-max-entries with error " + err.Error())
+		return
+	}
+	// in case of older verion < 5.0 where streams are not supported don't run the test
+	if len(resultStr) == 0 {
+		t.Skip("Skipped, stream feature not supported")
+	}
+
+	n := 3
+	for i := 0; i < n; i++ {
+		_, err = redis.String(c.Do("XADD", "teststream", fmt.Sprintf("0-%d", i+1), "index", fmt.Sprintf("%d", i)))
+		if err != nil {
+			t.Errorf("Failed during XADD with error " + err.Error())
+			return
+		}
+	}
+
+	entries, err := redis.Entries(c.Do("XRANGE", "teststream", "-", "+"))
+	if err != nil {
+		t.Errorf("Failed during XRANGE with error " + err.Error())
+		return
+	}
+	if len(entries) != n {
+		t.Errorf("Expected %d entries in result, got %d", n, len(entries))
+		return
+	}
+	for i, entry := range entries {
+		expectedID := fmt.Sprintf("0-%d", i+1)
+		expectedFields := map[string]string{
+			"index": fmt.Sprintf("%d", i),
+		}
+
+		if entry.ID != expectedID {
+			t.Errorf("Expected entry ID to equal %s, got %s", expectedID, entry.ID)
+			return
+		}
+		if !reflect.DeepEqual(expectedFields, entry.Fields) {
+			t.Errorf("Expected entry to have fields %v, got %v", expectedFields, entry.Fields)
+			return
+		}
 	}
 }
 
