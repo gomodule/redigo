@@ -139,6 +139,11 @@ var replyTests = []struct {
 		ve(uint64(0), redis.ErrNegativeInt(-1)),
 	},
 	{
+		"valueMap([[]byte, []byte])",
+		ve(redis.ValueMap([]interface{}{[]byte("key1"), []byte("v1"), []byte("key2"), []byte("v2")}, nil)),
+		ve(map[string]interface{}{"key1": []byte("v1"), "key2": []byte("v2")}, nil),
+	},
+	{
 		"positions([[1, 2], nil, [3, 4]])",
 		ve(redis.Positions([]interface{}{[]interface{}{[]byte("1"), []byte("2")}, nil, []interface{}{[]byte("3"), []byte("4")}}, nil)),
 		ve([]*[2]float64{{1.0, 2.0}, nil, {3.0, 4.0}}, nil),

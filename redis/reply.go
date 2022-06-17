@@ -504,6 +504,22 @@ func Float64Map(result interface{}, err error) (map[string]float64, error) {
 	return m, err
 }
 
+// ValueMap is a helper that converts an array of strings (alternating key, value)
+// into a map[string]interface{}. The HGETALL commands return replies in this format.
+// Requires an even interface{} of values in result.
+func ValueMap(result interface{}, err error) (map[string]interface{}, error) {
+	var m map[string]interface{}
+	err = mapHelper(result, err, "ValueMap",
+		func(n int) {
+			m = make(map[string]interface{}, n)
+		}, func(key string, v interface{}) error {
+			m[key] = v
+			return nil
+		},
+	)
+	return m, err
+}
+
 // Positions is a helper that converts an array of positions (lat, long)
 // into a [][2]float64. The GEOPOS command returns replies in this format.
 func Positions(result interface{}, err error) ([]*[2]float64, error) {
