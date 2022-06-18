@@ -242,7 +242,12 @@ func TestLatency(t *testing.T) {
 	// Enable latency monitoring for events that take 1ms or longer.
 	result, err := c.Do("CONFIG", "SET", "latency-monitor-threshold", "1")
 	// reset the old configuration after test.
-	defer c.Do("CONFIG", "SET", "latency-monitor-threshold", latencyMonitorThresholdOldCfg)
+	defer func() {
+		res, err := c.Do("CONFIG", "SET", "latency-monitor-threshold", latencyMonitorThresholdOldCfg)
+		require.NoError(t, err)
+		require.Equal(t, "OK", res)
+	}()
+
 	require.NoError(t, err)
 	require.Equal(t, "OK", result)
 
@@ -275,7 +280,7 @@ func TestLatencyHistories(t *testing.T) {
 
 	res, err := redis.Strings(c.Do("CONFIG", "GET", "latency-monitor-threshold"))
 	require.NoError(t, err)
-	
+
 	// LATENCY commands were added in 2.8.13 so might not be supported.
 	if len(res) == 0 {
 		t.Skip("Latency commands not supported")
@@ -286,7 +291,11 @@ func TestLatencyHistories(t *testing.T) {
 	// Enable latency monitoring for events that take 1ms or longer
 	result, err := c.Do("CONFIG", "SET", "latency-monitor-threshold", "1")
 	// reset the old configuration after test.
-	defer c.Do("CONFIG", "SET", "latency-monitor-threshold", latencyMonitorThresholdOldCfg)
+	defer func() {
+		res, err := c.Do("CONFIG", "SET", "latency-monitor-threshold", latencyMonitorThresholdOldCfg)
+		require.NoError(t, err)
+		require.Equal(t, "OK", res)
+	}()
 	require.NoError(t, err)
 	require.Equal(t, "OK", result)
 
