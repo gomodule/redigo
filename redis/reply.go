@@ -653,6 +653,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	latencies := make([]Latency, len(rawLatencies))
 	for i, e := range rawLatencies {
 		rawLatency, ok := e.([]interface{})
@@ -665,7 +666,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 			return nil, fmt.Errorf("redigo: LATENCY LATEST element has %d elements, expected 4", len(rawLatency))
 		}
 
-		event.EventType, err = String(rawLatency[0], nil)
+		event.Name, err = String(rawLatency[0], nil)
 		if err != nil {
 			return nil, fmt.Errorf("redigo: LATENCY LATEST element[0] is not a string: %w", err)
 		}
@@ -693,6 +694,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 
 		latencies[i] = event
 	}
+
 	return latencies, nil
 }
 
@@ -703,6 +705,7 @@ func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	latencyHistories := make([]LatencyHistory, len(rawLogs))
 	for i, e := range rawLogs {
 		rawLog, ok := e.([]interface{})
@@ -711,7 +714,6 @@ func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 		}
 
 		var event LatencyHistory
-
 		timestamp, ok := rawLog[0].(int64)
 		if !ok {
 			return nil, fmt.Errorf("redigo: LATENCY HISTORY element[0] not an int64, got %T", rawLog[0])
@@ -728,5 +730,6 @@ func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 
 		latencyHistories[i] = event
 	}
+
 	return latencyHistories, nil
 }

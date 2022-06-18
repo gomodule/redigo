@@ -190,8 +190,8 @@ type SlowLog struct {
 
 // Latency represents a redis LATENCY LATEST.
 type Latency struct {
-	// Latency event type.
-	EventType string
+	// Name of the latest latency spike event.
+	Name string
 
 	// Time of the latest latency spike for the event.
 	Time time.Time
