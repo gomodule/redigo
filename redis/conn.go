@@ -246,7 +246,7 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 		if do.tlsConfig == nil {
 			tlsConfig = &tls.Config{InsecureSkipVerify: do.skipVerify}
 		} else {
-			tlsConfig = cloneTLSConfig(do.tlsConfig)
+			tlsConfig = do.tlsConfig.Clone()
 		}
 		if tlsConfig.ServerName == "" {
 			host, _, err := net.SplitHostPort(address)
