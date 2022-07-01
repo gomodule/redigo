@@ -233,12 +233,15 @@ type s1 struct {
 	Sdp *durationScan `redis:"sdp"`
 }
 
-var boolTrue = true
+var (
+	boolTrue = true
+	int5     = 5
+)
 
 var scanStructTests = []struct {
-	title string
-	reply []string
-	value interface{}
+	name     string
+	reply    []string
+	expected interface{}
 }{
 	{"basic",
 		[]string{
@@ -273,25 +276,54 @@ var scanStructTests = []struct {
 		[]string{},
 		&s1{},
 	},
+	{"struct-anonymous-nil",
+		[]string{"edi", "2"},
+		&struct {
+			Ed
+			*Edp
+		}{
+			Ed: Ed{EdI: 2},
+		},
+	},
+	{"struct-anonymous-multi-nil-early",
+		[]string{"edi", "2"},
+		&struct {
+			Ed
+			*Ed2
+		}{
+			Ed: Ed{EdI: 2},
+		},
+	},
+	{"struct-anonymous-multi-nil-late",
+		[]string{"edi", "2", "ed2i", "3", "edp2i", "4"},
+		&struct {
+			Ed
+			*Ed2
+		}{
+			Ed: Ed{EdI: 2},
+			Ed2: &Ed2{
+				Ed2I: 3,
+				Edp2: &Edp2{
+					Edp2I: 4,
+				},
+			},
+		},
+	},
 }
 
 func TestScanStruct(t *testing.T) {
 	for _, tt := range scanStructTests {
+		t.Run(tt.name, func(t *testing.T) {
+			reply := make([]interface{}, len(tt.reply))
+			for i, v := range tt.reply {
+				reply[i] = []byte(v)
+			}
 
-		var reply []interface{}
-		for _, v := range tt.reply {
-			reply = append(reply, []byte(v))
-		}
-
-		value := reflect.New(reflect.ValueOf(tt.value).Type().Elem())
-
-		if err := redis.ScanStruct(reply, value.Interface()); err != nil {
-			t.Fatalf("ScanStruct(%s) returned error %v", tt.title, err)
-		}
-
-		if !reflect.DeepEqual(value.Interface(), tt.value) {
-			t.Fatalf("ScanStruct(%s) returned %v, want %v", tt.title, value.Interface(), tt.value)
-		}
+			value := reflect.New(reflect.ValueOf(tt.expected).Type().Elem()).Interface()
+			err := redis.ScanStruct(reply, value)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, value)
+		})
 	}
 }
 
@@ -486,6 +518,16 @@ type Edp struct {
 	EdpI int `redis:"edpi"`
 }
 
+type Ed2 struct {
+	Ed2I int `redis:"ed2i"`
+	*Edp2
+}
+
+type Edp2 struct {
+	Edp2I int `redis:"edp2i"`
+	*Edp
+}
+
 var argsTests = []struct {
 	title    string
 	actual   redis.Args
@@ -493,19 +535,20 @@ var argsTests = []struct {
 }{
 	{"struct-ptr",
 		redis.Args{}.AddFlat(&struct {
-			I    int               `redis:"i"`
-			U    uint              `redis:"u"`
-			S    string            `redis:"s"`
-			P    []byte            `redis:"p"`
-			M    map[string]string `redis:"m"`
-			Bt   bool
-			Bf   bool
-			PtrB *bool
-			PtrI *int
+			I     int               `redis:"i"`
+			U     uint              `redis:"u"`
+			S     string            `redis:"s"`
+			P     []byte            `redis:"p"`
+			M     map[string]string `redis:"m"`
+			Bt    bool
+			Bf    bool
+			PtrB  *bool
+			PtrI  *int
+			PtrI2 *int
 		}{
-			-1234, 5678, "hello", []byte("world"), map[string]string{"hello": "world"}, true, false, &boolTrue, nil,
+			-1234, 5678, "hello", []byte("world"), map[string]string{"hello": "world"}, true, false, &boolTrue, nil, &int5,
 		}),
-		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "m", map[string]string{"hello": "world"}, "Bt", true, "Bf", false, "PtrB", true},
+		redis.Args{"i", int(-1234), "u", uint(5678), "s", "hello", "p", []byte("world"), "m", map[string]string{"hello": "world"}, "Bt", true, "Bf", false, "PtrB", true, "PtrI2", 5},
 	},
 	{"struct",
 		redis.Args{}.AddFlat(struct{ I int }{123}),
@@ -545,14 +588,45 @@ var argsTests = []struct {
 		}),
 		redis.Args{"edi", 2, "edpi", 3},
 	},
+	{"struct-anonymous-nil",
+		redis.Args{}.AddFlat(struct {
+			Ed
+			*Edp
+		}{
+			Ed: Ed{EdI: 2},
+		}),
+		redis.Args{"edi", 2},
+	},
+	{"struct-anonymous-multi-nil-early",
+		redis.Args{}.AddFlat(struct {
+			Ed
+			*Ed2
+		}{
+			Ed: Ed{EdI: 2},
+		}),
+		redis.Args{"edi", 2},
+	},
+	{"struct-anonymous-multi-nil-late",
+		redis.Args{}.AddFlat(struct {
+			Ed
+			*Ed2
+		}{
+			Ed: Ed{EdI: 2},
+			Ed2: &Ed2{
+				Ed2I: 3,
+				Edp2: &Edp2{
+					Edp2I: 4,
+				},
+			},
+		}),
+		redis.Args{"edi", 2, "ed2i", 3, "edp2i", 4},
+	},
 }
 
 func TestArgs(t *testing.T) {
 	for _, tt := range argsTests {
 		t.Run(tt.title, func(t *testing.T) {
-			if !reflect.DeepEqual(tt.actual, tt.expected) {
-				t.Fatalf("is %v, want %v", tt.actual, tt.expected)
-			}
+			require.Equal(t, tt.expected, tt.actual)
 		})
 	}
 }

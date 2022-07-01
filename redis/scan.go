@@ -376,9 +376,7 @@ LOOP:
 			fs := &fieldSpec{name: f.Name}
 			tag := f.Tag.Get("redis")
 
-			var (
-				p string
-			)
+			var p string
 			first := true
 			for len(tag) > 0 {
 				i := strings.IndexByte(tag, ',')
@@ -402,10 +400,12 @@ LOOP:
 					}
 				}
 			}
+
 			d, found := depth[fs.name]
 			if !found {
 				d = 1 << 30
 			}
+
 			switch {
 			case len(index) == d:
 				// At same depth, remove from result.
@@ -436,7 +436,6 @@ var (
 )
 
 func structSpecForType(t reflect.Type) *structSpec {
-
 	structSpecMutex.RLock()
 	ss, found := structSpecCache[t]
 	structSpecMutex.RUnlock()
@@ -480,30 +479,34 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 	if d.Kind() != reflect.Ptr || d.IsNil() {
 		return errScanStructValue
 	}
+
 	d = d.Elem()
 	if d.Kind() != reflect.Struct {
 		return errScanStructValue
 	}
-	ss := structSpecForType(d.Type())
 
 	if len(src)%2 != 0 {
 		return errors.New("redigo.ScanStruct: number of values not a multiple of 2")
 	}
 
+	ss := structSpecForType(d.Type())
 	for i := 0; i < len(src); i += 2 {
 		s := src[i+1]
 		if s == nil {
 			continue
 		}
+
 		name, ok := src[i].([]byte)
 		if !ok {
 			return fmt.Errorf("redigo.ScanStruct: key %d not a bulk string value", i)
 		}
+
 		fs := ss.fieldSpec(name)
 		if fs == nil {
 			continue
 		}
-		if err := convertAssignValue(d.FieldByIndex(fs.index), s); err != nil {
+
+		if err := convertAssignValue(fieldByIndexCreate(d, fs.index), s); err != nil {
 			return fmt.Errorf("redigo.ScanStruct: cannot assign field %s: %v", fs.name, err)
 		}
 	}
@@ -648,7 +651,11 @@ func (args Args) AddFlat(v interface{}) Args {
 func flattenStruct(args Args, v reflect.Value) Args {
 	ss := structSpecForType(v.Type())
 	for _, fs := range ss.l {
-		fv := v.FieldByIndex(fs.index)
+		fv, err := fieldByIndexErr(v, fs.index)
+		if err != nil {
+			// Nil item ignore.
+			continue
+		}
 		if fs.omitEmpty {
 			var empty = false
 			switch fv.Kind() {

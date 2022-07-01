@@ -1,7 +1,6 @@
 Redigo
 ======
 
-[![Build Status](https://travis-ci.org/gomodule/redigo.svg?branch=master)](https://travis-ci.org/gomodule/redigo)
 [![GoDoc](https://godoc.org/github.com/gomodule/redigo/redis?status.svg)](https://pkg.go.dev/github.com/gomodule/redigo/redis)
 
 Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) database.
