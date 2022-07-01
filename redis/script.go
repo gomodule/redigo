@@ -79,7 +79,7 @@ func (s *Script) DoContext(ctx context.Context, c Conn, keysAndArgs ...interface
 // causing the script to load).
 func (s *Script) Do(c Conn, keysAndArgs ...interface{}) (interface{}, error) {
 	v, err := c.Do("EVALSHA", s.args(s.hash, keysAndArgs)...)
-	if e, ok := err.(Error); ok && strings.HasPrefix(string(e), "NOSCRIPT ") {
+	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT ") {
 		v, err = c.Do("EVAL", s.args(s.src, keysAndArgs)...)
 	}
 	return v, err
