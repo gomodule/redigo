@@ -723,7 +723,7 @@ func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 
 		duration, ok := rawLog[1].(int64)
 		if !ok {
-			return nil, fmt.Errorf("redigo: LATENCY HISTORY element[1] not an int64, got %T", rawLog[1])
+			return nil, fmt.Errorf("redigo: latency history element[1] not an int64, got %T", rawLog[1])
 		}
 
 		event.ExecutionTime = time.Duration(duration) * time.Millisecond
