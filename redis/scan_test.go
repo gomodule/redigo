@@ -309,6 +309,20 @@ var scanStructTests = []struct {
 			},
 		},
 	},
+	{"struct-recursive-ptr",
+		[]string{"edpr1i", "1", "edpr2i", "2"},
+		&struct {
+			Edpr1
+		}{
+			Edpr1: Edpr1{
+				Edpr1I: 1,
+				Edpr2: &Edpr2{
+					Edpr2I: 2,
+					Edpr1:  nil, // Recursion should have been prevented so this should be null
+				},
+			},
+		},
+	},
 }
 
 func TestScanStruct(t *testing.T) {
@@ -528,6 +542,16 @@ type Edp2 struct {
 	*Edp
 }
 
+type Edpr1 struct {
+	Edpr1I int `redis:"edpr1i"`
+	*Edpr2
+}
+
+type Edpr2 struct {
+	Edpr2I int `redis:"edpr2i"`
+	*Edpr1
+}
+
 var argsTests = []struct {
 	title    string
 	actual   redis.Args
@@ -620,6 +644,22 @@ var argsTests = []struct {
 			},
 		}),
 		redis.Args{"edi", 2, "ed2i", 3, "edp2i", 4},
+	},
+	{"struct-recursive-ptr",
+		redis.Args{}.AddFlat(struct {
+			Edpr1
+		}{
+			Edpr1: Edpr1{
+				Edpr1I: 1,
+				Edpr2: &Edpr2{
+					Edpr2I: 2,
+					Edpr1: &Edpr1{
+						Edpr1I: 10, // This should be ignored as recursive
+					},
+				},
+			},
+		}),
+		redis.Args{"edpr1i", 1, "edpr2i", 2},
 	},
 }
 

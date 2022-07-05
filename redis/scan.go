@@ -355,7 +355,8 @@ func (ss *structSpec) fieldSpec(name []byte) *fieldSpec {
 	return ss.m[string(name)]
 }
 
-func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *structSpec) {
+func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *structSpec, seen map[reflect.Type]struct{}) {
+	seen[t] = struct{}{}
 LOOP:
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -365,11 +366,13 @@ LOOP:
 		case f.Anonymous:
 			switch f.Type.Kind() {
 			case reflect.Struct:
-				compileStructSpec(f.Type, depth, append(index, i), ss)
+				compileStructSpec(f.Type, depth, append(index, i), ss, seen)
 			case reflect.Ptr:
-				// TODO(steve): Protect against infinite recursion.
-				if f.Type.Elem().Kind() == reflect.Struct {
-					compileStructSpec(f.Type.Elem(), depth, append(index, i), ss)
+				fTypeElem := f.Type.Elem()
+				if fTypeElem.Kind() == reflect.Struct {
+					if _, willLoop := seen[fTypeElem]; !willLoop {
+						compileStructSpec(fTypeElem, depth, append(index, i), ss, seen)
+					}
 				}
 			}
 		default:
@@ -451,7 +454,7 @@ func structSpecForType(t reflect.Type) *structSpec {
 	}
 
 	ss = &structSpec{m: make(map[string]*fieldSpec)}
-	compileStructSpec(t, make(map[string]int), nil, ss)
+	compileStructSpec(t, make(map[string]int), nil, ss, make(map[reflect.Type]struct{}))
 	structSpecCache[t] = ss
 	return ss
 }
