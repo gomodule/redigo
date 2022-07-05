@@ -355,7 +355,13 @@ func (ss *structSpec) fieldSpec(name []byte) *fieldSpec {
 	return ss.m[string(name)]
 }
 
-func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *structSpec) {
+func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *structSpec, seen map[reflect.Type]struct{}) error {
+	if _, ok := seen[t]; ok {
+		// Protect against infinite recursion.
+		return fmt.Errorf("recursive struct definition for %v", t)
+	}
+
+	seen[t] = struct{}{}
 LOOP:
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -365,11 +371,14 @@ LOOP:
 		case f.Anonymous:
 			switch f.Type.Kind() {
 			case reflect.Struct:
-				compileStructSpec(f.Type, depth, append(index, i), ss)
+				if err := compileStructSpec(f.Type, depth, append(index, i), ss, seen); err != nil {
+					return err
+				}
 			case reflect.Ptr:
-				// TODO(steve): Protect against infinite recursion.
 				if f.Type.Elem().Kind() == reflect.Struct {
-					compileStructSpec(f.Type.Elem(), depth, append(index, i), ss)
+					if err := compileStructSpec(f.Type.Elem(), depth, append(index, i), ss, seen); err != nil {
+						return err
+					}
 				}
 			}
 		default:
@@ -428,6 +437,8 @@ LOOP:
 			}
 		}
 	}
+
+	return nil
 }
 
 var (
@@ -435,25 +446,27 @@ var (
 	structSpecCache = make(map[reflect.Type]*structSpec)
 )
 
-func structSpecForType(t reflect.Type) *structSpec {
+func structSpecForType(t reflect.Type) (*structSpec, error) {
 	structSpecMutex.RLock()
 	ss, found := structSpecCache[t]
 	structSpecMutex.RUnlock()
 	if found {
-		return ss
+		return ss, nil
 	}
 
 	structSpecMutex.Lock()
 	defer structSpecMutex.Unlock()
 	ss, found = structSpecCache[t]
 	if found {
-		return ss
+		return ss, nil
 	}
 
 	ss = &structSpec{m: make(map[string]*fieldSpec)}
-	compileStructSpec(t, make(map[string]int), nil, ss)
+	if err := compileStructSpec(t, make(map[string]int), nil, ss, make(map[reflect.Type]struct{})); err != nil {
+		return nil, fmt.Errorf("compile struct: %s: %w", t, err)
+	}
 	structSpecCache[t] = ss
-	return ss
+	return ss, nil
 }
 
 var errScanStructValue = errors.New("redigo.ScanStruct: value must be non-nil pointer to a struct")
@@ -489,7 +502,11 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 		return errors.New("redigo.ScanStruct: number of values not a multiple of 2")
 	}
 
-	ss := structSpecForType(d.Type())
+	ss, err := structSpecForType(d.Type())
+	if err != nil {
+		return fmt.Errorf("redigo.ScanStruct: %w", err)
+	}
+
 	for i := 0; i < len(src); i += 2 {
 		s := src[i+1]
 		if s == nil {
@@ -558,7 +575,11 @@ func ScanSlice(src []interface{}, dest interface{}, fieldNames ...string) error 
 		return nil
 	}
 
-	ss := structSpecForType(t)
+	ss, err := structSpecForType(t)
+	if err != nil {
+		return fmt.Errorf("redigo.ScanSlice: %w", err)
+	}
+
 	fss := ss.l
 	if len(fieldNames) > 0 {
 		fss = make([]*fieldSpec, len(fieldNames))
@@ -621,6 +642,7 @@ func (args Args) Add(value ...interface{}) Args {
 // for more information on the use of the 'redis' field tag.
 //
 // Other types are appended to args as is.
+// panics if v includes a recursive anonymous struct.
 func (args Args) AddFlat(v interface{}) Args {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
@@ -649,7 +671,11 @@ func (args Args) AddFlat(v interface{}) Args {
 }
 
 func flattenStruct(args Args, v reflect.Value) Args {
-	ss := structSpecForType(v.Type())
+	ss, err := structSpecForType(v.Type())
+	if err != nil {
+		panic(fmt.Errorf("redigo.AddFlat: %w", err))
+	}
+
 	for _, fs := range ss.l {
 		fv, err := fieldByIndexErr(v, fs.index)
 		if err != nil {
