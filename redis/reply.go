@@ -673,7 +673,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 
 		timestamp, ok := rawLatency[1].(int64)
 		if !ok {
-			return nil, fmt.Errorf("redigo: LATENCY LATEST element[1] not an int64, got %T", rawLatency[1])
+			return nil, fmt.Errorf("redigo: latencies element[1] not an int64, got %T", rawLatency[1])
 		}
 
 		event.Time = time.Unix(timestamp, 0)
