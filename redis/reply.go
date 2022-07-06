@@ -699,7 +699,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 }
 
 // LatencyHistories is a helper that parse the LATENCY HISTORY command output and
-// return the array of LatencyHistory.
+// returns a LatencyHistory slice.
 func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 	rawLogs, err := Values(result, err)
 	if err != nil {
