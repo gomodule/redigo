@@ -680,7 +680,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 
 		latestDuration, ok := rawLatency[2].(int64)
 		if !ok {
-			return nil, fmt.Errorf("redigo: LATENCY LATEST element[2] not an int64, got %T", rawLatency[2])
+			return nil, fmt.Errorf("redigo: latencies element[2] not an int64, got %T", rawLatency[2])
 		}
 
 		event.Latest = time.Duration(latestDuration) * time.Millisecond
