@@ -663,7 +663,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 
 		var event Latency
 		if len(rawLatency) != 4 {
-			return nil, fmt.Errorf("redigo: LATENCY LATEST element has %d elements, expected 4", len(rawLatency))
+			return nil, fmt.Errorf("redigo: latencies element has %d elements, expected 4", len(rawLatency))
 		}
 
 		event.Name, err = String(rawLatency[0], nil)
