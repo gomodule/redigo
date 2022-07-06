@@ -187,3 +187,27 @@ type SlowLog struct {
 	// ClientName is the name set via the CLIENT SETNAME command (4.0 only).
 	ClientName string
 }
+
+// Latency represents a redis LATENCY LATEST.
+type Latency struct {
+	// Name of the latest latency spike event.
+	Name string
+
+	// Time of the latest latency spike for the event.
+	Time time.Time
+
+	// Latest is the latest recorded latency for the named event.
+	Latest time.Duration
+
+	// Max is the maximum latency for the named event.
+	Max time.Duration
+}
+
+// LatencyHistory represents a redis LATENCY HISTORY.
+type LatencyHistory struct {
+	// Time is the unix timestamp at which the event was processed.
+	Time time.Time
+
+	// ExecutationTime is the amount of time needed for the command execution.
+	ExecutionTime time.Duration
+}
