@@ -710,7 +710,7 @@ func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 	for i, e := range rawLogs {
 		rawLog, ok := e.([]interface{})
 		if !ok {
-			return nil, fmt.Errorf("LATENCY HISTORY: latencyHistory element is not an array, got %T", e)
+			return nil, fmt.Errorf("redigo: latency history element is not an slice, got %T", e)
 		}
 
 		var event LatencyHistory
