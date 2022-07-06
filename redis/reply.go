@@ -716,7 +716,7 @@ func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 		var event LatencyHistory
 		timestamp, ok := rawLog[0].(int64)
 		if !ok {
-			return nil, fmt.Errorf("redigo: LATENCY HISTORY element[0] not an int64, got %T", rawLog[0])
+			return nil, fmt.Errorf("redigo: latency history element[0] not an int64, got %T", rawLog[0])
 		}
 
 		event.Time = time.Unix(timestamp, 0)
