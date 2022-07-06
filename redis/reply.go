@@ -658,7 +658,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 	for i, e := range rawLatencies {
 		rawLatency, ok := e.([]interface{})
 		if !ok {
-			return nil, fmt.Errorf("redigo: rawLatency element is not an array, got %T", e)
+			return nil, fmt.Errorf("redigo: latencies element is not slice, got %T", e)
 		}
 
 		var event Latency
