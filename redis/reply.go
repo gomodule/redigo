@@ -668,7 +668,7 @@ func Latencies(result interface{}, err error) ([]Latency, error) {
 
 		event.Name, err = String(rawLatency[0], nil)
 		if err != nil {
-			return nil, fmt.Errorf("redigo: LATENCY LATEST element[0] is not a string: %w", err)
+			return nil, fmt.Errorf("redigo: latencies element[0] is not a string: %w", err)
 		}
 
 		timestamp, ok := rawLatency[1].(int64)
