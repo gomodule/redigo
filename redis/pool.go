@@ -264,6 +264,22 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 	return &activeConn{p: p, pc: &poolConn{c: c, created: nowFunc()}}, nil
 }
 
+// GetWithContext gets a connection-with-context using the provided context.
+//
+// The provided Context must be non-nil. If the context expires before the
+// connection is complete, an error is returned. Any expiration on the context
+// will not affect the returned connection.
+//
+// If the function completes without error, then the application must close the
+// returned connection.
+func (p *Pool) GetWithContext(ctx context.Context) (ConnWithContext, error) {
+	if conn, err := p.GetContext(ctx); err != nil {
+		return nil, err
+	} else {
+		return conn.(ConnWithContext), nil // struct behind is activeConn, it implements ConnWithContext.
+	}
+}
+
 // PoolStats contains pool statistics.
 type PoolStats struct {
 	// ActiveCount is the number of connections in the pool. The count includes
