@@ -23,6 +23,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"sync"
 	"os"
 	"reflect"
 	"strings"
@@ -479,22 +480,49 @@ func TestError(t *testing.T) {
 }
 
 func TestReadTimeout(t *testing.T) {
+	done := make(chan struct{})
+	errs := make(chan error, 2)
+	defer func() {
+		close(done)
+		for err := range errs {
+			require.NoError(t, err)
+		}
+	}()
+
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		close(errs)
+	}()
+
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.Listen returned %v", err)
 	}
 	defer l.Close()
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+
 		for {
 			c, err := l.Accept()
 			if err != nil {
 				return
 			}
+			wg.Add(1)
 			go func() {
-				time.Sleep(time.Second)
+				defer wg.Done()
+
+				to := time.NewTimer(time.Second)
+				defer to.Stop()
+				select {
+				case <-to.C:
+				case <-done:
+					return
+				}
 				_, err := c.Write([]byte("+OK\r\n"))
-				require.NoError(t, err)
+				errs <- err
 				c.Close()
 			}()
 		}
@@ -719,7 +747,7 @@ type blockedReader struct {
 
 func (b blockedReader) Read(p []byte) (n int, err error) {
 	<-b.ch
-	return 0, nil
+	return 0, io.EOF
 }
 
 func dialTestBlockedConn(ch chan struct{}, w io.Writer) redis.DialOption {

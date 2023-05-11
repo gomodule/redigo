@@ -16,7 +16,6 @@ package redis_test
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"math"
 	"reflect"
 	"strconv"
@@ -24,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -286,6 +286,10 @@ func TestLatencyHistories(t *testing.T) {
 		t.Skip("Latency commands not supported")
 	}
 	latencyMonitorThresholdOldCfg, err := strconv.Atoi(res[1])
+	require.NoError(t, err)
+
+	// Reset so we're compatible with -count=X
+	_, err = c.Do("LATENCY", "RESET", "command")
 	require.NoError(t, err)
 
 	// Enable latency monitoring for events that take 1ms or longer
