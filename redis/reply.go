@@ -421,12 +421,14 @@ func StringMap(reply interface{}, err error) (map[string]string, error) {
 		func(n int) {
 			result = make(map[string]string, n)
 		}, func(key string, v interface{}) error {
-			value, ok := v.([]byte)
-			if !ok {
+			switch value := v.(type) {
+			case []byte:
+				result[key] = string(value)
+			case []interface{}:
+				return nil
+			default:
 				return fmt.Errorf("redigo: StringMap for %q not a bulk string value, got %T", key, v)
 			}
-
-			result[key] = string(value)
 
 			return nil
 		},

@@ -426,3 +426,21 @@ func ExampleString() {
 	// Output:
 	// "world"
 }
+
+func ExampleStringMap() {
+	c, err := dial()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer c.Close()
+
+	s, err := redis.StringMap(c.Do("CONFIG", "GET", "*"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("%#v %#v\n", s["databases"], s["appendonly"])
+	// Output:
+	// "16" "no"
+}
