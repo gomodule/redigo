@@ -2,7 +2,7 @@ module github.com/gomodule/redigo
 
 go 1.16
 
-require github.com/stretchr/testify v1.7.0
+require github.com/stretchr/testify v1.8.4
 
 retract (
 	v2.0.0+incompatible // Old development version not maintained or published.
