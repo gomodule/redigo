@@ -54,7 +54,61 @@ type Server struct {
 	done chan struct{}
 }
 
+type Version struct {
+	major int
+	minor int
+	micro int
+}
+
+func GetRedisVersion() (*Version, error) {
+	out, err := exec.Command("redis-server", "--version").Output()
+	if err != nil {
+		return nil, err
+	}
+
+	version := ""
+	fields := strings.Fields(string(out))
+	for _, field := range fields {
+		if strings.HasPrefix(field, "v=") {
+			version = field[2:]
+			break
+		}
+	}
+	if version == "" {
+		return nil, errors.New("no version string")
+	}
+
+	values := [3]int{}
+	elems := strings.Split(version, ".")
+	for i, _ := range elems {
+		if i > 2 {
+			break
+		}
+		values[i], err = strconv.Atoi(elems[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	v := &Version{
+		major: values[0],
+		minor: values[1],
+		micro: values[2],
+	}
+
+	return v, nil
+}
+
 func NewServer(name string, args ...string) (*Server, error) {
+	version, err := GetRedisVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	if version.major >= 7 {
+		args = append(args, "--enable-debug-command", "local")
+	}
+
 	s := &Server{
 		name: name,
 		cmd:  exec.Command(*serverPath, args...),
