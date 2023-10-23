@@ -54,10 +54,10 @@ type Server struct {
 	done chan struct{}
 }
 
-type Version struct {
+type version struct {
 	major int
 	minor int
-	micro int
+	patch int
 }
 
 func GetRedisVersion() (*Version, error) {
