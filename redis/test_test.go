@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,19 +61,19 @@ type version struct {
 	patch int
 }
 
-func redisServerVersion() (*Version, error) {
+func redisServerVersion() (*version, error) {
 	out, err := exec.Command("redis-server", "--version").Output()
 	if err != nil {
 		return nil, fmt.Errorf("server version: %w", err)
 	}
 
+	ver := string(out)
 	re := regexp.MustCompile(`v=(\d+)\.(\d+)\.(\d+)`)
 	match := re.FindStringSubmatch(ver)
 	if len(match) != 4 {
 		return nil, fmt.Errorf("no server version found in %q", ver)
 	}
 
-	var err error
 	var v version
 	if v.major, err = strconv.Atoi(match[1]); err != nil {
 		return nil, fmt.Errorf("invalid major version %q", match[1])
