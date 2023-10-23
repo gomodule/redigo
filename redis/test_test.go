@@ -60,43 +60,33 @@ type version struct {
 	patch int
 }
 
-func GetRedisVersion() (*Version, error) {
+func redisServerVersion() (*Version, error) {
 	out, err := exec.Command("redis-server", "--version").Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("server version: %w", err)
 	}
 
-	version := ""
-	fields := strings.Fields(string(out))
-	for _, field := range fields {
-		if strings.HasPrefix(field, "v=") {
-			version = field[2:]
-			break
-		}
-	}
-	if version == "" {
-		return nil, errors.New("no version string")
+	re := regexp.MustCompile(`v=(\d+)\.(\d+)\.(\d+)`)
+	match := re.FindStringSubmatch(ver)
+	if len(match) != 4 {
+		return nil, fmt.Errorf("no server version found in %q", ver)
 	}
 
-	values := [3]int{}
-	elems := strings.Split(version, ".")
-	for i, _ := range elems {
-		if i > 2 {
-			break
-		}
-		values[i], err = strconv.Atoi(elems[i])
-		if err != nil {
-			return nil, err
-		}
+	var err error
+	var v version
+	if v.major, err = strconv.Atoi(match[1]); err != nil {
+		return nil, fmt.Errorf("invalid major version %q", match[1])
 	}
 
-	v := &Version{
-		major: values[0],
-		minor: values[1],
-		micro: values[2],
+	if v.minor, err = strconv.Atoi(match[1]); err != nil {
+		return nil, fmt.Errorf("invalid minor version %q", match[2])
 	}
 
-	return v, nil
+	if v.patch, err = strconv.Atoi(match[1]); err != nil {
+		return nil, fmt.Errorf("invalid patch version %q", match[3])
+	}
+
+	return &v, nil
 }
 
 func NewServer(name string, args ...string) (*Server, error) {
