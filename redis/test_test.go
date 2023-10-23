@@ -90,7 +90,7 @@ func redisServerVersion() (*Version, error) {
 }
 
 func NewServer(name string, args ...string) (*Server, error) {
-	version, err := GetRedisVersion()
+	version, err := redisServerVersion()
 	if err != nil {
 		return nil, err
 	}
