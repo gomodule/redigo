@@ -78,11 +78,11 @@ func redisServerVersion() (*Version, error) {
 		return nil, fmt.Errorf("invalid major version %q", match[1])
 	}
 
-	if v.minor, err = strconv.Atoi(match[1]); err != nil {
+	if v.minor, err = strconv.Atoi(match[2]); err != nil {
 		return nil, fmt.Errorf("invalid minor version %q", match[2])
 	}
 
-	if v.patch, err = strconv.Atoi(match[1]); err != nil {
+	if v.patch, err = strconv.Atoi(match[3]); err != nil {
 		return nil, fmt.Errorf("invalid patch version %q", match[3])
 	}
 
