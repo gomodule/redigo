@@ -1,4 +1,4 @@
-Redigo
+We Love Redigo
 ======
 
 [![GoDoc](https://godoc.org/github.com/gomodule/redigo/redis?status.svg)](https://pkg.go.dev/github.com/gomodule/redigo/redis)
