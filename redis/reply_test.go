@@ -19,6 +19,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -226,6 +227,17 @@ func TestSlowLog(t *testing.T) {
 	}
 }
 
+// debugCheck skips t if err indicates that DEBUG is not allowed,
+// otherwise it fails if err is not nil.
+func debugCheck(t *testing.T, err error) {
+	t.Helper()
+
+	if err != nil && strings.Contains(err.Error(), "ERR DEBUG command not allowed") {
+		t.Skip("DEBUG command not allowed")
+	}
+	require.NoError(t, err)
+}
+
 func TestLatency(t *testing.T) {
 	c, err := dial()
 	require.NoError(t, err)
@@ -253,7 +265,7 @@ func TestLatency(t *testing.T) {
 
 	// Sleep for 1ms to register a slow event.
 	_, err = c.Do("DEBUG", "SLEEP", 0.001)
-	require.NoError(t, err)
+	debugCheck(t, err)
 
 	result, err = c.Do("LATENCY", "LATEST")
 	require.NoError(t, err)
@@ -305,7 +317,7 @@ func TestLatencyHistories(t *testing.T) {
 
 	// Sleep for 1ms to register a slow event
 	_, err = c.Do("DEBUG", "SLEEP", 0.001)
-	require.NoError(t, err)
+	debugCheck(t, err)
 
 	result, err = c.Do("LATENCY", "HISTORY", "command")
 	require.NoError(t, err)
