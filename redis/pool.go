@@ -51,72 +51,71 @@ var (
 // request handlers using a package level variable. The pool configuration used
 // here is an example, not a recommendation.
 //
-//  func newPool(addr string) *redis.Pool {
-//    return &redis.Pool{
-//      MaxIdle: 3,
-//      IdleTimeout: 240 * time.Second,
-//      // Dial or DialContext must be set. When both are set, DialContext takes precedence over Dial.
-//      Dial: func () (redis.Conn, error) { return redis.Dial("tcp", addr) },
-//    }
-//  }
+//	func newPool(addr string) *redis.Pool {
+//	  return &redis.Pool{
+//	    MaxIdle: 3,
+//	    IdleTimeout: 240 * time.Second,
+//	    // Dial or DialContext must be set. When both are set, DialContext takes precedence over Dial.
+//	    Dial: func () (redis.Conn, error) { return redis.Dial("tcp", addr) },
+//	  }
+//	}
 //
-//  var (
-//    pool *redis.Pool
-//    redisServer = flag.String("redisServer", ":6379", "")
-//  )
+//	var (
+//	  pool *redis.Pool
+//	  redisServer = flag.String("redisServer", ":6379", "")
+//	)
 //
-//  func main() {
-//    flag.Parse()
-//    pool = newPool(*redisServer)
-//    ...
-//  }
+//	func main() {
+//	  flag.Parse()
+//	  pool = newPool(*redisServer)
+//	  ...
+//	}
 //
 // A request handler gets a connection from the pool and closes the connection
 // when the handler is done:
 //
-//  func serveHome(w http.ResponseWriter, r *http.Request) {
-//      conn := pool.Get()
-//      defer conn.Close()
-//      ...
-//  }
+//	func serveHome(w http.ResponseWriter, r *http.Request) {
+//	    conn := pool.Get()
+//	    defer conn.Close()
+//	    ...
+//	}
 //
 // Use the Dial function to authenticate connections with the AUTH command or
 // select a database with the SELECT command:
 //
-//  pool := &redis.Pool{
-//    // Other pool configuration not shown in this example.
-//    Dial: func () (redis.Conn, error) {
-//      c, err := redis.Dial("tcp", server)
-//      if err != nil {
-//        return nil, err
-//      }
-//      if _, err := c.Do("AUTH", password); err != nil {
-//        c.Close()
-//        return nil, err
-//      }
-//      if _, err := c.Do("SELECT", db); err != nil {
-//        c.Close()
-//        return nil, err
-//      }
-//      return c, nil
-//    },
-//  }
+//	pool := &redis.Pool{
+//	  // Other pool configuration not shown in this example.
+//	  Dial: func () (redis.Conn, error) {
+//	    c, err := redis.Dial("tcp", server)
+//	    if err != nil {
+//	      return nil, err
+//	    }
+//	    if _, err := c.Do("AUTH", password); err != nil {
+//	      c.Close()
+//	      return nil, err
+//	    }
+//	    if _, err := c.Do("SELECT", db); err != nil {
+//	      c.Close()
+//	      return nil, err
+//	    }
+//	    return c, nil
+//	  },
+//	}
 //
 // Use the TestOnBorrow function to check the health of an idle connection
 // before the connection is returned to the application. This example PINGs
 // connections that have been idle more than a minute:
 //
-//  pool := &redis.Pool{
-//    // Other pool configuration not shown in this example.
-//    TestOnBorrow: func(c redis.Conn, t time.Time) error {
-//      if time.Since(t) < time.Minute {
-//        return nil
-//      }
-//      _, err := c.Do("PING")
-//      return err
-//    },
-//  }
-//
+//	pool := &redis.Pool{
+//	  // Other pool configuration not shown in this example.
+//	  TestOnBorrow: func(c redis.Conn, t time.Time) error {
+//	    if time.Since(t) < time.Minute {
+//	      return nil
+//	    }
+//	    _, err := c.Do("PING")
+//	    return err
+//	  },
+//	}
 type Pool struct {
 	// Dial is an application supplied function for creating and configuring a
 	// connection.
@@ -269,6 +268,7 @@ type PoolStats struct {
 	// ActiveCount is the number of connections in the pool. The count includes
 	// idle connections and connections in use.
 	ActiveCount int
+
 	// IdleCount is the number of idle connections in the pool.
 	IdleCount int
 
@@ -429,7 +429,7 @@ func (p *Pool) put(pc *poolConn, forceClose bool) error {
 type activeConn struct {
 	p     *Pool
 	pc    *poolConn
-	state int
+	state connectionState
 }
 
 var (
@@ -449,6 +449,10 @@ func initSentinel() {
 	}
 }
 
+func (ac *activeConn) stateUpdate(cmd string, args ...interface{}) {
+	ac.state.update(activeConnActions, cmd, args...)
+}
+
 func (ac *activeConn) firstError(errs ...error) error {
 	for _, err := range errs[:len(errs)-1] {
 		if err != nil {
@@ -465,14 +469,18 @@ func (ac *activeConn) Close() (err error) {
 	}
 	ac.pc = nil
 
-	if ac.state&connectionMultiState != 0 {
-		err = pc.c.Send("DISCARD")
-		ac.state &^= (connectionMultiState | connectionWatchState)
-	} else if ac.state&connectionWatchState != 0 {
-		err = pc.c.Send("UNWATCH")
-		ac.state &^= connectionWatchState
+	// Return the connection to a clean state if possible.
+	if ac.state&(stateClientReplyOff|stateClientReplySkip) != 0 {
+		err = pc.c.Send("CLIENT", "REPLY", "ON")
 	}
-	if ac.state&connectionSubscribeState != 0 {
+
+	if ac.state&stateMulti != 0 {
+		err = ac.firstError(err, pc.c.Send("DISCARD"))
+	} else if ac.state&stateWatch != 0 {
+		err = ac.firstError(err, pc.c.Send("UNWATCH"))
+	}
+
+	if ac.state&stateSubscribe != 0 {
 		err = ac.firstError(err,
 			pc.c.Send("UNSUBSCRIBE"),
 			pc.c.Send("PUNSUBSCRIBE"),
@@ -491,11 +499,13 @@ func (ac *activeConn) Close() (err error) {
 				break
 			}
 			if p, ok := p.([]byte); ok && bytes.Equal(p, sentinel) {
-				ac.state &^= connectionSubscribeState
+				ac.state &^= stateSubscribe
 				break
 			}
 		}
 	}
+
+	// Ensure any pending reads have completed.
 	_, err2 := pc.c.Do("")
 	return ac.firstError(
 		err,
@@ -517,13 +527,13 @@ func (ac *activeConn) DoContext(ctx context.Context, commandName string, args ..
 	if pc == nil {
 		return nil, errConnClosed
 	}
-	cwt, ok := pc.c.(ConnWithContext)
+	cwc, ok := pc.c.(ConnWithContext)
 	if !ok {
 		return nil, errContextNotSupported
 	}
-	ci := lookupCommandInfo(commandName)
-	ac.state = (ac.state | ci.Set) &^ ci.Clear
-	return cwt.DoContext(ctx, commandName, args...)
+	ac.stateUpdate(commandName, args...)
+
+	return cwc.DoContext(ctx, commandName, args...)
 }
 
 func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
@@ -531,8 +541,8 @@ func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interfa
 	if pc == nil {
 		return nil, errConnClosed
 	}
-	ci := lookupCommandInfo(commandName)
-	ac.state = (ac.state | ci.Set) &^ ci.Clear
+	ac.stateUpdate(commandName, args...)
+
 	return pc.c.Do(commandName, args...)
 }
 
@@ -545,8 +555,8 @@ func (ac *activeConn) DoWithTimeout(timeout time.Duration, commandName string, a
 	if !ok {
 		return nil, errTimeoutNotSupported
 	}
-	ci := lookupCommandInfo(commandName)
-	ac.state = (ac.state | ci.Set) &^ ci.Clear
+	ac.stateUpdate(commandName, args...)
+
 	return cwt.DoWithTimeout(timeout, commandName, args...)
 }
 
@@ -555,8 +565,8 @@ func (ac *activeConn) Send(commandName string, args ...interface{}) error {
 	if pc == nil {
 		return errConnClosed
 	}
-	ci := lookupCommandInfo(commandName)
-	ac.state = (ac.state | ci.Set) &^ ci.Clear
+	ac.stateUpdate(commandName, args...)
+
 	return pc.c.Send(commandName, args...)
 }
 

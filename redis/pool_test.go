@@ -807,6 +807,72 @@ func BenchmarkPoolGet(b *testing.B) {
 	}
 }
 
+func BenchmarkPoolDo(b *testing.B) {
+	p := redis.Pool{
+		MaxIdle: 2,
+		Dial: func() (redis.Conn, error) {
+			return redis.DialDefaultServer()
+		},
+	}
+
+	func() {
+		// Setup required data.
+		c := p.Get()
+		require.NoError(b, c.Err())
+		defer func() {
+			require.NoError(b, c.Close())
+		}()
+
+		_, err = c.Do("MSET", "foo", "bar", "bar", "baz")
+		require.NoError(b, err)
+		_, err = c.Do("HMSET", "hfoo", "bar", "baz", "qux", "quux", "thing", "bob")
+		require.NoError(b, err)
+	}()
+
+	tests := map[string]struct {
+		cmd  string
+		args []interface{}
+	}{
+		"set": {
+			cmd:  "SET",
+			args: []interface{}{"foo", "bar"},
+		},
+		"get": {
+			cmd:  "GET",
+			args: []interface{}{"foo"},
+		},
+		"mget": {
+			cmd:  "MGET",
+			args: []interface{}{"foo", "bar"},
+		},
+		"hmset": {
+			cmd:  "HMSET",
+			args: []interface{}{"hfoo", "bar", "baz", "qux", "baz1", "qux1", "stuff"},
+		},
+		"hgetall": {
+			cmd:  "HGETALL",
+			args: []interface{}{"hfoo"},
+		},
+		"blank": {
+			cmd: "",
+		},
+		"ping": {
+			cmd: "PING",
+		},
+	}
+	for name, tc := range tests {
+		b.Run(name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				c := p.Get()
+				_, err := c.Do(tc.cmd, tc.args...)
+				require.NoError(b, err)
+				err = c.Close()
+				require.NoError(b, err)
+			}
+		})
+	}
+}
+
 func BenchmarkPoolGetErr(b *testing.B) {
 	b.StopTimer()
 	p := redis.Pool{Dial: func() (redis.Conn, error) { return redis.DialDefaultServer() }, MaxIdle: 2}
