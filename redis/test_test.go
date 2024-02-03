@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,7 +55,51 @@ type Server struct {
 	done chan struct{}
 }
 
+type version struct {
+	major int
+	minor int
+	patch int
+}
+
+func redisServerVersion() (*version, error) {
+	out, err := exec.Command("redis-server", "--version").Output()
+	if err != nil {
+		return nil, fmt.Errorf("server version: %w", err)
+	}
+
+	ver := string(out)
+	re := regexp.MustCompile(`v=(\d+)\.(\d+)\.(\d+)`)
+	match := re.FindStringSubmatch(ver)
+	if len(match) != 4 {
+		return nil, fmt.Errorf("no server version found in %q", ver)
+	}
+
+	var v version
+	if v.major, err = strconv.Atoi(match[1]); err != nil {
+		return nil, fmt.Errorf("invalid major version %q", match[1])
+	}
+
+	if v.minor, err = strconv.Atoi(match[2]); err != nil {
+		return nil, fmt.Errorf("invalid minor version %q", match[2])
+	}
+
+	if v.patch, err = strconv.Atoi(match[3]); err != nil {
+		return nil, fmt.Errorf("invalid patch version %q", match[3])
+	}
+
+	return &v, nil
+}
+
 func NewServer(name string, args ...string) (*Server, error) {
+	version, err := redisServerVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	if version.major >= 7 {
+		args = append(args, "--enable-debug-command", "local")
+	}
+
 	s := &Server{
 		name: name,
 		cmd:  exec.Command(*serverPath, args...),
