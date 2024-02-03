@@ -32,6 +32,7 @@ import (
 
 var (
 	_ ConnWithTimeout = (*conn)(nil)
+	_ ConnWithContext = (*conn)(nil)
 )
 
 // conn is the low-level implementation of Conn
@@ -683,7 +684,7 @@ func (c *conn) readReply() (interface{}, error) {
 }
 
 func (c *conn) stateUpdate(cmd string, args ...interface{}) {
-	c.state.update(connActions, cmd, args...)
+	c.state.update(connActions, true, cmd, args...)
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {

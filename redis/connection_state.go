@@ -1,4 +1,4 @@
-// Copyright 2014 Gary Burd
+// Copyright 2024 Steven Hartland
 //
 // Licensed under the Apache License, Version 2.0 (the "License"): you may
 // not use this file except in compliance with the License. You may obtain
@@ -14,36 +14,51 @@
 
 package redis
 
-// connectionState represents a connection state.
-type connectionState uint8
+// connectionState represents the state of a connection.
+type connectionState uint16
 
+// Connection states flags.
+// If you make a change to this you also need to update:
+// * Command action generation in command_action_gen.go
+// * TestPoolCloseCleanup
+// * activeConn.reset()
 const (
-	stateWatch connectionState = 1 << iota
-	stateMulti
-	stateSubscribe
-	stateMonitor
-	stateClientReplyOff
-	stateClientReplySkipNext
-	stateClientReplySkip
+	stateClientNoEvict       connectionState = 1 << iota // Not evictable.
+	stateClientNoTouch                                   // LRU/LFU stats touch disabled.
+	stateClientReplyOff                                  // Connection replies aren't being sent.
+	stateClientReplySkip                                 // Replies aren't expected for this cmd.
+	stateClientReplySkipNext                             // Set stateClientReplySkip for next cmd.
+	stateClientTracking                                  // Key tracking is enabled.
+	stateMonitor                                         // Monitoring server commands.
+	stateMulti                                           // Processing a transaction.
+	statePsubscribe                                      // Potentially subscribed to a pattern.
+	stateReadOnly                                        // Read only mode.
+	stateSsubscribe                                      // Potentially subscribed to a shard channel.
+	stateSubscribe                                       // Potentially subscribed to a channel.
+	stateWatch                                           // Watching one or more key.
 )
 
 // commandAction represents an action to be taken when processing a command.
 type commandAction struct {
-	Action func(*connectionState)
+	// Action specifies the action to be taken.
+	Action func(cs *connectionState)
 
 	// Next specifies sub actions for given arguments.
 	Next map[string]*commandAction
 }
 
 // update updates the connection state based on the command and arguments if needed.
-func (cs *connectionState) update(info map[string]*commandAction, first string, args ...interface{}) {
-	*cs &^= stateClientReplySkip
-	if *cs&stateClientReplySkipNext != 0 {
-		*cs |= stateClientReplySkip
-		*cs &^= stateClientReplySkipNext
+func (cs *connectionState) update(info map[string]*commandAction, first bool, arg0 string, args ...interface{}) {
+	if first {
+		if *cs&stateClientReplySkipNext != 0 {
+			*cs &^= stateClientReplySkipNext
+			*cs |= stateClientReplySkip
+		} else {
+			*cs &^= stateClientReplySkip
+		}
 	}
 
-	ci, ok := info[first]
+	ci, ok := info[arg0]
 	if !ok {
 		// No match.
 		return
@@ -60,12 +75,12 @@ func (cs *connectionState) update(info map[string]*commandAction, first string, 
 		return
 	}
 
-	first, ok = args[0].(string)
+	arg0, ok = args[0].(string)
 	if !ok {
 		// No match due type miss-match.
 		return
 	}
 
 	// Check the next argument.
-	cs.update(ci.Next, first, args[1:]...)
+	cs.update(ci.Next, false, arg0, args[1:]...)
 }

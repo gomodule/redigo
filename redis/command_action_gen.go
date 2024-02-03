@@ -36,29 +36,54 @@ func newCommandInfo(name, action string) *commandInfo {
 var activeConnCommands = &commandInfo{
 	Variable: "activeConnActions",
 	Next: []*commandInfo{
-		newCommandInfo("watch", "*state |= stateWatch"),
-		newCommandInfo("unwatch", "*state &^= stateWatch"),
-		newCommandInfo("multi", "*state |= stateMulti"),
-		newCommandInfo("exec", "*state &^= stateWatch|stateMulti"),
-		newCommandInfo("discard", "*state &^= stateWatch|stateMulti"),
-		newCommandInfo("psubscribe", "*state |= stateSubscribe"),
-		newCommandInfo("subscribe", "*state |= stateSubscribe"),
-		newCommandInfo("monitor", "*state |= stateMonitor"),
 		{
 			Name: "client",
 			Next: []*commandInfo{
 				{
+					Name: "no-evict",
+					Next: []*commandInfo{
+						newCommandInfo("on", "*cs |= stateClientNoEvict"),
+						newCommandInfo("off", "*cs &^= stateClientNoEvict"),
+					},
+				},
+				{
+					Name: "no-touch",
+					Next: []*commandInfo{
+						newCommandInfo("on", "*cs |= stateClientNoTouch"),
+						newCommandInfo("off", "*cs &^= stateClientNoTouch"),
+					},
+				},
+				{
 					Name: "reply",
 					Next: []*commandInfo{
-						newCommandInfo("off", "*state |= stateClientReplyOff"),
-						newCommandInfo("on", "*state &^= stateClientReplyOff|stateClientReplySkip"),
-						newCommandInfo("skip", `if *state&stateClientReplyOff == 0 {
-							*state |= stateClientReplySkipNext
+						newCommandInfo("off", "*cs |= stateClientReplyOff"),
+						newCommandInfo("on", "*cs &^= stateClientReplyOff|stateClientReplySkipNext|stateClientReplySkip"),
+						newCommandInfo("skip", `if *cs&stateClientReplyOff == 0 {
+							*cs |= stateClientReplySkipNext
 						}`),
+					},
+				},
+				{
+					Name: "tracking",
+					Next: []*commandInfo{
+						newCommandInfo("on", "*cs |= stateClientTracking"),
+						newCommandInfo("off", "*cs &^= stateClientTracking"),
 					},
 				},
 			},
 		},
+		newCommandInfo("discard", "*cs &^= stateWatch|stateMulti"),
+		newCommandInfo("exec", "*cs &^= stateWatch|stateMulti"),
+		newCommandInfo("monitor", "*cs |= stateMonitor"),
+		newCommandInfo("multi", "*cs |= stateMulti"),
+		newCommandInfo("psubscribe", "*cs |= statePsubscribe"),
+		newCommandInfo("ssubscribe", "*cs |= stateSsubscribe"),
+		newCommandInfo("subscribe", "*cs |= stateSubscribe"),
+		newCommandInfo("unwatch", "*cs &^= stateWatch"),
+		newCommandInfo("readonly", "*cs |= stateReadOnly"),
+		newCommandInfo("readwrite", "*cs &^= stateReadOnly"),
+		newCommandInfo("reset", "*cs = 0"),
+		newCommandInfo("watch", "*cs |= stateWatch"),
 	},
 }
 
@@ -113,7 +138,7 @@ var (
 	{{- end -}}
 	{{- if .Action}}
 		{{.Variable}} = &commandAction{
-			Action: func(state *connectionState) {
+			Action: func(cs *connectionState) {
 				{{.Action}}
 			},
 		}
@@ -146,7 +171,7 @@ func processCommands(parent string, commands []*commandInfo) {
 	for _, ci := range commands {
 		prefix := parent
 		if ci.Variable == "" {
-			ci.Variable = parent + strings.Title(ci.Name)
+			ci.Variable = parent + strings.ReplaceAll(strings.Title(ci.Name), "-", "")
 			prefix = ci.Variable
 		}
 		if ci.Next != nil {

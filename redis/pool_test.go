@@ -484,7 +484,7 @@ func TestPoolPubSubCleanup(t *testing.T) {
 	require.NoError(t, c.Send("SUBSCRIBE", "x"))
 	c.Close()
 
-	want := []string{"SUBSCRIBE", "UNSUBSCRIBE", "PUNSUBSCRIBE", "ECHO"}
+	want := []string{"SUBSCRIBE", "UNSUBSCRIBE", "ECHO"}
 	if !reflect.DeepEqual(d.commands, want) {
 		t.Errorf("got commands %v, want %v", d.commands, want)
 	}
@@ -494,7 +494,7 @@ func TestPoolPubSubCleanup(t *testing.T) {
 	require.NoError(t, c.Send("PSUBSCRIBE", "x*"))
 	c.Close()
 
-	want = []string{"PSUBSCRIBE", "UNSUBSCRIBE", "PUNSUBSCRIBE", "ECHO"}
+	want = []string{"PSUBSCRIBE", "PUNSUBSCRIBE", "ECHO"}
 	if !reflect.DeepEqual(d.commands, want) {
 		t.Errorf("got commands %v, want %v", d.commands, want)
 	}
