@@ -32,6 +32,7 @@ import (
 
 var (
 	_ ConnWithTimeout = (*conn)(nil)
+	_ ConnWithContext = (*conn)(nil)
 )
 
 // conn is the low-level implementation of Conn

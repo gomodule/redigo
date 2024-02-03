@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type lookupTest struct {
+type stateUpdateTest struct {
 	state       connectionState
 	expected    connectionState
 	commandName string
@@ -16,7 +16,7 @@ type lookupTest struct {
 	info        map[string]*commandAction
 }
 
-func buildLookupTests(tests map[string]lookupTest, root, infos map[string]*commandAction, args ...string) {
+func buildStateUpdateTests(tests map[string]stateUpdateTest, root, infos map[string]*commandAction, args ...string) {
 	for cmd, ci := range infos {
 		if cmd != strings.ToLower(cmd) {
 			// Skip non lower case commands as we only need to test one case per action.
@@ -25,11 +25,11 @@ func buildLookupTests(tests map[string]lookupTest, root, infos map[string]*comma
 
 		cmdArgs := append(args, cmd)
 		if ci.Next != nil {
-			buildLookupTests(tests, root, ci.Next, cmdArgs...)
+			buildStateUpdateTests(tests, root, ci.Next, cmdArgs...)
 			continue
 		}
 
-		t := lookupTest{
+		t := stateUpdateTest{
 			commandName: cmdArgs[0],
 			args:        make([]interface{}, len(cmdArgs)-1),
 			info:        root,
@@ -54,9 +54,9 @@ func buildLookupTests(tests map[string]lookupTest, root, infos map[string]*comma
 }
 
 func TestConnectionStateUpdate(t *testing.T) {
-	tests := make(map[string]lookupTest)
-	buildLookupTests(tests, activeConnActions, activeConnActions)
-	buildLookupTests(tests, connActions, connActions)
+	tests := make(map[string]stateUpdateTest)
+	buildStateUpdateTests(tests, activeConnActions, activeConnActions)
+	buildStateUpdateTests(tests, connActions, connActions)
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -192,4 +192,168 @@ func TestClientReply(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, tc)
 	}
+}
+
+// setAllFlags sets all flags in the state.
+func setAllFlags(state *connectionState, infos map[string]*commandAction) {
+	for _, ci := range infos {
+		if ci.Next != nil {
+			setAllFlags(state, ci.Next)
+		}
+
+		if ci.Action != nil {
+			var check connectionState
+			ci.Action(&check)
+			if check != 0 {
+				*state |= check
+			}
+		}
+	}
+}
+
+// isUnsupported returns true if err is an unknown or disabled command error, false otherwise.
+func isUnsupported(err error) bool {
+	if err != nil {
+		errStr := strings.ToLower(err.Error())
+		if strings.HasPrefix(errStr, "err unknown command") ||
+			strings.HasPrefix(errStr, "err unknown subcommand") ||
+			strings.HasPrefix(errStr, "err this instance has cluster support disabled") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// checkSupported checks if a command is supported and if it is, it
+// sends it on c otherwise it removes flags from the expected state.
+func checkSupported(t *testing.T, p *Pool, c Conn, expected *connectionState, flags connectionState, cmd string, args ...interface{}) {
+	t.Helper()
+
+	c2 := p.Get()
+	defer c2.Close() //nolint: errcheck
+
+	_, err := c2.Do(cmd, args...)
+	if isUnsupported(err) {
+		*expected &^= flags
+		c2.(*activeConn).state &^= flags
+		return
+	}
+
+	require.NoError(t, err)
+	require.NoError(t, c.Send(cmd, args...))
+}
+
+type closeTest struct {
+	expected    connectionState
+	commandName string
+	args        []interface{}
+}
+
+// buildCloseTests builds a map of close tests for the given command infos.
+func buildCloseTests(tests map[string]closeTest, root, infos map[string]*commandAction, args ...string) {
+	for cmd, ci := range infos {
+		if cmd != strings.ToLower(cmd) {
+			// Skip non lower case commands as we only need to test one case per action.
+			continue
+		}
+
+		if cmd == "monitor" {
+			// MONITOR is tested separately.
+			continue
+		}
+
+		cmdArgs := append(args, cmd)
+		if ci.Next != nil {
+			buildCloseTests(tests, root, ci.Next, cmdArgs...)
+			continue
+		}
+
+		var state connectionState
+		ci.Action(&state)
+		if state == 0 {
+			// Action is a Clear so not needed.
+			continue
+		}
+
+		// Action is a Set.
+		t := closeTest{
+			commandName: cmdArgs[0],
+			args:        make([]interface{}, len(cmdArgs)-1),
+			expected:    state,
+		}
+		for i, arg := range cmdArgs[1:] {
+			t.args[i] = arg
+		}
+
+		tests[strings.Join(cmdArgs, "-")] = t
+	}
+}
+
+func TestPoolCloseCleanup(t *testing.T) {
+	p := &Pool{
+		Dial: func() (Conn, error) {
+			return DialDefaultServer()
+		},
+	}
+	defer p.Close()
+
+	var expected connectionState
+	setAllFlags(&expected, activeConnActions)
+	for _, val := range []string{"off", "skip"} {
+		t.Run("all-client-reply-"+val, func(t *testing.T) {
+			c := p.Get()
+			// Apply all state changing commands.
+			checkSupported(t, p, c, &expected, stateClientNoEvict, "CLIENT", "NO-EVICT", "ON")
+			checkSupported(t, p, c, &expected, stateClientNoTouch, "CLIENT", "NO-TOUCH", "ON")
+			// CLIENT REPLY OFF and CLIENT REPLY SKIP / SKIP NEXT are mutually exclusive.
+			switch val {
+			case "off":
+				checkSupported(t, p, c, &expected, stateClientReplyOff, "CLIENT", "REPLY", "OFF")
+				checkSupported(t, p, c, &expected, 0, "CLIENT", "REPLY", "SKIP") // Should be ignored.
+				expected &^= stateClientReplySkip | stateClientReplySkipNext
+			case "skip":
+				checkSupported(t, p, c, &expected, stateClientReplySkip|stateClientReplySkipNext, "CLIENT", "REPLY", "SKIP")
+				expected &^= stateClientReplyOff
+			}
+			checkSupported(t, p, c, &expected, stateClientTracking, "CLIENT", "TRACKING", "ON")
+			// MONITOR isn't tested as it can't be cleared during close without using RESET
+			// which isn't possible to use as we can't ensure that the dialled settings such
+			// as selected database and AUTH are restored.
+			expected &^= stateMonitor
+			checkSupported(t, p, c, &expected, stateWatch, "WATCH", "key") // Out of order as WATCH isn't allowed in side a subscriptions.
+			checkSupported(t, p, c, &expected, stateMulti, "MULTI")        // Out of order as MULTI isn't allowed in side a subscriptions.
+			checkSupported(t, p, c, &expected, statePsubscribe, "PSUBSCRIBE", "x")
+			checkSupported(t, p, c, &expected, stateReadOnly, "READONLY")
+			checkSupported(t, p, c, &expected, stateSsubscribe, "SSUBSCRIBE", "x")
+			checkSupported(t, p, c, &expected, stateSubscribe, "SUBSCRIBE", "x")
+			require.Equal(t, expected, c.(*activeConn).state)
+			require.NoError(t, c.Close())
+			require.Zero(t, c.(*activeConn).state)
+		})
+	}
+
+	tests := make(map[string]closeTest)
+	buildCloseTests(tests, activeConnActions, activeConnActions)
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := p.Get()
+			_, err := c.Do(tc.commandName, tc.args...)
+			if isUnsupported(err) {
+				t.Skip("Command not supported")
+			}
+
+			require.Equal(t, tc.expected, c.(*activeConn).state)
+			require.NoError(t, c.Close())
+			require.Zero(t, c.(*activeConn).state)
+		})
+	}
+
+	t.Run("monitor", func(t *testing.T) {
+		c := p.Get()
+		_, err := c.Do("MONITOR")
+		require.NoError(t, err)
+		require.ErrorIs(t, c.Close(), errMonitorEnabled)
+	})
 }

@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"sync"
@@ -29,6 +30,10 @@ import (
 var (
 	_ ConnWithTimeout = (*activeConn)(nil)
 	_ ConnWithTimeout = (*errorConn)(nil)
+	_ ConnWithContext = (*activeConn)(nil)
+	_ ConnWithContext = (*errorConn)(nil)
+
+	errMonitorEnabled = errors.New("redigo: monitor enabled")
 )
 
 var nowFunc = time.Now // for testing
@@ -453,65 +458,138 @@ func (ac *activeConn) stateUpdate(cmd string, args ...interface{}) {
 	ac.state.update(activeConnActions, cmd, args...)
 }
 
-func (ac *activeConn) firstError(errs ...error) error {
-	for _, err := range errs[:len(errs)-1] {
-		if err != nil {
-			return err
-		}
-	}
-	return errs[len(errs)-1]
-}
-
-func (ac *activeConn) Close() (err error) {
+func (ac *activeConn) Close() error {
 	pc := ac.pc
 	if pc == nil {
-		return nil
-	}
-	ac.pc = nil
-
-	// Return the connection to a clean state if possible.
-	if ac.state&(stateClientReplyOff|stateClientReplySkip) != 0 {
-		err = pc.c.Send("CLIENT", "REPLY", "ON")
+		return nil // Already closed.
 	}
 
+	defer func() {
+		ac.pc = nil
+	}()
+
+	if ac.state != 0 {
+		// Reset the connection state.
+		if err := ac.reset(pc.c); err != nil {
+			// Force close the connection.
+			ac.p.put(pc, true) //nolint: errcheck
+			return fmt.Errorf("reset: %w", err)
+		}
+	}
+
+	// Return the connection to the pool.
+	return ac.p.put(pc, pc.c.Err() != nil)
+}
+
+// reset resets the connection to a clean state.
+func (ac *activeConn) reset(conn Conn) error {
+	if ac.state&stateMonitor != 0 {
+		// RESET is the only way to clear MONITOR and that resets
+		// all state including authentication and DB.
+		// Since we can't detect if AUTH or SELECT commands were
+		// issued during dial, we have to force close the connection.
+		return errMonitorEnabled
+	}
+
+	// DISCARD first to ensure subsequent commands are processed.
 	if ac.state&stateMulti != 0 {
-		err = ac.firstError(err, pc.c.Send("DISCARD"))
-	} else if ac.state&stateWatch != 0 {
-		err = ac.firstError(err, pc.c.Send("UNWATCH"))
+		if err := conn.Send("DISCARD"); err != nil {
+			return fmt.Errorf("discard: %w", err)
+		}
+
+		// DISCARD resets WATCH and MULTI.
+		ac.state &^= stateWatch | stateMulti
+	}
+
+	if ac.state&stateClientNoEvict != 0 {
+		if err := conn.Send("CLIENT", "NO-EVICT", "OFF"); err != nil {
+			return fmt.Errorf("client no-evict off: %w", err)
+		}
+		ac.state &^= stateClientNoEvict
+	}
+
+	if ac.state&stateClientNoTouch != 0 {
+		if err := conn.Send("CLIENT", "NO-TOUCH", "OFF"); err != nil {
+			return fmt.Errorf("client no-touch off: %w", err)
+		}
+		ac.state &^= stateClientNoTouch
+	}
+
+	if ac.state&(stateClientReplyOff|stateClientReplySkipNext|stateClientReplySkip) != 0 {
+		if err := conn.Send("CLIENT", "REPLY", "ON"); err != nil {
+			return fmt.Errorf("client reply on: %w", err)
+		}
+		ac.state &^= stateClientReplyOff | stateClientReplySkipNext | stateClientReplySkip
+	}
+
+	if ac.state&stateClientTracking != 0 {
+		if err := conn.Send("CLIENT", "TRACKING", "OFF"); err != nil {
+			return fmt.Errorf("client tracking off: %w", err)
+		}
+		ac.state &^= stateClientTracking
+	}
+
+	if ac.state&statePsubscribe != 0 {
+		if err := conn.Send("PUNSUBSCRIBE"); err != nil {
+			return fmt.Errorf("punsubscribe: %w", err)
+		}
+	}
+
+	if ac.state&stateReadOnly != 0 {
+		if err := conn.Send("READWRITE"); err != nil {
+			return fmt.Errorf("readwrite: %w", err)
+		}
+		ac.state &^= stateReadOnly
+	}
+
+	if ac.state&stateSsubscribe != 0 {
+		if err := conn.Send("SUNSUBSCRIBE"); err != nil {
+			return fmt.Errorf("sunsubscribe: %w", err)
+		}
 	}
 
 	if ac.state&stateSubscribe != 0 {
-		err = ac.firstError(err,
-			pc.c.Send("UNSUBSCRIBE"),
-			pc.c.Send("PUNSUBSCRIBE"),
-		)
+		if err := conn.Send("UNSUBSCRIBE"); err != nil {
+			return fmt.Errorf("unsubscribe: %w", err)
+		}
+	}
+
+	if ac.state&stateWatch != 0 {
+		if err := conn.Send("UNWATCH"); err != nil {
+			return fmt.Errorf("unwatch: %w", err)
+		}
+		ac.state &^= stateWatch
+	}
+
+	if ac.state&(stateSubscribe|statePsubscribe|stateSsubscribe) != 0 {
+		// Drain subscribed messages.
 		// To detect the end of the message stream, ask the server to echo
 		// a sentinel value and read until we see that value.
 		sentinelOnce.Do(initSentinel)
-		err = ac.firstError(err,
-			pc.c.Send("ECHO", sentinel),
-			pc.c.Flush(),
-		)
+		if err := conn.Send("ECHO", sentinel); err != nil {
+			return fmt.Errorf("echo sentinel: %w", err)
+		}
+
+		if err := conn.Flush(); err != nil {
+			return fmt.Errorf("flush: %w", err)
+		}
+
 		for {
-			p, err2 := pc.c.Receive()
-			if err2 != nil {
-				err = ac.firstError(err, err2)
-				break
+			p, err := conn.Receive()
+			if err != nil {
+				return fmt.Errorf("receive: %w", err)
 			}
+
 			if p, ok := p.([]byte); ok && bytes.Equal(p, sentinel) {
-				ac.state &^= stateSubscribe
-				break
+				ac.state &^= stateSubscribe | statePsubscribe | stateSsubscribe
+				return nil // End of message stream.
 			}
 		}
 	}
 
 	// Ensure any pending reads have completed.
-	_, err2 := pc.c.Do("")
-	return ac.firstError(
-		err,
-		err2,
-		ac.p.put(pc, ac.state != 0 || pc.c.Err() != nil),
-	)
+	_, err := conn.Do("")
+	return err
 }
 
 func (ac *activeConn) Err() error {
