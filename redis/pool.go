@@ -128,16 +128,24 @@ type Pool struct {
 	// DialContext is an application supplied function for creating and configuring a
 	// connection with the given context.
 	//
-	// The connection returned from Dial must not be in a special state
+	// The connection returned from DialContext must not be in a special state
 	// (subscribed to pubsub channel, transaction started, ...).
 	DialContext func(ctx context.Context) (Conn, error)
 
 	// TestOnBorrow is an optional application supplied function for checking
 	// the health of an idle connection before the connection is used again by
-	// the application. Argument t is the time that the connection was returned
+	// the application. Argument lastUsed is the time when the connection was returned
 	// to the pool. If the function returns an error, then the connection is
 	// closed.
-	TestOnBorrow func(c Conn, t time.Time) error
+	TestOnBorrow func(c Conn, lastUsed time.Time) error
+
+	// TestOnBorrowContext is an optional application supplied function
+	// for checking the health of an idle connection with the given context
+	// before the connection is used again by the application.
+	// Argument lastUsed is the time when the connection was returned
+	// to the pool. If the function returns an error, then the connection is
+	// closed.
+	TestOnBorrowContext func(ctx context.Context, c Conn, lastUsed time.Time) error
 
 	// Maximum number of idle connections in the pool.
 	MaxIdle int
@@ -228,6 +236,7 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 		p.idle.popFront()
 		p.mu.Unlock()
 		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
+			(p.TestOnBorrowContext == nil || p.TestOnBorrowContext(ctx, pc.c, pc.t) == nil) &&
 			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
 			return &activeConn{p: p, pc: pc}, nil
 		}

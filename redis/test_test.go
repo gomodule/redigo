@@ -16,6 +16,7 @@ package redis
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -197,15 +198,21 @@ func DefaultServerAddr() (string, error) {
 // DialDefaultServer starts the test server if not already started and dials a
 // connection to the server.
 func DialDefaultServer(options ...DialOption) (Conn, error) {
+	return DialDefaultServerContext(context.Background(), options...)
+}
+
+// DialDefaultServerContext starts the test server if not already started and
+// dials a connection to the server with the given context.
+func DialDefaultServerContext(ctx context.Context, options ...DialOption) (Conn, error) {
 	addr, err := DefaultServerAddr()
 	if err != nil {
 		return nil, err
 	}
-	c, err := Dial("tcp", addr, append([]DialOption{DialReadTimeout(1 * time.Second), DialWriteTimeout(1 * time.Second)}, options...)...)
+	c, err := DialContext(ctx, "tcp", addr, append([]DialOption{DialReadTimeout(1 * time.Second), DialWriteTimeout(1 * time.Second)}, options...)...)
 	if err != nil {
 		return nil, err
 	}
-	if _, err = c.Do("FLUSHDB"); err != nil {
+	if _, err = DoContext(c, ctx, "FLUSHDB"); err != nil {
 		return nil, err
 	}
 	return c, nil
