@@ -62,7 +62,7 @@ var (
 	}
 	actionClientReplyOn = &commandAction{
 		Action: func(cs *connectionState) {
-			*cs &^= stateClientReplyOff | stateClientReplySkip
+			*cs &^= stateClientReplyOff | stateClientReplySkipNext | stateClientReplySkip
 		},
 	}
 	actionClientReplySkip = &commandAction{
@@ -738,7 +738,7 @@ var (
 			*cs |= stateWatch
 		},
 	}
-	activeConnActions = map[string]*commandAction{
+	connActions = map[string]*commandAction{
 		"CLIENT":     actionClient,
 		"CLIENt":     actionClient,
 		"CLIEnT":     actionClient,
@@ -4627,71 +4627,5 @@ var (
 		"watCh":      actionWatch,
 		"watcH":      actionWatch,
 		"watch":      actionWatch,
-	}
-	connActions = map[string]*commandAction{
-		"CLIENT": actionClient,
-		"CLIENt": actionClient,
-		"CLIEnT": actionClient,
-		"CLIEnt": actionClient,
-		"CLIeNT": actionClient,
-		"CLIeNt": actionClient,
-		"CLIenT": actionClient,
-		"CLIent": actionClient,
-		"CLiENT": actionClient,
-		"CLiENt": actionClient,
-		"CLiEnT": actionClient,
-		"CLiEnt": actionClient,
-		"CLieNT": actionClient,
-		"CLieNt": actionClient,
-		"CLienT": actionClient,
-		"CLient": actionClient,
-		"ClIENT": actionClient,
-		"ClIENt": actionClient,
-		"ClIEnT": actionClient,
-		"ClIEnt": actionClient,
-		"ClIeNT": actionClient,
-		"ClIeNt": actionClient,
-		"ClIenT": actionClient,
-		"ClIent": actionClient,
-		"CliENT": actionClient,
-		"CliENt": actionClient,
-		"CliEnT": actionClient,
-		"CliEnt": actionClient,
-		"ClieNT": actionClient,
-		"ClieNt": actionClient,
-		"ClienT": actionClient,
-		"Client": actionClient,
-		"cLIENT": actionClient,
-		"cLIENt": actionClient,
-		"cLIEnT": actionClient,
-		"cLIEnt": actionClient,
-		"cLIeNT": actionClient,
-		"cLIeNt": actionClient,
-		"cLIenT": actionClient,
-		"cLIent": actionClient,
-		"cLiENT": actionClient,
-		"cLiENt": actionClient,
-		"cLiEnT": actionClient,
-		"cLiEnt": actionClient,
-		"cLieNT": actionClient,
-		"cLieNt": actionClient,
-		"cLienT": actionClient,
-		"cLient": actionClient,
-		"clIENT": actionClient,
-		"clIENt": actionClient,
-		"clIEnT": actionClient,
-		"clIEnt": actionClient,
-		"clIeNT": actionClient,
-		"clIeNt": actionClient,
-		"clIenT": actionClient,
-		"clIent": actionClient,
-		"cliENT": actionClient,
-		"cliENt": actionClient,
-		"cliEnT": actionClient,
-		"cliEnt": actionClient,
-		"clieNT": actionClient,
-		"clieNt": actionClient,
-		"clienT": actionClient,
-		"client": actionClient,
 	}
 )

@@ -55,12 +55,12 @@ func buildStateUpdateTests(tests map[string]stateUpdateTest, root, infos map[str
 
 func TestConnectionStateUpdate(t *testing.T) {
 	tests := make(map[string]stateUpdateTest)
-	buildStateUpdateTests(tests, activeConnActions, activeConnActions)
+	buildStateUpdateTests(tests, connActions, connActions)
 	buildStateUpdateTests(tests, connActions, connActions)
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			tc.state.update(tc.info, tc.commandName, tc.args...)
+			tc.state.update(tc.info, true, tc.commandName, tc.args...)
 			require.Equal(t, tc.expected, tc.state)
 		})
 	}
@@ -70,7 +70,7 @@ func benchmarkStateUpdate(b *testing.B, names ...string) {
 	var state connectionState
 	for i := 0; i < b.N; i++ {
 		for _, cmd := range names {
-			state.update(activeConnActions, cmd)
+			state.update(connActions, true, cmd)
 		}
 	}
 }
@@ -88,16 +88,17 @@ func BenchmarkConnectionStateUpdateNoMatch(b *testing.B) {
 }
 
 func TestClientReply(t *testing.T) {
-	p := &Pool{
-		MaxIdle:   1,
-		MaxActive: 2,
-		Dial: func() (Conn, error) {
-			return DialDefaultServer()
-		},
-	}
+	p, err := NewPool(
+		PoolDial(func(options ...DialOption) (*Conn, error) {
+			return DialDefaultServer(options...)
+		}),
+		MaxIdle(1),
+		MaxActive(2),
+	)
+	require.NoError(t, err)
 	defer p.Close()
 
-	closeCheck := func(t *testing.T, c Conn) {
+	closeCheck := func(t *testing.T, c *PoolConn) {
 		t.Helper()
 
 		done := make(chan error)
@@ -121,15 +122,15 @@ func TestClientReply(t *testing.T) {
 
 			err := c.Send("CLIENT", "REPLY", "OFF")
 			require.NoError(t, err)
-			require.Equal(t, stateClientReplyOff, c.(*activeConn).state)
+			require.Equal(t, stateClientReplyOff, c.pc.conn.state)
 
 			err = c.Send("ECHO", "first")
 			require.NoError(t, err)
-			require.Equal(t, stateClientReplyOff, c.(*activeConn).state)
+			require.Equal(t, stateClientReplyOff, c.pc.conn.state)
 
 			_, err = c.Do("CLIENT", "REPLY", "ON")
 			require.NoError(t, err)
-			require.Equal(t, defaultState, c.(*activeConn).state)
+			require.Equal(t, defaultState, c.pc.conn.state)
 
 			reply, err := String(c.Do("ECHO", "second"))
 			require.NoError(t, err)
@@ -141,20 +142,20 @@ func TestClientReply(t *testing.T) {
 
 			err := c.Send("CLIENT", "REPLY", "OFF")
 			require.NoError(t, err)
-			require.Equal(t, stateClientReplyOff, c.(*activeConn).state)
+			require.Equal(t, stateClientReplyOff, c.pc.conn.state)
 
 			err = c.Send("ECHO", "first")
 			require.NoError(t, err)
-			require.Equal(t, stateClientReplyOff, c.(*activeConn).state)
+			require.Equal(t, stateClientReplyOff, c.pc.conn.state)
 
 			// Skip should be ignored as we are already in a off state.
 			err = c.Send("CLIENT", "REPLY", "SKIP")
 			require.NoError(t, err)
-			require.Equal(t, stateClientReplyOff, c.(*activeConn).state)
+			require.Equal(t, stateClientReplyOff, c.pc.conn.state)
 
 			_, err = c.Do("CLIENT", "REPLY", "ON")
 			require.NoError(t, err)
-			require.Equal(t, defaultState, c.(*activeConn).state)
+			require.Equal(t, defaultState, c.pc.conn.state)
 
 			reply, err := String(c.Do("ECHO", "second"))
 			require.NoError(t, err)
@@ -166,15 +167,15 @@ func TestClientReply(t *testing.T) {
 
 			err := c.Send("CLIENT", "REPLY", "SKIP")
 			require.NoError(t, err)
-			require.Equal(t, stateClientReplySkipNext, c.(*activeConn).state)
+			require.Equal(t, stateClientReplySkipNext, c.pc.conn.state)
 
 			err = c.Send("ECHO", "first")
 			require.NoError(t, err)
-			require.Equal(t, stateClientReplySkip, c.(*activeConn).state)
+			require.Equal(t, stateClientReplySkip, c.pc.conn.state)
 
 			err = c.Send("ECHO", "second")
 			require.NoError(t, err)
-			require.Equal(t, defaultState, c.(*activeConn).state)
+			require.Equal(t, defaultState, c.pc.conn.state)
 
 			err = c.Flush()
 			require.NoError(t, err)
@@ -227,7 +228,7 @@ func isUnsupported(err error) bool {
 
 // checkSupported checks if a command is supported and if it is, it
 // sends it on c otherwise it removes flags from the expected state.
-func checkSupported(t *testing.T, p *Pool, c Conn, expected *connectionState, flags connectionState, cmd string, args ...interface{}) {
+func checkSupported(t *testing.T, p *Pool, c *PoolConn, expected *connectionState, flags connectionState, cmd string, args ...interface{}) {
 	t.Helper()
 
 	c2 := p.Get()
@@ -236,7 +237,7 @@ func checkSupported(t *testing.T, p *Pool, c Conn, expected *connectionState, fl
 	_, err := c2.Do(cmd, args...)
 	if isUnsupported(err) {
 		*expected &^= flags
-		c2.(*activeConn).state &^= flags
+		c2.pc.conn.state &^= flags
 		return
 	}
 
@@ -285,21 +286,26 @@ func buildCloseTests(tests map[string]closeTest, root, infos map[string]*command
 		for i, arg := range cmdArgs[1:] {
 			t.args[i] = arg
 		}
+		switch t.commandName {
+		case "watch", "psubscribe", "subscribe", "ssubscribe":
+			t.args = append(t.args, "key")
+		}
 
 		tests[strings.Join(cmdArgs, "-")] = t
 	}
 }
 
 func TestPoolCloseCleanup(t *testing.T) {
-	p := &Pool{
-		Dial: func() (Conn, error) {
-			return DialDefaultServer()
-		},
-	}
+	p, err := NewPool(
+		PoolDial(func(options ...DialOption) (*Conn, error) {
+			return DialDefaultServer(options...)
+		}),
+	)
+	require.NoError(t, err)
 	defer p.Close()
 
 	var expected connectionState
-	setAllFlags(&expected, activeConnActions)
+	setAllFlags(&expected, connActions)
 	for _, val := range []string{"off", "skip"} {
 		t.Run("all-client-reply-"+val, func(t *testing.T) {
 			c := p.Get()
@@ -311,42 +317,51 @@ func TestPoolCloseCleanup(t *testing.T) {
 			case "off":
 				checkSupported(t, p, c, &expected, stateClientReplyOff, "CLIENT", "REPLY", "OFF")
 				checkSupported(t, p, c, &expected, 0, "CLIENT", "REPLY", "SKIP") // Should be ignored.
+				// CLIENT REPLY SKIP / SKIP NEXT was never set.
 				expected &^= stateClientReplySkip | stateClientReplySkipNext
 			case "skip":
 				checkSupported(t, p, c, &expected, stateClientReplySkip|stateClientReplySkipNext, "CLIENT", "REPLY", "SKIP")
-				expected &^= stateClientReplyOff
+				// CLIENT REPLY SKIP / SKIP NEXT should be unset by the next command and CLIENT REPLY OFF was never set.
+				expected &^= stateClientReplyOff | stateClientReplySkip | stateClientReplySkipNext
 			}
 			checkSupported(t, p, c, &expected, stateClientTracking, "CLIENT", "TRACKING", "ON")
+			require.Zero(t, c.pc.conn.state&(stateClientReplySkipNext)) // Skip next should have been cleared.
 			// MONITOR isn't tested as it can't be cleared during close without using RESET
 			// which isn't possible to use as we can't ensure that the dialled settings such
 			// as selected database and AUTH are restored.
 			expected &^= stateMonitor
 			checkSupported(t, p, c, &expected, stateWatch, "WATCH", "key") // Out of order as WATCH isn't allowed in side a subscriptions.
+			require.Zero(t, c.pc.conn.state&(stateClientReplySkip))        // Skip should should have cleared.
 			checkSupported(t, p, c, &expected, stateMulti, "MULTI")        // Out of order as MULTI isn't allowed in side a subscriptions.
 			checkSupported(t, p, c, &expected, statePsubscribe, "PSUBSCRIBE", "x")
 			checkSupported(t, p, c, &expected, stateReadOnly, "READONLY")
 			checkSupported(t, p, c, &expected, stateSsubscribe, "SSUBSCRIBE", "x")
 			checkSupported(t, p, c, &expected, stateSubscribe, "SUBSCRIBE", "x")
-			require.Equal(t, expected, c.(*activeConn).state)
+			require.Equal(t, expected, c.pc.conn.state)
+			pc := c.pc
 			require.NoError(t, c.Close())
-			require.Zero(t, c.(*activeConn).state)
+			require.Zero(t, pc.conn.state)
+			require.Zero(t, pc.conn.pending)
 		})
 	}
 
 	tests := make(map[string]closeTest)
-	buildCloseTests(tests, activeConnActions, activeConnActions)
+	buildCloseTests(tests, connActions, connActions)
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			c := p.Get()
 			_, err := c.Do(tc.commandName, tc.args...)
 			if isUnsupported(err) {
-				t.Skip("Command not supported")
+				t.Skipf("Command %q not supported", tc.commandName)
 			}
+			require.NoError(t, err)
 
-			require.Equal(t, tc.expected, c.(*activeConn).state)
+			require.Equal(t, tc.expected, c.pc.conn.state)
+			pc := c.pc
 			require.NoError(t, c.Close())
-			require.Zero(t, c.(*activeConn).state)
+			require.Zero(t, pc.conn.state)
+			require.Zero(t, pc.conn.pending)
 		})
 	}
 
@@ -354,6 +369,8 @@ func TestPoolCloseCleanup(t *testing.T) {
 		c := p.Get()
 		_, err := c.Do("MONITOR")
 		require.NoError(t, err)
+		active := p.active
 		require.ErrorIs(t, c.Close(), errMonitorEnabled)
+		require.Less(t, p.active, active)
 	})
 }

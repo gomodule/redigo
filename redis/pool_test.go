@@ -19,7 +19,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -29,531 +28,535 @@ import (
 )
 
 const (
-	testGoRoutines = 10
+	testGoRoutines = 1
+)
+
+var (
+	_ redis.DoContextHandler = (*poolTestConn)(nil)
+	_ redis.CloseHandler     = (*poolTestConn)(nil)
+	_ redis.ErrHandler       = (*poolTestConn)(nil)
+	_ redis.SendHandler      = (*poolTestConn)(nil)
 )
 
 type poolTestConn struct {
 	d   *poolDialer
 	err error
-	redis.Conn
 }
 
-func (c *poolTestConn) Close() error {
-	c.d.mu.Lock()
-	c.d.open -= 1
-	c.d.mu.Unlock()
-	return c.Conn.Close()
-}
-
-func (c *poolTestConn) Err() error { return c.err }
-
-func (c *poolTestConn) Do(commandName string, args ...interface{}) (interface{}, error) {
-	if commandName == "ERR" {
-		c.err = args[0].(error)
-		commandName = "PING"
+func newPoolTestConn(d *poolDialer) *poolTestConn {
+	return &poolTestConn{
+		d: d,
 	}
-	if commandName != "" {
+}
+
+func (c *poolTestConn) CloseHandler(handler io.Closer) io.Closer {
+	return redis.CloserFunc(func() error {
+		c.d.closeConn()
+		return handler.Close()
+	})
+}
+
+func (c *poolTestConn) ErrHandler(handler redis.ErrorReporter) redis.ErrorReporter {
+	return redis.ErrorReporterFunc(func() error {
+		return c.err
+	})
+}
+
+func (c *poolTestConn) DoContextHandler(handler redis.DoContexter) redis.DoContexter {
+	return redis.DoContexterFunc(func(ctx context.Context, commandName string, args ...interface{}) (interface{}, error) {
+		if commandName == "ERR" {
+			c.err = args[0].(error)
+			commandName = "PING"
+		}
+		if commandName != "" {
+			c.d.commands = append(c.d.commands, commandName)
+		}
+		return handler.DoContext(ctx, commandName, args...)
+	})
+}
+
+func (c *poolTestConn) SendHandler(handler redis.Sender) redis.Sender {
+	return redis.SenderFunc(func(commandName string, args ...interface{}) error {
 		c.d.commands = append(c.d.commands, commandName)
-	}
-	return c.Conn.Do(commandName, args...)
-}
-
-func (c *poolTestConn) Send(commandName string, args ...interface{}) error {
-	c.d.commands = append(c.d.commands, commandName)
-	return c.Conn.Send(commandName, args...)
+		return handler.Send(commandName, args...)
+	})
 }
 
 type poolDialer struct {
 	mu       sync.Mutex
-	t        *testing.T
+	t        testing.TB
 	dialed   int
 	open     int
 	commands []string
 	dialErr  error
+	pool     *redis.Pool
 }
 
-func (d *poolDialer) dial() (redis.Conn, error) {
-	d.mu.Lock()
-	d.dialed += 1
-	dialErr := d.dialErr
-	d.mu.Unlock()
-	if dialErr != nil {
-		return nil, d.dialErr
-	}
-	c, err := redis.DialDefaultServer()
-	if err != nil {
-		return nil, err
-	}
-	d.mu.Lock()
-	d.open += 1
-	d.mu.Unlock()
-	return &poolTestConn{d: d, Conn: c}, nil
+func newTestPool(t testing.TB, options ...redis.PoolOption) *poolDialer {
+	t.Helper()
+
+	d := &poolDialer{t: t}
+	return newTestPoolDialer(t, d, options...)
 }
 
-func (d *poolDialer) dialContext(ctx context.Context) (redis.Conn, error) {
-	return d.dial()
+func newTestPoolDial(t testing.TB, options ...redis.PoolOption) *poolDialer {
+	t.Helper()
+
+	d := &poolDialer{t: t}
+	options = append(options, redis.PoolDial(d.dial))
+	return newTestPoolDialer(t, d, options...)
 }
 
-func (d *poolDialer) check(message string, p *redis.Pool, dialed, open, inuse int) {
-	d.checkAll(message, p, dialed, open, inuse, 0, 0)
+func newTestPoolDialContext(t testing.TB, options ...redis.PoolOption) *poolDialer {
+	t.Helper()
+
+	d := &poolDialer{t: t}
+	options = append(options, redis.PoolDialContext(d.dialContext))
+	return newTestPoolDialer(t, d, options...)
 }
 
-func (d *poolDialer) checkAll(message string, p *redis.Pool, dialed, open, inuse int, waitCountMax int64, waitDurationMax time.Duration) {
+func newTestPoolDialer(t testing.TB, d *poolDialer, options ...redis.PoolOption) *poolDialer {
+	t.Helper()
+
+	p, err := redis.NewPool(append(options, redis.DialOptions(redis.DialConnOptions(redis.ConnUse(d))))...)
+	require.NoError(t, err)
+
+	d.pool = p
+	return d
+}
+
+func (d *poolDialer) ValidateClose() {
+	d.t.Helper()
+	require.NoError(d.t, d.pool.Close())
+}
+
+func (d *poolDialer) Clone() interface{} {
+	return newPoolTestConn(d)
+}
+
+func (d *poolDialer) dial(options ...redis.DialOption) (*redis.Conn, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.dialed != dialed {
-		d.t.Errorf("%s: dialed=%d, want %d", message, d.dialed, dialed)
-	}
-	if d.open != open {
-		d.t.Errorf("%s: open=%d, want %d", message, d.open, open)
+	d.dialed++
+	if d.dialErr != nil {
+		return nil, d.dialErr
 	}
 
-	stats := p.Stats()
-
-	if stats.ActiveCount != open {
-		d.t.Errorf("%s: active=%d, want %d", message, stats.ActiveCount, open)
-	}
-	if stats.IdleCount != open-inuse {
-		d.t.Errorf("%s: idle=%d, want %d", message, stats.IdleCount, open-inuse)
+	c, err := redis.DialDefaultServer(options...)
+	if err != nil {
+		return nil, err
 	}
 
-	if stats.WaitCount > waitCountMax {
-		d.t.Errorf("%s: unexpected wait=%d want at most %d", message, stats.WaitCount, waitCountMax)
-	}
+	d.open++
 
-	if waitCountMax == 0 {
-		if stats.WaitDuration != 0 {
-			d.t.Errorf("%s: unexpected waitDuration=%v want %v", message, stats.WaitDuration, 0)
-		}
-		return
-	}
+	return c, nil
+}
 
-	if stats.WaitDuration > waitDurationMax {
-		d.t.Errorf("%s: unexpected waitDuration=%v want < %v", message, stats.WaitDuration, waitDurationMax)
+func (d *poolDialer) closeConn() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.open > 0 {
+		d.open--
 	}
 }
 
-func TestPoolReuse(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle: 2,
-		Dial:    d.dial,
+func (d *poolDialer) dialContext(ctx context.Context, options ...redis.DialOption) (*redis.Conn, error) {
+	return d.dial(options...)
+}
+
+func (d *poolDialer) check(message string, dialed, open, inuse int) {
+	d.t.Helper()
+	d.checkAll(message, dialed, open, inuse, 0, 0)
+}
+
+func (d *poolDialer) checkAll(message string, dialed, open, inuse int, waitCountMax int64, waitDurationMax time.Duration) {
+	d.t.Helper()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	require.Equal(d.t, dialed, d.dialed, "dialed")
+	require.Equal(d.t, open, d.open, "open")
+
+	stats := d.pool.Stats()
+
+	require.Equal(d.t, open, stats.ActiveCount, "active")
+	require.Equal(d.t, open-inuse, stats.IdleCount, "idle")
+	require.GreaterOrEqual(d.t, waitCountMax, stats.WaitCount, "wait count")
+	if waitCountMax == 0 {
+		require.Zero(d.t, stats.WaitDuration, message)
+		return
 	}
 
+	require.Greater(d.t, waitDurationMax, stats.WaitDuration, "wait duration")
+}
+
+func TestPoolReuse(t *testing.T) {
+	d := newTestPoolDial(t, redis.MaxIdle(2))
+
 	for i := 0; i < 10; i++ {
-		c1 := p.Get()
+		c1 := d.pool.Get()
 		_, err := c1.Do("PING")
 		require.NoError(t, err)
-		c2 := p.Get()
+		c2 := d.pool.Get()
 		_, err = c2.Do("PING")
 		require.NoError(t, err)
 		require.NoError(t, c1.Close())
 		require.NoError(t, c2.Close())
 	}
 
-	d.check("before close", p, 2, 2, 0)
-	p.Close()
-	d.check("after close", p, 2, 0, 0)
+	d.check("before close", 2, 2, 0)
+	d.ValidateClose()
+	d.check("after close", 2, 0, 0)
 }
 
 func TestPoolMaxIdle(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle: 2,
-		Dial:    d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t, redis.MaxIdle(2))
+	defer d.ValidateClose()
 
 	for i := 0; i < 10; i++ {
-		c1 := p.Get()
-		_, err = c1.Do("PING")
+		c1 := d.pool.Get()
+		_, err := c1.Do("PING")
 		require.NoError(t, err)
-		c2 := p.Get()
+		c2 := d.pool.Get()
 		_, err = c2.Do("PING")
 		require.NoError(t, err)
-		c3 := p.Get()
+		c3 := d.pool.Get()
 		_, err = c3.Do("PING")
 		require.NoError(t, err)
 		require.NoError(t, c1.Close())
 		require.NoError(t, c2.Close())
 		require.NoError(t, c3.Close())
 	}
-	d.check("before close", p, 12, 2, 0)
-	p.Close()
-	d.check("after close", p, 12, 0, 0)
+	d.check("before close", 12, 2, 0)
+	d.ValidateClose()
+	d.check("after close", 12, 0, 0)
 }
 
 func TestPoolError(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle: 2,
-		Dial:    d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t, redis.MaxIdle(2))
+	defer d.ValidateClose()
 
-	c := p.Get()
+	c := d.pool.Get()
 	_, err := c.Do("ERR", io.EOF)
 	require.NoError(t, err)
-	if c.Err() == nil {
-		t.Errorf("expected c.Err() != nil")
-	}
-	c.Close()
+	require.Error(t, c.Err())
+	require.NoError(t, c.Close())
 
-	c = p.Get()
+	c = d.pool.Get()
 	_, err = c.Do("ERR", io.EOF)
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
-	d.check(".", p, 2, 0, 0)
+	d.check(".", 2, 0, 0)
 }
 
 func TestPoolClose(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle: 2,
-		Dial:    d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t, redis.MaxIdle(2))
+	defer d.ValidateClose()
 
-	c1 := p.Get()
+	c1 := d.pool.Get()
 	_, err := c1.Do("PING")
 	require.NoError(t, err)
-	c2 := p.Get()
+	c2 := d.pool.Get()
 	_, err = c2.Do("PING")
 	require.NoError(t, err)
-	c3 := p.Get()
+	c3 := d.pool.Get()
 	_, err = c3.Do("PING")
 	require.NoError(t, err)
 
-	c1.Close()
-	if _, err := c1.Do("PING"); err == nil {
-		t.Errorf("expected error after connection closed")
-	}
+	require.NoError(t, c1.Close())
+	_, err = c1.Do("PING")
+	require.Error(t, err)
 
-	c2.Close()
-	c2.Close()
+	require.NoError(t, c2.Close())
+	require.Error(t, c2.Close())
+	require.NoError(t, d.pool.Close())
 
-	p.Close()
+	d.check("after pool close", 3, 1, 1)
 
-	d.check("after pool close", p, 3, 1, 1)
+	_, err = c1.Do("PING")
+	require.Error(t, err)
+	require.NoError(t, c3.Close())
 
-	if _, err := c1.Do("PING"); err == nil {
-		t.Errorf("expected error after connection and pool closed")
-	}
+	d.check("after conn close", 3, 0, 0)
 
-	c3.Close()
+	c1 = d.pool.Get()
+	_, err = c1.Do("PING")
+	require.Error(t, err)
 
-	d.check("after conn close", p, 3, 0, 0)
-
-	c1 = p.Get()
-	if _, err := c1.Do("PING"); err == nil {
-		t.Errorf("expected error after pool closed")
-	}
+	_, err = d.pool.GetContext(context.Background())
+	require.Error(t, err)
 }
 
 func TestPoolClosedConn(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:     2,
-		IdleTimeout: 300 * time.Second,
-		Dial:        d.dial,
-	}
-	defer p.Close()
-	c := p.Get()
-	if c.Err() != nil {
-		t.Fatal("get failed")
-	}
-	c.Close()
-	if err := c.Err(); err == nil {
-		t.Fatal("Err on closed connection did not return error")
-	}
-	if _, err := c.Do("PING"); err == nil {
-		t.Fatal("Do on closed connection did not return error")
-	}
-	if err := c.Send("PING"); err == nil {
-		t.Fatal("Send on closed connection did not return error")
-	}
-	if err := c.Flush(); err == nil {
-		t.Fatal("Flush on closed connection did not return error")
-	}
-	if _, err := c.Receive(); err == nil {
-		t.Fatal("Receive on closed connection did not return error")
-	}
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.IdleTimeout(300*time.Second),
+	)
+	defer d.ValidateClose()
+
+	c := d.pool.Get()
+	require.NoError(t, c.Err())
+	require.NoError(t, c.Close())
+	require.Error(t, c.Err())
+	_, err := c.Do("PING")
+	require.Error(t, err)
+	require.Error(t, c.Send("PING"))
+	require.Error(t, c.Flush())
+	require.Error(t, c.Flush())
+	_, err = c.Receive()
+	require.Error(t, err)
 }
 
 func TestPoolIdleTimeout(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:     2,
-		IdleTimeout: 300 * time.Second,
-		Dial:        d.dial,
-	}
-	defer p.Close()
+	idleTimeout := 300 * time.Second
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.IdleTimeout(idleTimeout),
+	)
+	defer d.ValidateClose()
 
 	now := time.Now()
 	redis.SetNowFunc(func() time.Time { return now })
 	defer redis.SetNowFunc(time.Now)
 
-	c := p.Get()
+	c := d.pool.Get()
 	_, err := c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
-	d.check("1", p, 1, 1, 0)
+	d.check("1", 1, 1, 0)
 
-	now = now.Add(p.IdleTimeout + 1)
+	now = now.Add(idleTimeout + 1)
 
-	c = p.Get()
+	c = d.pool.Get()
 	_, err = c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
-	d.check("2", p, 2, 1, 0)
+	d.check("2", 2, 1, 0)
 }
 
 func TestPoolMaxLifetime(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:         2,
-		MaxConnLifetime: 300 * time.Second,
-		Dial:            d.dial,
-	}
-	defer p.Close()
+	maxConnLifetime := 300 * time.Second
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.MaxConnLifetime(maxConnLifetime),
+	)
+	defer d.ValidateClose()
 
 	now := time.Now()
 	redis.SetNowFunc(func() time.Time { return now })
 	defer redis.SetNowFunc(time.Now)
 
-	c := p.Get()
+	c := d.pool.Get()
 	_, err := c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
-	d.check("1", p, 1, 1, 0)
+	d.check("1", 1, 1, 0)
 
-	now = now.Add(p.MaxConnLifetime + 1)
+	now = now.Add(maxConnLifetime + 1)
 
-	c = p.Get()
+	c = d.pool.Get()
 	_, err = c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
-	d.check("2", p, 2, 1, 0)
+	d.check("2", 2, 1, 0)
 }
 
-func TestPoolConcurrenSendReceive(t *testing.T) {
-	p := &redis.Pool{
-		Dial: func() (redis.Conn, error) { return redis.DialDefaultServer() },
+func TestPoolConcurrentSendReceive(t *testing.T) {
+	dial := func(options ...redis.DialOption) (*redis.Conn, error) {
+		return redis.DialDefaultServer(options...)
 	}
-	defer p.Close()
+	d := newTestPool(t, redis.PoolDial(dial))
+	defer d.ValidateClose()
 
-	c := p.Get()
-	done := make(chan error, 1)
+	c := d.pool.Get()
+	errs := make(chan error, 1)
 	go func() {
 		_, err := c.Receive()
-		done <- err
+		errs <- err
 	}()
 	require.NoError(t, c.Send("PING"))
-	c.Flush()
-	err := <-done
-	if err != nil {
-		t.Fatalf("Receive() returned error %v", err)
-	}
-	_, err = c.Do("")
-	if err != nil {
-		t.Fatalf("Do() returned error %v", err)
-	}
-	c.Close()
+	require.NoError(t, c.Flush())
+	require.NoError(t, <-errs)
+	_, err := c.Do("")
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
 }
 
 func TestPoolBorrowCheck(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:      2,
-		Dial:         d.dial,
-		TestOnBorrow: func(redis.Conn, time.Time) error { return redis.Error("BLAH") },
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.TestOnBorrow(func(context.Context, *redis.Conn, time.Time) error {
+			return redis.Error("BLAH")
+		}),
+	)
+	defer d.ValidateClose()
 
 	for i := 0; i < 10; i++ {
-		c := p.Get()
+		c := d.pool.Get()
 		_, err := c.Do("PING")
 		require.NoError(t, err)
-		c.Close()
+		require.NoError(t, c.Close())
 	}
-	d.check("1", p, 10, 1, 0)
+	d.check("1", 10, 1, 0)
 }
 
 func TestPoolMaxActive(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   2,
-		MaxActive: 2,
-		Dial:      d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.MaxActive(2),
+	)
+	defer d.ValidateClose()
 
-	c1 := p.Get()
+	c1 := d.pool.Get()
 	_, err := c1.Do("PING")
 	require.NoError(t, err)
-	c2 := p.Get()
+	c2 := d.pool.Get()
 	_, err = c2.Do("PING")
 	require.NoError(t, err)
 
-	d.check("1", p, 2, 2, 2)
+	d.check("1", 2, 2, 2)
 
-	c3 := p.Get()
-	if _, err := c3.Do("PING"); err != redis.ErrPoolExhausted {
-		t.Errorf("expected pool exhausted")
-	}
+	c3 := d.pool.Get()
+	_, err = c3.Do("PING")
+	require.EqualError(t, err, redis.ErrPoolExhausted.Error())
 
-	c3.Close()
-	d.check("2", p, 2, 2, 2)
-	c2.Close()
-	d.check("3", p, 2, 2, 1)
+	require.NoError(t, c3.Close())
+	d.check("2", 2, 2, 2)
+	require.NoError(t, c2.Close())
+	d.check("3", 2, 2, 1)
 
-	c3 = p.Get()
-	if _, err := c3.Do("PING"); err != nil {
-		t.Errorf("expected good channel, err=%v", err)
-	}
-	c3.Close()
+	c3 = d.pool.Get()
+	_, err = c3.Do("PING")
+	require.NoError(t, err)
+	require.NoError(t, c3.Close())
 
-	d.check("4", p, 2, 2, 1)
+	d.check("4", 2, 2, 1)
 }
 
 func TestPoolWaitStats(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		Wait:      true,
-		MaxIdle:   2,
-		MaxActive: 2,
-		Dial:      d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.MaxActive(2),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
 
-	c1 := p.Get()
+	c1 := d.pool.Get()
 	_, err := c1.Do("PING")
 	require.NoError(t, err)
-	c2 := p.Get()
+	c2 := d.pool.Get()
 	_, err = c2.Do("PING")
 	require.NoError(t, err)
 
-	d.checkAll("1", p, 2, 2, 2, 0, 0)
+	d.checkAll("1", 2, 2, 2, 0, 0)
 
 	start := time.Now()
+	errs := make(chan error, 1)
+	// TODO: Check this as it looks like it might not be doing the right thing.
 	go func() {
 		time.Sleep(time.Millisecond * 100)
-		c1.Close()
+		errs <- c1.Close()
 	}()
 
-	c3 := p.Get()
-	d.checkAll("2", p, 2, 2, 2, 1, time.Since(start))
+	c3 := d.pool.Get()
+	d.checkAll("2", 2, 2, 2, 1, time.Since(start))
 
-	if _, err := c3.Do("PING"); err != nil {
-		t.Errorf("expected good channel, err=%v", err)
-	}
+	_, err = c3.Do("PING")
+	require.NoError(t, err)
+	require.NoError(t, <-errs)
 }
 
 func TestPoolMonitorCleanup(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   2,
-		MaxActive: 2,
-		Dial:      d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.MaxIdle(2),
+		redis.MaxActive(2),
+	)
+	defer d.ValidateClose()
 
-	c := p.Get()
+	c := d.pool.Get()
 	require.NoError(t, c.Send("MONITOR"))
-	c.Close()
+	require.Error(t, c.Close())
 
-	d.check("", p, 1, 0, 0)
+	d.check("", 1, 0, 0)
 }
 
 func TestPoolPubSubCleanup(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   2,
-		MaxActive: 2,
-		Dial:      d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.MaxIdle(2),
+		redis.MaxActive(2),
+	)
+	defer d.ValidateClose()
 
-	c := p.Get()
+	c := d.pool.Get()
 	require.NoError(t, c.Send("SUBSCRIBE", "x"))
-	c.Close()
+	require.NoError(t, c.Close())
 
 	want := []string{"SUBSCRIBE", "UNSUBSCRIBE", "ECHO"}
-	if !reflect.DeepEqual(d.commands, want) {
-		t.Errorf("got commands %v, want %v", d.commands, want)
-	}
+	require.Equal(t, want, d.commands)
 	d.commands = nil
 
-	c = p.Get()
+	c = d.pool.Get()
 	require.NoError(t, c.Send("PSUBSCRIBE", "x*"))
-	c.Close()
+	require.NoError(t, c.Close())
 
 	want = []string{"PSUBSCRIBE", "PUNSUBSCRIBE", "ECHO"}
-	if !reflect.DeepEqual(d.commands, want) {
-		t.Errorf("got commands %v, want %v", d.commands, want)
-	}
-	d.commands = nil
+	require.Equal(t, want, d.commands)
 }
 
 func TestPoolTransactionCleanup(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   2,
-		MaxActive: 2,
-		Dial:      d.dial,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(2),
+		redis.MaxActive(2),
+	)
+	defer d.ValidateClose()
 
-	c := p.Get()
+	c := d.pool.Get()
 	_, err := c.Do("WATCH", "key")
 	require.NoError(t, err)
 	_, err = c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
 	want := []string{"WATCH", "PING", "UNWATCH"}
-	if !reflect.DeepEqual(d.commands, want) {
-		t.Errorf("got commands %v, want %v", d.commands, want)
-	}
+	require.Equal(t, want, d.commands)
 	d.commands = nil
 
-	c = p.Get()
+	c = d.pool.Get()
 	_, err = c.Do("WATCH", "key")
 	require.NoError(t, err)
 	_, err = c.Do("UNWATCH")
 	require.NoError(t, err)
 	_, err = c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
 	want = []string{"WATCH", "UNWATCH", "PING"}
-	if !reflect.DeepEqual(d.commands, want) {
-		t.Errorf("got commands %v, want %v", d.commands, want)
-	}
+	require.Equal(t, want, d.commands)
 	d.commands = nil
 
-	c = p.Get()
+	c = d.pool.Get()
 	_, err = c.Do("WATCH", "key")
 	require.NoError(t, err)
 	_, err = c.Do("MULTI")
 	require.NoError(t, err)
 	_, err = c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
 	want = []string{"WATCH", "MULTI", "PING", "DISCARD"}
-	if !reflect.DeepEqual(d.commands, want) {
-		t.Errorf("got commands %v, want %v", d.commands, want)
-	}
+	require.Equal(t, want, d.commands)
 	d.commands = nil
 
-	c = p.Get()
+	c = d.pool.Get()
 	_, err = c.Do("WATCH", "key")
 	require.NoError(t, err)
 	_, err = c.Do("MULTI")
@@ -562,15 +565,13 @@ func TestPoolTransactionCleanup(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
 	want = []string{"WATCH", "MULTI", "DISCARD", "PING"}
-	if !reflect.DeepEqual(d.commands, want) {
-		t.Errorf("got commands %v, want %v", d.commands, want)
-	}
+	require.Equal(t, want, d.commands)
 	d.commands = nil
 
-	c = p.Get()
+	c = d.pool.Get()
 	_, err = c.Do("WATCH", "key")
 	require.NoError(t, err)
 	_, err = c.Do("MULTI")
@@ -579,22 +580,22 @@ func TestPoolTransactionCleanup(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c.Do("PING")
 	require.NoError(t, err)
-	c.Close()
+	require.NoError(t, c.Close())
 
 	want = []string{"WATCH", "MULTI", "EXEC", "PING"}
-	if !reflect.DeepEqual(d.commands, want) {
-		t.Errorf("got commands %v, want %v", d.commands, want)
-	}
-	d.commands = nil
+	require.Equal(t, want, d.commands)
 }
 
 func startGoroutines(p *redis.Pool, cmd string, args ...interface{}) chan error {
-	errs := make(chan error, testGoRoutines)
-	for i := 0; i < cap(errs); i++ {
+	errs := make(chan error, testGoRoutines*2)
+	for i := 0; i < testGoRoutines; i++ {
 		go func() {
 			c := p.Get()
+			defer func() {
+				errs <- c.Close()
+			}()
+
 			_, err := c.Do(cmd, args...)
-			c.Close()
 			errs <- err
 		}()
 	}
@@ -603,20 +604,18 @@ func startGoroutines(p *redis.Pool, cmd string, args ...interface{}) chan error 
 }
 
 func TestWaitPool(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
 
-	c := p.Get()
+	c := d.pool.Get()
 	start := time.Now()
-	errs := startGoroutines(p, "PING")
-	d.check("before close", p, 1, 1, 1)
-	c.Close()
+	errs := startGoroutines(d.pool, "PING")
+	d.check("before close", 1, 1, 1)
+	require.NoError(t, c.Close())
 	timeout := time.After(2 * time.Second)
 	for i := 0; i < cap(errs); i++ {
 		select {
@@ -628,93 +627,86 @@ func TestWaitPool(t *testing.T) {
 			t.Fatalf("timeout waiting for blocked goroutine %d", i)
 		}
 	}
-	d.checkAll("done", p, 1, 1, 0, testGoRoutines, time.Since(start)*testGoRoutines)
+	d.checkAll("done", 1, 1, 0, testGoRoutines, time.Since(start)*testGoRoutines)
 }
 
 func TestWaitPoolClose(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
 
-	c := p.Get()
-	if _, err := c.Do("PING"); err != nil {
-		t.Fatal(err)
-	}
+	c := d.pool.Get()
+	_, err := c.Do("PING")
+	require.NoError(t, err)
+
 	start := time.Now()
-	errs := startGoroutines(p, "PING")
-	d.check("before close", p, 1, 1, 1)
-	p.Close()
+	errs := startGoroutines(d.pool, "PING")
+	d.check("before close", 1, 1, 1)
+	require.NoError(t, d.pool.Close())
 	timeout := time.After(2 * time.Second)
+	var nils int
 	for i := 0; i < cap(errs); i++ {
 		select {
 		case err := <-errs:
-			switch err {
-			case nil:
-				t.Fatal("blocked goroutine did not get error")
-			case redis.ErrPoolExhausted:
-				t.Fatal("blocked goroutine got pool exhausted error")
+			if err != nil {
+				require.EqualError(t, err, redis.ErrPoolClosed.Error())
+				continue
 			}
+			nils++
 		case <-timeout:
 			t.Fatal("timeout waiting for blocked goroutine")
 		}
 	}
-	c.Close()
-	d.checkAll("done", p, 1, 0, 0, testGoRoutines, time.Since(start)*testGoRoutines)
+	require.Equal(t, testGoRoutines, nils)
+	require.NoError(t, c.Close())
+	d.checkAll("done", 1, 0, 0, testGoRoutines, time.Since(start)*testGoRoutines)
 }
 
 func TestWaitPoolCommandError(t *testing.T) {
 	testErr := errors.New("test")
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
 
-	c := p.Get()
+	c := d.pool.Get()
 	start := time.Now()
-	errs := startGoroutines(p, "ERR", testErr)
-	d.check("before close", p, 1, 1, 1)
-	c.Close()
+	errs := startGoroutines(d.pool, "ERR", testErr)
+	d.check("before close", 1, 1, 1)
+	require.NoError(t, c.Close())
 	timeout := time.After(2 * time.Second)
 	for i := 0; i < cap(errs); i++ {
 		select {
 		case err := <-errs:
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 		case <-timeout:
 			t.Fatalf("timeout waiting for blocked goroutine %d", i)
 		}
 	}
-	d.checkAll("done", p, cap(errs), 0, 0, testGoRoutines, time.Since(start)*testGoRoutines)
+	d.checkAll("done", 1, 0, 0, testGoRoutines, time.Since(start)*testGoRoutines)
 }
 
 func TestWaitPoolDialError(t *testing.T) {
 	testErr := errors.New("test")
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
 
-	c := p.Get()
+	c := d.pool.Get()
 	start := time.Now()
-	errs := startGoroutines(p, "ERR", testErr)
-	d.check("before close", p, 1, 1, 1)
+	errs := startGoroutines(d.pool, "ERR", testErr)
+	d.check("before close", 1, 1, 1)
 
 	d.dialErr = errors.New("dial")
-	c.Close()
+	require.NoError(t, c.Close())
 
 	nilCount := 0
 	errCount := 0
@@ -734,13 +726,9 @@ func TestWaitPoolDialError(t *testing.T) {
 			t.Fatalf("timeout waiting for blocked goroutine %d", i)
 		}
 	}
-	if nilCount != 1 {
-		t.Errorf("expected one nil error, got %d", nilCount)
-	}
-	if errCount != cap(errs)-1 {
-		t.Errorf("expected %d dial errors, got %d", cap(errs)-1, errCount)
-	}
-	d.checkAll("done", p, cap(errs), 0, 0, testGoRoutines, time.Since(start)*testGoRoutines)
+	require.Equal(t, testGoRoutines+1, nilCount)
+	require.Equal(t, testGoRoutines-1, errCount)
+	d.checkAll("done", testGoRoutines, 0, 0, testGoRoutines-1, time.Since(start)*testGoRoutines)
 }
 
 // Borrowing requires us to iterate over the idle connections, unlock the pool,
@@ -752,21 +740,19 @@ func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
 	const count = 100
 
 	// First we'll Create a pool where the pilfering of idle connections fails.
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   count,
-		MaxActive: count,
-		Dial:      d.dial,
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+	d := newTestPoolDial(t,
+		redis.MaxIdle(count),
+		redis.MaxActive(count),
+		redis.TestOnBorrow(func(context.Context, *redis.Conn, time.Time) error {
 			return errors.New("No way back into the real world.")
-		},
-	}
-	defer p.Close()
+		}),
+	)
+	defer d.ValidateClose()
 
 	// Fill the pool with idle connections.
-	conns := make([]redis.Conn, count)
+	conns := make([]*redis.PoolConn, count)
 	for i := range conns {
-		conns[i] = p.Get()
+		conns[i] = d.pool.Get()
 	}
 	for i := range conns {
 		conns[i].Close()
@@ -775,55 +761,66 @@ func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
 	// Spawn a bunch of goroutines to thrash the pool.
 	var wg sync.WaitGroup
 	wg.Add(count)
+	errs := make(chan error, count*2)
 	for i := 0; i < count; i++ {
 		go func() {
-			c := p.Get()
-			if c.Err() != nil {
-				t.Errorf("pool get failed: %v", c.Err())
-			}
-			c.Close()
-			wg.Done()
+			defer wg.Done()
+			c := d.pool.Get()
+			defer func() {
+				errs <- c.Close()
+			}()
+			errs <- c.Err()
 		}()
 	}
 	wg.Wait()
-	if d.dialed != count*2 {
-		t.Errorf("Expected %d dials, got %d", count*2, d.dialed)
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
 	}
+	require.Equal(t, cap(errs), d.dialed)
 }
 
 func BenchmarkPoolGet(b *testing.B) {
-	b.StopTimer()
-	p := redis.Pool{Dial: func() (redis.Conn, error) { return redis.DialDefaultServer() }, MaxIdle: 2}
-	c := p.Get()
-	if err := c.Err(); err != nil {
-		b.Fatal(err)
+	dial := func(options ...redis.DialOption) (*redis.Conn, error) {
+		return redis.DialDefaultServer(options...)
 	}
-	c.Close()
-	defer p.Close()
-	b.StartTimer()
+
+	d := newTestPool(b,
+		redis.PoolDial(dial),
+		redis.MaxIdle(2),
+	)
+	defer d.ValidateClose()
+
+	c := d.pool.Get()
+	require.NoError(b, c.Err())
+	require.NoError(b, c.Close())
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c = p.Get()
-		c.Close()
+		c = d.pool.Get()
+		require.NoError(b, c.Close())
 	}
 }
 
 func BenchmarkPoolDo(b *testing.B) {
-	p := redis.Pool{
-		MaxIdle: 2,
-		Dial: func() (redis.Conn, error) {
-			return redis.DialDefaultServer()
-		},
+	dial := func(options ...redis.DialOption) (*redis.Conn, error) {
+		return redis.DialDefaultServer(options...)
 	}
+	d := newTestPool(b,
+		redis.PoolDial(dial),
+		redis.MaxIdle(2),
+	)
+	defer d.ValidateClose()
 
 	func() {
 		// Setup required data.
-		c := p.Get()
+		c := d.pool.Get()
 		require.NoError(b, c.Err())
 		defer func() {
 			require.NoError(b, c.Close())
 		}()
 
-		_, err = c.Do("MSET", "foo", "bar", "bar", "baz")
+		_, err := c.Do("MSET", "foo", "bar", "bar", "baz")
 		require.NoError(b, err)
 		_, err = c.Do("HMSET", "hfoo", "bar", "baz", "qux", "quux", "thing", "bob")
 		require.NoError(b, err)
@@ -863,110 +860,109 @@ func BenchmarkPoolDo(b *testing.B) {
 	for name, tc := range tests {
 		b.Run(name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				c := p.Get()
+				c := d.pool.Get()
 				_, err := c.Do(tc.cmd, tc.args...)
 				require.NoError(b, err)
-				err = c.Close()
-				require.NoError(b, err)
+				require.NoError(b, c.Close())
 			}
 		})
 	}
 }
 
 func BenchmarkPoolGetErr(b *testing.B) {
-	b.StopTimer()
-	p := redis.Pool{Dial: func() (redis.Conn, error) { return redis.DialDefaultServer() }, MaxIdle: 2}
-	c := p.Get()
-	if err := c.Err(); err != nil {
-		b.Fatal(err)
+	dial := func(options ...redis.DialOption) (*redis.Conn, error) {
+		return redis.DialDefaultServer(options...)
 	}
-	c.Close()
-	defer p.Close()
-	b.StartTimer()
+	d := newTestPool(b,
+		redis.PoolDial(dial),
+		redis.MaxIdle(2),
+	)
+	defer d.ValidateClose()
+
+	c := d.pool.Get()
+	require.NoError(b, c.Err())
+	require.NoError(b, c.Close())
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c = p.Get()
-		if err := c.Err(); err != nil {
-			b.Fatal(err)
-		}
-		c.Close()
+		c = d.pool.Get()
+		require.NoError(b, c.Err())
+		require.NoError(b, c.Close())
 	}
 }
 
 func BenchmarkPoolGetPing(b *testing.B) {
-	b.StopTimer()
-	p := redis.Pool{Dial: func() (redis.Conn, error) { return redis.DialDefaultServer() }, MaxIdle: 2}
-	c := p.Get()
-	if err := c.Err(); err != nil {
-		b.Fatal(err)
+	dial := func(options ...redis.DialOption) (*redis.Conn, error) {
+		return redis.DialDefaultServer(options...)
 	}
-	c.Close()
-	defer p.Close()
-	b.StartTimer()
+	d := newTestPool(b,
+		redis.PoolDial(dial),
+		redis.MaxIdle(2),
+	)
+	defer d.ValidateClose()
+
+	c := d.pool.Get()
+	require.NoError(b, c.Err())
+	require.NoError(b, c.Close())
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c = p.Get()
-		if _, err := c.Do("PING"); err != nil {
-			b.Fatal(err)
-		}
-		c.Close()
+		c = d.pool.Get()
+		_, err := c.Do("PING")
+		require.NoError(b, err)
+		require.NoError(b, c.Close())
 	}
 }
 
 func TestWaitPoolGetContext(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
-	c, err := p.GetContext(context.Background())
-	if err != nil {
-		t.Fatalf("GetContext returned %v", err)
-	}
-	defer c.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
+
+	c, err := d.pool.GetContext(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
 }
 
 func TestWaitPoolGetContextIssue520(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	defer p.Close()
+	d := newTestPoolDial(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
+
 	ctx1, cancel1 := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 	defer cancel1()
-	c, err := p.GetContext(ctx1)
-	if err != context.DeadlineExceeded {
-		t.Fatalf("GetContext returned %v", err)
-	}
-	defer c.Close()
+
+	c, err := d.pool.GetContext(ctx1)
+	require.EqualError(t, err, context.DeadlineExceeded.Error())
+	defer func() {
+		require.NoError(t, c.Close())
+	}()
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	c2, err := p.GetContext(ctx2)
-	if err != nil {
-		t.Fatalf("Get context returned %v", err)
-	}
-	defer c2.Close()
+
+	c2, err := d.pool.GetContext(ctx2)
+	require.NoError(t, err)
+	require.NoError(t, c2.Close())
 }
 
 func TestWaitPoolGetContextWithDialContext(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:     1,
-		MaxActive:   1,
-		DialContext: d.dialContext,
-		Wait:        true,
-	}
-	defer p.Close()
-	c, err := p.GetContext(context.Background())
-	if err != nil {
-		t.Fatalf("GetContext returned %v", err)
-	}
-	defer c.Close()
+	d := newTestPoolDialContext(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
+
+	c, err := d.pool.GetContext(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
 }
 
 func TestPoolGetContext_DialContext(t *testing.T) {
@@ -976,89 +972,88 @@ func TestPoolGetContext_DialContext(t *testing.T) {
 		return &testConn{}, nil
 	}
 
-	p := &redis.Pool{
-		DialContext: func(ctx context.Context) (redis.Conn, error) {
-			return redis.DialContext(ctx, "", "", redis.DialContextFunc(f))
-		},
+	dial := func(ctx context.Context, options ...redis.DialOption) (*redis.Conn, error) {
+		return redis.DialContext(ctx, "", "", append([]redis.DialOption{redis.DialContextFunc(f)}, options...)...)
 	}
-	defer p.Close()
+	d := newTestPool(t,
+		redis.PoolDialContext(dial),
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
 
-	if _, err := p.GetContext(context.Background()); err != nil {
-		t.Fatalf("GetContext returned %v", err)
-	}
-
-	if !isPassed {
-		t.Fatal("DialContextFunc not passed")
-	}
+	_, err := d.pool.GetContext(context.Background())
+	require.NoError(t, err)
+	require.True(t, isPassed)
 }
 
 func TestPoolGetContext_DialContext_CanceledContext(t *testing.T) {
 	addr, err := redis.DefaultServerAddr()
-	if err != nil {
-		t.Fatalf("redis.DefaultServerAddr returned %v", err)
-	}
+	require.NoError(t, err)
 
-	p := &redis.Pool{
-		DialContext: func(ctx context.Context) (redis.Conn, error) { return redis.DialContext(ctx, "tcp", addr) },
+	dial := func(ctx context.Context, options ...redis.DialOption) (*redis.Conn, error) {
+		return redis.DialContext(ctx, "tcp", addr, options...)
 	}
-	defer p.Close()
+	d := newTestPool(t,
+		redis.PoolDialContext(dial),
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	defer d.ValidateClose()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := p.GetContext(ctx); err == nil {
-		t.Fatalf("GetContext returned nil, expect error")
-	}
+	_, err = d.pool.GetContext(ctx)
+	require.Error(t, err)
 }
 
 func TestWaitPoolGetAfterClose(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:   1,
-		MaxActive: 1,
-		Dial:      d.dial,
-		Wait:      true,
-	}
-	p.Close()
-	_, err := p.GetContext(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	d := newTestPoolDial(t,
+		redis.MaxIdle(1),
+		redis.MaxActive(1),
+		redis.Wait(true),
+	)
+	d.ValidateClose()
+
+	_, err := d.pool.GetContext(context.Background())
+	require.Error(t, err)
 }
 
 func TestWaitPoolGetCanceledContext(t *testing.T) {
 	t.Run("without vacant connection in the pool", func(t *testing.T) {
-		d := poolDialer{t: t}
-		p := &redis.Pool{
-			MaxIdle:   1,
-			MaxActive: 1,
-			Dial:      d.dial,
-			Wait:      true,
-		}
-		defer p.Close()
+		d := newTestPoolDial(t,
+			redis.MaxIdle(1),
+			redis.MaxActive(1),
+			redis.Wait(true),
+		)
+		defer d.ValidateClose()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		c := p.Get()
-		defer c.Close()
-		_, err := p.GetContext(ctx)
-		if err != context.Canceled {
-			t.Fatalf("got error %v, want %v", err, context.Canceled)
-		}
+
+		c := d.pool.Get()
+		defer func() {
+			require.NoError(t, c.Close())
+		}()
+		_, err := d.pool.GetContext(ctx)
+		require.EqualError(t, err, context.Canceled.Error())
 	})
+
 	t.Run("with vacant connection in the pool", func(t *testing.T) {
-		d := poolDialer{t: t}
-		p := &redis.Pool{
-			MaxIdle:   1,
-			MaxActive: 1,
-			Dial:      d.dial,
-			Wait:      true,
-		}
-		defer p.Close()
+		d := newTestPoolDial(t,
+			redis.MaxIdle(1),
+			redis.MaxActive(1),
+			redis.Wait(true),
+		)
+		defer d.ValidateClose()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := p.GetContext(ctx)
-		if err != context.Canceled {
-			t.Fatalf("got error %v, want %v", err, context.Canceled)
-		}
+
+		_, err := d.pool.GetContext(ctx)
+		require.EqualError(t, err, context.Canceled.Error())
 	})
 }

@@ -48,14 +48,17 @@ type commandAction struct {
 }
 
 // update updates the connection state based on the command and arguments if needed.
-func (cs *connectionState) update(info map[string]*commandAction, first string, args ...interface{}) {
-	*cs &^= stateClientReplySkip
-	if *cs&stateClientReplySkipNext != 0 {
-		*cs |= stateClientReplySkip
-		*cs &^= stateClientReplySkipNext
+func (cs *connectionState) update(info map[string]*commandAction, first bool, arg0 string, args ...interface{}) {
+	if first {
+		if *cs&stateClientReplySkipNext != 0 {
+			*cs &^= stateClientReplySkipNext
+			*cs |= stateClientReplySkip
+		} else {
+			*cs &^= stateClientReplySkip
+		}
 	}
 
-	ci, ok := info[first]
+	ci, ok := info[arg0]
 	if !ok {
 		// No match.
 		return
@@ -72,12 +75,12 @@ func (cs *connectionState) update(info map[string]*commandAction, first string, 
 		return
 	}
 
-	first, ok = args[0].(string)
+	arg0, ok = args[0].(string)
 	if !ok {
 		// No match due type miss-match.
 		return
 	}
 
 	// Check the next argument.
-	cs.update(ci.Next, first, args[1:]...)
+	cs.update(ci.Next, false, arg0, args[1:]...)
 }

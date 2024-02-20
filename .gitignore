@@ -1,0 +1,6 @@
+*.log
+*.patch
+*.bak
+
+// Editors
+.vscode

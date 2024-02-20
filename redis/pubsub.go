@@ -51,7 +51,7 @@ type Pong struct {
 
 // PubSubConn wraps a Conn with convenience methods for subscribers.
 type PubSubConn struct {
-	Conn Conn
+	Conn *Conn
 }
 
 // Close closes the connection.
@@ -114,14 +114,14 @@ func (c PubSubConn) Receive() interface{} {
 // ReceiveWithTimeout is like Receive, but it allows the application to
 // override the connection's default timeout.
 func (c PubSubConn) ReceiveWithTimeout(timeout time.Duration) interface{} {
-	return c.receiveInternal(ReceiveWithTimeout(c.Conn, timeout))
+	return c.receiveInternal(c.Conn.ReceiveWithTimeout(timeout))
 }
 
 // ReceiveContext is like Receive, but it allows termination of the receive
 // via a Context. If the call returns due to closure of the context's Done
 // channel the underlying Conn will have been closed.
 func (c PubSubConn) ReceiveContext(ctx context.Context) interface{} {
-	return c.receiveInternal(ReceiveContext(c.Conn, ctx))
+	return c.receiveInternal(c.Conn.ReceiveContext(ctx))
 }
 
 func (c PubSubConn) receiveInternal(replyArg interface{}, errArg error) interface{} {

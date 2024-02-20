@@ -152,7 +152,7 @@ var replyTests = []struct {
 }
 
 func getSlowLog() (redis.SlowLog, error) {
-	slowLogs, _ := redis.SlowLogs([]interface{}{[]interface{}{int64(1), int64(1579625870), int64(3), []interface{}{"set", "x", "y"}, "localhost:1234", "testClient"}}, nil)
+	slowLogs, err := redis.SlowLogs([]interface{}{[]interface{}{int64(1), int64(1579625870), int64(3), []interface{}{"set", "x", "y"}, "localhost:1234", "testClient"}}, nil)
 	if err != nil {
 		return redis.SlowLog{}, err
 	}
@@ -319,7 +319,7 @@ func TestLatencyHistories(t *testing.T) {
 }
 
 // dial wraps DialDefaultServer() with a more suitable function name for examples.
-func dial() (redis.Conn, error) {
+func dial() (*redis.Conn, error) {
 	return redis.DialDefaultServer()
 }
 

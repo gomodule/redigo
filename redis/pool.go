@@ -15,7 +15,6 @@
 package redis
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha1"
@@ -28,24 +27,108 @@ import (
 )
 
 var (
-	_ ConnWithTimeout = (*activeConn)(nil)
-	_ ConnWithTimeout = (*errorConn)(nil)
-	_ ConnWithContext = (*activeConn)(nil)
-	_ ConnWithContext = (*errorConn)(nil)
-
+	nowFunc           = time.Now // for testing
 	errMonitorEnabled = errors.New("redigo: monitor enabled")
+	errConnClosed     = errors.New("redigo: connection closed")
+
+	// ErrPoolClosed is returned from a pool get when the pool is closed.
+	ErrPoolClosed = errors.New("redigo: get on closed pool")
+
+	// ErrPoolExhausted is returned from a pool connection method (Do, Send,
+	// Receive, Flush, Err) when the maximum number of database connections in the
+	// pool has been reached.
+	ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
 )
 
-var nowFunc = time.Now // for testing
+// PoolOption is a function that configures a Pool.
+type PoolOption func(*Pool) error
 
-// ErrPoolExhausted is returned from a pool connection method (Do, Send,
-// Receive, Flush, Err) when the maximum number of database connections in the
-// pool has been reached.
-var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
+// Dial is an application supplied function for creating and configuring a
+// connection.
+//
+// The connection returned from Dial must not be in a special state
+// (subscribed to pubsub channel, transaction started, ...).
+func PoolDial(fn func(options ...DialOption) (*Conn, error)) PoolOption {
+	return PoolDialContext(func(_ context.Context, options ...DialOption) (*Conn, error) {
+		return fn(options...)
+	})
+}
 
-var (
-	errConnClosed = errors.New("redigo: connection closed")
-)
+// DialContext is an application supplied function for creating and configuring a
+// connection with the given context.
+//
+// The connection returned from Dial must not be in a special state
+// (subscribed to pubsub channel, transaction started, ...).
+func PoolDialContext(fn func(ctx context.Context, options ...DialOption) (*Conn, error)) PoolOption {
+	return func(p *Pool) error {
+		p.dialContext = fn
+		return nil
+	}
+}
+
+// TestOnBorrow is an optional application supplied function for checking
+// the health of an idle connection before the connection is used again by
+// the application. Argument t is the time that the connection was returned
+// to the pool. If the function returns an error, then the connection is
+// closed.
+func TestOnBorrow(fn func(ctx context.Context, c *Conn, t time.Time) error) PoolOption {
+	return func(p *Pool) error {
+		p.testOnBorrow = fn
+		return nil
+	}
+}
+
+// Maximum number of idle connections in the pool.
+func MaxIdle(n int) PoolOption {
+	return func(p *Pool) error {
+		p.maxIdle = n
+		return nil
+	}
+}
+
+// Maximum number of connections allocated by the pool at a given time.
+// When zero, there is no limit on the number of connections in the pool.
+func MaxActive(n int) PoolOption {
+	return func(p *Pool) error {
+		p.maxActive = n
+		return nil
+	}
+}
+
+// Close connections after remaining idle for this duration. If the value
+// is zero, then idle connections are not closed. Applications should set
+// the timeout to a value less than the server's timeout.
+func IdleTimeout(d time.Duration) PoolOption {
+	return func(p *Pool) error {
+		p.idleTimeout = d
+		return nil
+	}
+}
+
+// If Wait is true and the pool is at the MaxActive limit, then Get() waits
+// for a connection to be returned to the pool before returning.
+func Wait(b bool) PoolOption {
+	return func(p *Pool) error {
+		p.wait = b
+		return nil
+	}
+}
+
+// Close connections older than this duration. If the value is zero, then
+// the pool does not close connections based on age.
+func MaxConnLifetime(d time.Duration) PoolOption {
+	return func(p *Pool) error {
+		p.maxConnLifetime = d
+		return nil
+	}
+}
+
+func DialOptions(options ...DialOption) PoolOption {
+	return func(p *Pool) error {
+		p.dialOptions = options
+		return nil
+	}
+}
 
 // Pool maintains a pool of connections. The application calls the Get method
 // to get a connection from the pool and the connection's Close method to
@@ -122,47 +205,17 @@ var (
 //	  },
 //	}
 type Pool struct {
-	// Dial is an application supplied function for creating and configuring a
-	// connection.
-	//
-	// The connection returned from Dial must not be in a special state
-	// (subscribed to pubsub channel, transaction started, ...).
-	Dial func() (Conn, error)
+	// Configuration settings.
+	dialContext     func(ctx context.Context, options ...DialOption) (*Conn, error)
+	testOnBorrow    func(ctx context.Context, c *Conn, t time.Time) error
+	maxIdle         int
+	maxActive       int
+	idleTimeout     time.Duration
+	wait            bool
+	maxConnLifetime time.Duration
+	dialOptions     []DialOption
 
-	// DialContext is an application supplied function for creating and configuring a
-	// connection with the given context.
-	//
-	// The connection returned from Dial must not be in a special state
-	// (subscribed to pubsub channel, transaction started, ...).
-	DialContext func(ctx context.Context) (Conn, error)
-
-	// TestOnBorrow is an optional application supplied function for checking
-	// the health of an idle connection before the connection is used again by
-	// the application. Argument t is the time that the connection was returned
-	// to the pool. If the function returns an error, then the connection is
-	// closed.
-	TestOnBorrow func(c Conn, t time.Time) error
-
-	// Maximum number of idle connections in the pool.
-	MaxIdle int
-
-	// Maximum number of connections allocated by the pool at a given time.
-	// When zero, there is no limit on the number of connections in the pool.
-	MaxActive int
-
-	// Close connections after remaining idle for this duration. If the value
-	// is zero, then idle connections are not closed. Applications should set
-	// the timeout to a value less than the server's timeout.
-	IdleTimeout time.Duration
-
-	// If Wait is true and the pool is at the MaxActive limit, then Get() waits
-	// for a connection to be returned to the pool before returning.
-	Wait bool
-
-	// Close connections older than this duration. If the value is zero, then
-	// the pool does not close connections based on age.
-	MaxConnLifetime time.Duration
-
+	// State.
 	mu           sync.Mutex    // mu protects the following fields
 	closed       bool          // set to true when the pool is closed.
 	active       int           // the number of open connections in the pool
@@ -173,11 +226,20 @@ type Pool struct {
 	waitDuration time.Duration // total time waited for new connections.
 }
 
-// NewPool creates a new pool.
-//
-// Deprecated: Initialize the Pool directly as shown in the example.
-func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
-	return &Pool{Dial: newFn, MaxIdle: maxIdle}
+// NewPool creates a new pool with the given options.
+func NewPool(options ...PoolOption) (*Pool, error) {
+	p := &Pool{
+		maxIdle:     10,
+		idleTimeout: 240 * time.Second,
+	}
+
+	for _, option := range options {
+		if err := option(p); err != nil {
+			return nil, err
+		}
+	}
+
+	return p, nil
 }
 
 // Get gets a connection. The application must close the returned connection.
@@ -185,7 +247,7 @@ func NewPool(newFn func() (Conn, error), maxIdle int) *Pool {
 // error handling to the first use of the connection. If there is an error
 // getting an underlying connection, then the connection Err, Do, Send, Flush
 // and Receive methods return that error.
-func (p *Pool) Get() Conn {
+func (p *Pool) Get() *PoolConn {
 	// GetContext returns errorConn in the first argument when an error occurs.
 	c, _ := p.GetContext(context.Background())
 	return c
@@ -199,11 +261,11 @@ func (p *Pool) Get() Conn {
 //
 // If the function completes without error, then the application must close the
 // returned connection.
-func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
+func (p *Pool) GetContext(ctx context.Context) (*PoolConn, error) {
 	// Wait until there is a vacant connection in the pool.
 	waited, err := p.waitVacantConn(ctx)
 	if err != nil {
-		return errorConn{err}, err
+		return newErrorConn(err), err
 	}
 
 	p.mu.Lock()
@@ -214,13 +276,13 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 	}
 
 	// Prune stale connections at the back of the idle list.
-	if p.IdleTimeout > 0 {
+	if p.idleTimeout > 0 {
 		n := p.idle.count
-		for i := 0; i < n && p.idle.back != nil && p.idle.back.t.Add(p.IdleTimeout).Before(nowFunc()); i++ {
+		for i := 0; i < n && p.idle.back != nil && p.idle.back.t.Add(p.idleTimeout).Before(nowFunc()); i++ {
 			pc := p.idle.back
 			p.idle.popBack()
 			p.mu.Unlock()
-			pc.c.Close()
+			pc.conn.Close() //nolint: errcheck
 			p.mu.Lock()
 			p.active--
 		}
@@ -231,11 +293,11 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 		pc := p.idle.front
 		p.idle.popFront()
 		p.mu.Unlock()
-		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
-			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
-			return &activeConn{p: p, pc: pc}, nil
+		if (p.testOnBorrow == nil || p.testOnBorrow(ctx, pc.conn, pc.t) == nil) &&
+			(p.maxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.maxConnLifetime) {
+			return newActiveConn(pc), nil
 		}
-		pc.c.Close()
+		pc.conn.Close() //nolint: errcheck
 		p.mu.Lock()
 		p.active--
 	}
@@ -243,19 +305,18 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 	// Check for pool closed before dialing a new connection.
 	if p.closed {
 		p.mu.Unlock()
-		err := errors.New("redigo: get on closed pool")
-		return errorConn{err}, err
+		return newErrorConn(ErrPoolClosed), ErrPoolClosed
 	}
 
 	// Handle limit for p.Wait == false.
-	if !p.Wait && p.MaxActive > 0 && p.active >= p.MaxActive {
+	if !p.wait && p.maxActive > 0 && p.active >= p.maxActive {
 		p.mu.Unlock()
-		return errorConn{ErrPoolExhausted}, ErrPoolExhausted
+		return newErrorConn(ErrPoolExhausted), ErrPoolExhausted
 	}
 
 	p.active++
 	p.mu.Unlock()
-	c, err := p.dial(ctx)
+	c, err := p.dialContext(ctx, p.dialOptions...)
 	if err != nil {
 		p.mu.Lock()
 		p.active--
@@ -263,9 +324,10 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 			p.ch <- struct{}{}
 		}
 		p.mu.Unlock()
-		return errorConn{err}, err
+		return newErrorConn(err), err
 	}
-	return &activeConn{p: p, pc: &poolConn{c: c, created: nowFunc()}}, nil
+
+	return newActiveConn(newPoolConn(p, c, nowFunc())), nil
 }
 
 // PoolStats contains pool statistics.
@@ -334,18 +396,18 @@ func (p *Pool) Close() error {
 	}
 	p.mu.Unlock()
 	for ; pc != nil; pc = pc.next {
-		pc.c.Close()
+		pc.conn.Close() //nolint: errcheck
 	}
 	return nil
 }
 
 func (p *Pool) lazyInit() {
 	p.initOnce.Do(func() {
-		p.ch = make(chan struct{}, p.MaxActive)
+		p.ch = make(chan struct{}, p.maxActive)
 		if p.closed {
 			close(p.ch)
 		} else {
-			for i := 0; i < p.MaxActive; i++ {
+			for i := 0; i < p.maxActive; i++ {
 				p.ch <- struct{}{}
 			}
 		}
@@ -359,7 +421,7 @@ func (p *Pool) lazyInit() {
 // If there were no vacant connection in the pool right away it returns the time spent waiting
 // for that connection to appear in the pool.
 func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err error) {
-	if !p.Wait || p.MaxActive <= 0 {
+	if !p.wait || p.maxActive <= 0 {
 		// No wait or no connection limit.
 		return 0, nil
 	}
@@ -394,22 +456,12 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 	return 0, nil
 }
 
-func (p *Pool) dial(ctx context.Context) (Conn, error) {
-	if p.DialContext != nil {
-		return p.DialContext(ctx)
-	}
-	if p.Dial != nil {
-		return p.Dial()
-	}
-	return nil, errors.New("redigo: must pass Dial or DialContext to pool")
-}
-
 func (p *Pool) put(pc *poolConn, forceClose bool) error {
 	p.mu.Lock()
 	if !p.closed && !forceClose {
 		pc.t = nowFunc()
 		p.idle.pushFront(pc)
-		if p.idle.count > p.MaxIdle {
+		if p.idle.count > p.maxIdle {
 			pc = p.idle.back
 			p.idle.popBack()
 		} else {
@@ -417,9 +469,10 @@ func (p *Pool) put(pc *poolConn, forceClose bool) error {
 		}
 	}
 
+	var err error
 	if pc != nil {
 		p.mu.Unlock()
-		pc.c.Close()
+		err = pc.conn.Close()
 		p.mu.Lock()
 		p.active--
 	}
@@ -428,13 +481,7 @@ func (p *Pool) put(pc *poolConn, forceClose bool) error {
 		p.ch <- struct{}{}
 	}
 	p.mu.Unlock()
-	return nil
-}
-
-type activeConn struct {
-	p     *Pool
-	pc    *poolConn
-	state connectionState
+	return err
 }
 
 var (
@@ -454,267 +501,217 @@ func initSentinel() {
 	}
 }
 
-func (ac *activeConn) stateUpdate(cmd string, args ...interface{}) {
-	ac.state.update(activeConnActions, cmd, args...)
-}
-
-func (ac *activeConn) Close() error {
-	pc := ac.pc
-	if pc == nil {
-		return nil // Already closed.
+func (pc *PoolConn) activeClose() error {
+	pconn := pc.pc
+	if pc.err != nil {
+		return pc.err // Likely already closed.
 	}
+	pc.pc = nil
 
 	defer func() {
-		ac.pc = nil
+		pc.err = errConnClosed
 	}()
 
-	if ac.state != 0 {
+	if pconn.conn.state != 0 {
 		// Reset the connection state.
-		if err := ac.reset(pc.c); err != nil {
+		if err := pconn.conn.reset(); err != nil {
 			// Force close the connection.
-			ac.p.put(pc, true) //nolint: errcheck
+			pconn.p.put(pconn, true) //nolint: errcheck
 			return fmt.Errorf("reset: %w", err)
 		}
 	}
 
 	// Return the connection to the pool.
-	return ac.p.put(pc, pc.c.Err() != nil)
+	return pconn.p.put(pconn, pconn.conn.Err() != nil)
 }
 
-// reset resets the connection to a clean state.
-func (ac *activeConn) reset(conn Conn) error {
-	if ac.state&stateMonitor != 0 {
-		// RESET is the only way to clear MONITOR and that resets
-		// all state including authentication and DB.
-		// Since we can't detect if AUTH or SELECT commands were
-		// issued during dial, we have to force close the connection.
-		return errMonitorEnabled
+func (pc *PoolConn) activeErr() error {
+	if pc.err != nil {
+		return pc.err
 	}
-
-	// DISCARD first to ensure subsequent commands are processed.
-	if ac.state&stateMulti != 0 {
-		if err := conn.Send("DISCARD"); err != nil {
-			return fmt.Errorf("discard: %w", err)
-		}
-
-		// DISCARD resets WATCH and MULTI.
-		ac.state &^= stateWatch | stateMulti
-	}
-
-	if ac.state&stateClientNoEvict != 0 {
-		if err := conn.Send("CLIENT", "NO-EVICT", "OFF"); err != nil {
-			return fmt.Errorf("client no-evict off: %w", err)
-		}
-		ac.state &^= stateClientNoEvict
-	}
-
-	if ac.state&stateClientNoTouch != 0 {
-		if err := conn.Send("CLIENT", "NO-TOUCH", "OFF"); err != nil {
-			return fmt.Errorf("client no-touch off: %w", err)
-		}
-		ac.state &^= stateClientNoTouch
-	}
-
-	if ac.state&(stateClientReplyOff|stateClientReplySkipNext|stateClientReplySkip) != 0 {
-		if err := conn.Send("CLIENT", "REPLY", "ON"); err != nil {
-			return fmt.Errorf("client reply on: %w", err)
-		}
-		ac.state &^= stateClientReplyOff | stateClientReplySkipNext | stateClientReplySkip
-	}
-
-	if ac.state&stateClientTracking != 0 {
-		if err := conn.Send("CLIENT", "TRACKING", "OFF"); err != nil {
-			return fmt.Errorf("client tracking off: %w", err)
-		}
-		ac.state &^= stateClientTracking
-	}
-
-	if ac.state&statePsubscribe != 0 {
-		if err := conn.Send("PUNSUBSCRIBE"); err != nil {
-			return fmt.Errorf("punsubscribe: %w", err)
-		}
-	}
-
-	if ac.state&stateReadOnly != 0 {
-		if err := conn.Send("READWRITE"); err != nil {
-			return fmt.Errorf("readwrite: %w", err)
-		}
-		ac.state &^= stateReadOnly
-	}
-
-	if ac.state&stateSsubscribe != 0 {
-		if err := conn.Send("SUNSUBSCRIBE"); err != nil {
-			return fmt.Errorf("sunsubscribe: %w", err)
-		}
-	}
-
-	if ac.state&stateSubscribe != 0 {
-		if err := conn.Send("UNSUBSCRIBE"); err != nil {
-			return fmt.Errorf("unsubscribe: %w", err)
-		}
-	}
-
-	if ac.state&stateWatch != 0 {
-		if err := conn.Send("UNWATCH"); err != nil {
-			return fmt.Errorf("unwatch: %w", err)
-		}
-		ac.state &^= stateWatch
-	}
-
-	if ac.state&(stateSubscribe|statePsubscribe|stateSsubscribe) != 0 {
-		// Drain subscribed messages.
-		// To detect the end of the message stream, ask the server to echo
-		// a sentinel value and read until we see that value.
-		sentinelOnce.Do(initSentinel)
-		if err := conn.Send("ECHO", sentinel); err != nil {
-			return fmt.Errorf("echo sentinel: %w", err)
-		}
-
-		if err := conn.Flush(); err != nil {
-			return fmt.Errorf("flush: %w", err)
-		}
-
-		for {
-			p, err := conn.Receive()
-			if err != nil {
-				return fmt.Errorf("receive: %w", err)
-			}
-
-			if p, ok := p.([]byte); ok && bytes.Equal(p, sentinel) {
-				ac.state &^= stateSubscribe | statePsubscribe | stateSsubscribe
-				return nil // End of message stream.
-			}
-		}
-	}
-
-	// Ensure any pending reads have completed.
-	_, err := conn.Do("")
-	return err
+	return pc.pc.conn.Err()
 }
 
-func (ac *activeConn) Err() error {
-	pc := ac.pc
-	if pc == nil {
-		return errConnClosed
-	}
-	return pc.c.Err()
+func (pc *PoolConn) activeDo(commandName string, args ...interface{}) (reply interface{}, err error) {
+	return pc.DoContext(context.Background(), commandName, args...)
 }
 
-func (ac *activeConn) DoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error) {
-	pc := ac.pc
-	if pc == nil {
-		return nil, errConnClosed
+func (pc *PoolConn) activeDoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error) {
+	if pc.err != nil {
+		return nil, pc.err
 	}
-	cwc, ok := pc.c.(ConnWithContext)
-	if !ok {
-		return nil, errContextNotSupported
-	}
-	ac.stateUpdate(commandName, args...)
 
-	return cwc.DoContext(ctx, commandName, args...)
+	return pc.pc.conn.DoContext(ctx, commandName, args...)
 }
 
-func (ac *activeConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
-	pc := ac.pc
-	if pc == nil {
-		return nil, errConnClosed
+func (pc *PoolConn) activeSend(commandName string, args ...interface{}) error {
+	if pc.err != nil {
+		return pc.err
 	}
-	ac.stateUpdate(commandName, args...)
 
-	return pc.c.Do(commandName, args...)
+	return pc.pc.conn.Send(commandName, args...)
 }
 
-func (ac *activeConn) DoWithTimeout(timeout time.Duration, commandName string, args ...interface{}) (reply interface{}, err error) {
-	pc := ac.pc
-	if pc == nil {
-		return nil, errConnClosed
+func (pc *PoolConn) activeFlush() error {
+	if pc.err != nil {
+		return pc.err
 	}
-	cwt, ok := pc.c.(ConnWithTimeout)
-	if !ok {
-		return nil, errTimeoutNotSupported
-	}
-	ac.stateUpdate(commandName, args...)
 
-	return cwt.DoWithTimeout(timeout, commandName, args...)
+	return pc.pc.conn.Flush()
 }
 
-func (ac *activeConn) Send(commandName string, args ...interface{}) error {
-	pc := ac.pc
-	if pc == nil {
-		return errConnClosed
-	}
-	ac.stateUpdate(commandName, args...)
-
-	return pc.c.Send(commandName, args...)
+func (pc *PoolConn) activeReceive() (reply interface{}, err error) {
+	return pc.activeReceiveContext(context.Background())
 }
 
-func (ac *activeConn) Flush() error {
-	pc := ac.pc
-	if pc == nil {
-		return errConnClosed
+func (pc *PoolConn) activeReceiveContext(ctx context.Context) (reply interface{}, err error) {
+	if pc.err != nil {
+		return nil, pc.err
 	}
-	return pc.c.Flush()
+	return pc.pc.conn.ReceiveContext(ctx)
 }
 
-func (ac *activeConn) Receive() (reply interface{}, err error) {
-	pc := ac.pc
-	if pc == nil {
-		return nil, errConnClosed
-	}
-	return pc.c.Receive()
+type PoolConn struct {
+	// pc is the underling pool connection which will be returned to the pool
+	// when the connection is closed.
+	pc *poolConn
+
+	// err is the error returned if we failed to acquire the connection.
+	err error
+
+	// Base / chained connection methods.
+	do                 func(string, ...interface{}) (interface{}, error)
+	doContext          func(context.Context, string, ...interface{}) (interface{}, error)
+	send               func(string, ...interface{}) error
+	error              func() error
+	close              func() error
+	flush              func() error
+	receive            func() (interface{}, error)
+	receiveContext     func(context.Context) (interface{}, error)
+	receiveWithTimeout func(time.Duration) (interface{}, error)
 }
 
-func (ac *activeConn) ReceiveContext(ctx context.Context) (reply interface{}, err error) {
-	pc := ac.pc
-	if pc == nil {
-		return nil, errConnClosed
+func newPoolConn(pool *Pool, conn *Conn, created time.Time) *poolConn {
+	return &poolConn{
+		p:       pool,
+		conn:    conn,
+		created: created,
 	}
-	cwt, ok := pc.c.(ConnWithContext)
-	if !ok {
-		return nil, errContextNotSupported
-	}
-	return cwt.ReceiveContext(ctx)
 }
 
-func (ac *activeConn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
-	pc := ac.pc
-	if pc == nil {
-		return nil, errConnClosed
-	}
-	cwt, ok := pc.c.(ConnWithTimeout)
-	if !ok {
-		return nil, errTimeoutNotSupported
-	}
-	return cwt.ReceiveWithTimeout(timeout)
+func (p *PoolConn) Do(commandName string, args ...interface{}) (interface{}, error) {
+	return p.do(commandName, args...)
 }
 
-type errorConn struct{ err error }
+func (p *PoolConn) DoContext(ctx context.Context, commandName string, args ...interface{}) (interface{}, error) {
+	return p.doContext(ctx, commandName, args...)
+}
 
-func (ec errorConn) Do(string, ...interface{}) (interface{}, error) { return nil, ec.err }
-func (ec errorConn) DoContext(context.Context, string, ...interface{}) (interface{}, error) {
-	return nil, ec.err
+func (p *PoolConn) Send(commandName string, args ...interface{}) error {
+	return p.send(commandName, args...)
 }
-func (ec errorConn) DoWithTimeout(time.Duration, string, ...interface{}) (interface{}, error) {
-	return nil, ec.err
+
+func (p *PoolConn) Err() error {
+	return p.error()
 }
-func (ec errorConn) Send(string, ...interface{}) error                     { return ec.err }
-func (ec errorConn) Err() error                                            { return ec.err }
-func (ec errorConn) Close() error                                          { return nil }
-func (ec errorConn) Flush() error                                          { return ec.err }
-func (ec errorConn) Receive() (interface{}, error)                         { return nil, ec.err }
-func (ec errorConn) ReceiveContext(context.Context) (interface{}, error)   { return nil, ec.err }
-func (ec errorConn) ReceiveWithTimeout(time.Duration) (interface{}, error) { return nil, ec.err }
+
+func (p *PoolConn) Close() error {
+	return p.close()
+}
+
+func (p *PoolConn) Flush() error {
+	return p.flush()
+}
+
+func (p *PoolConn) Receive() (interface{}, error) {
+	return p.receive()
+}
+
+func (p *PoolConn) ReceiveContext(ctx context.Context) (interface{}, error) {
+	return p.receiveContext(ctx)
+}
+
+func (p *PoolConn) ReceiveWithTimeout(timeout time.Duration) (interface{}, error) {
+	return p.receiveWithTimeout(timeout)
+}
+
+type poolConn struct {
+	p          *Pool
+	conn       *Conn
+	t          time.Time
+	created    time.Time
+	next, prev *poolConn
+}
+
+func newActiveConn(pc *poolConn) *PoolConn {
+	c := &PoolConn{
+		pc: pc,
+	}
+
+	c.close = c.activeClose
+	c.do = c.activeDo
+	c.doContext = c.activeDoContext
+	c.error = c.activeErr
+	c.flush = c.activeFlush
+	c.receive = c.activeReceive
+	c.receiveContext = c.activeReceiveContext
+	c.send = c.activeSend
+
+	return c
+}
+
+func newErrorConn(err error) *PoolConn {
+	pc := &PoolConn{
+		err: err,
+	}
+
+	pc.close = pc.errClose
+	pc.do = pc.errDo
+	pc.doContext = pc.errDoContext
+	pc.error = pc.errErr
+	pc.flush = pc.errFlush
+	pc.receive = pc.errReceive
+	pc.receiveContext = pc.errReceiveContext
+	pc.send = pc.errSend
+
+	return pc
+}
+
+func (pc *PoolConn) errDo(string, ...interface{}) (interface{}, error) {
+	return nil, pc.err
+}
+
+func (pc *PoolConn) errDoContext(context.Context, string, ...interface{}) (interface{}, error) {
+	return nil, pc.err
+}
+
+func (pc *PoolConn) errSend(string, ...interface{}) error {
+	return pc.err
+}
+
+func (pc *PoolConn) errErr() error {
+	return pc.err
+}
+
+func (pc *PoolConn) errClose() error {
+	return nil
+}
+
+func (pc *PoolConn) errFlush() error {
+	return pc.err
+}
+
+func (pc *PoolConn) errReceive() (interface{}, error) {
+	return nil, pc.err
+}
+
+func (pc *PoolConn) errReceiveContext(context.Context) (interface{}, error) {
+	return nil, pc.err
+}
 
 type idleList struct {
 	count       int
 	front, back *poolConn
-}
-
-type poolConn struct {
-	c          Conn
-	t          time.Time
-	created    time.Time
-	next, prev *poolConn
 }
 
 func (l *idleList) pushFront(pc *poolConn) {

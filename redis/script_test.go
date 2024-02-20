@@ -23,22 +23,14 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-var (
-	// These variables are declared at package level to remove distracting
-	// details from the examples.
-	c     redis.Conn
-	reply interface{}
-	err   error
-)
-
-func ExampleScript() {
+func ExampleScript(c *redis.Conn) {
 	// Initialize a package-level variable with a script.
-	var getScript = redis.NewScript(1, `return redis.call('get', KEYS[1])`)
+	script := redis.NewScript(1, `return redis.call('get', KEYS[1])`)
 
 	// In a function, use the script Do method to evaluate the script. The Do
 	// method optimistically uses the EVALSHA command. If the script is not
 	// loaded, then the Do method falls back to the EVAL command.
-	reply, err = getScript.Do(c, "foo")
+	_, _ = script.Do(c, "foo") // TODO: improve this example so we can show the result.
 }
 
 func TestScript(t *testing.T) {

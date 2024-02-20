@@ -22,20 +22,16 @@ import (
 	"time"
 )
 
-var (
-	_ ConnWithTimeout = (*loggingConn)(nil)
-)
-
 // NewLoggingConn returns a logging wrapper around a connection.
-func NewLoggingConn(conn Conn, logger *log.Logger, prefix string) Conn {
+func NewLoggingConn(conn *Conn, logger *log.Logger, prefix string) *loggingConn {
 	if prefix != "" {
 		prefix = prefix + "."
 	}
 	return &loggingConn{conn, logger, prefix, nil}
 }
 
-//NewLoggingConnFilter returns a logging wrapper around a connection and a filter function.
-func NewLoggingConnFilter(conn Conn, logger *log.Logger, prefix string, skip func(cmdName string) bool) Conn {
+// NewLoggingConnFilter returns a logging wrapper around a connection and a filter function.
+func NewLoggingConnFilter(conn *Conn, logger *log.Logger, prefix string, skip func(cmdName string) bool) *loggingConn {
 	if prefix != "" {
 		prefix = prefix + "."
 	}
@@ -43,7 +39,7 @@ func NewLoggingConnFilter(conn Conn, logger *log.Logger, prefix string, skip fun
 }
 
 type loggingConn struct {
-	Conn
+	*Conn
 	logger *log.Logger
 	prefix string
 	skip   func(cmdName string) bool
@@ -123,13 +119,13 @@ func (c *loggingConn) Do(commandName string, args ...interface{}) (interface{}, 
 }
 
 func (c *loggingConn) DoContext(ctx context.Context, commandName string, args ...interface{}) (interface{}, error) {
-	reply, err := DoContext(c.Conn, ctx, commandName, args...)
+	reply, err := c.Conn.DoContext(ctx, commandName, args...)
 	c.print("DoContext", commandName, args, reply, err)
 	return reply, err
 }
 
 func (c *loggingConn) DoWithTimeout(timeout time.Duration, commandName string, args ...interface{}) (interface{}, error) {
-	reply, err := DoWithTimeout(c.Conn, timeout, commandName, args...)
+	reply, err := c.Conn.DoWithTimeout(timeout, commandName, args...)
 	c.print("DoWithTimeout", commandName, args, reply, err)
 	return reply, err
 }
@@ -147,13 +143,13 @@ func (c *loggingConn) Receive() (interface{}, error) {
 }
 
 func (c *loggingConn) ReceiveContext(ctx context.Context) (interface{}, error) {
-	reply, err := ReceiveContext(c.Conn, ctx)
+	reply, err := c.Conn.ReceiveContext(ctx)
 	c.print("ReceiveContext", "", nil, reply, err)
 	return reply, err
 }
 
 func (c *loggingConn) ReceiveWithTimeout(timeout time.Duration) (interface{}, error) {
-	reply, err := ReceiveWithTimeout(c.Conn, timeout)
+	reply, err := c.Conn.ReceiveWithTimeout(timeout)
 	c.print("ReceiveWithTimeout", "", nil, reply, err)
 	return reply, err
 }

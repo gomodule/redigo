@@ -699,7 +699,7 @@ func TestDialURL(t *testing.T) {
 	}
 }
 
-func checkPingPong(t *testing.T, buf *bytes.Buffer, c redis.Conn) {
+func checkPingPong(t *testing.T, buf *bytes.Buffer, c *redis.Conn) {
 	resp, err := c.Do("PING")
 	if err != nil {
 		t.Fatal("ping error:", err)
@@ -1115,9 +1115,9 @@ func TestWithTimeout(t *testing.T) {
 					timeout := 10 * time.Minute
 					minDeadline = time.Now().Add(timeout)
 					if recv {
-						_, err = redis.ReceiveWithTimeout(c, timeout)
+						_, err = c.ReceiveWithTimeout(timeout)
 					} else {
-						_, err = redis.DoWithTimeout(c, timeout, "PING")
+						_, err = c.DoWithTimeout(timeout, "PING")
 					}
 					require.NoError(t, err)
 					maxDeadline = time.Now().Add(timeout)

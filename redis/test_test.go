@@ -20,7 +20,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"regexp"
@@ -42,7 +41,7 @@ var (
 	serverAddress  = flag.String("redis-address", "127.0.0.1", "The address of the server")
 	serverBasePort = flag.Int("redis-port", 16379, "Beginning of port range for test servers")
 	serverLogName  = flag.String("redis-log", "", "Write Redis server logs to `filename`")
-	serverLog      = ioutil.Discard
+	serverLog      = io.Discard
 
 	defaultServerMu  sync.Mutex
 	defaultServer    *Server
@@ -196,12 +195,17 @@ func DefaultServerAddr() (string, error) {
 
 // DialDefaultServer starts the test server if not already started and dials a
 // connection to the server.
-func DialDefaultServer(options ...DialOption) (Conn, error) {
+func DialDefaultServer(options ...DialOption) (*Conn, error) {
 	addr, err := DefaultServerAddr()
 	if err != nil {
 		return nil, err
 	}
-	c, err := Dial("tcp", addr, append([]DialOption{DialReadTimeout(1 * time.Second), DialWriteTimeout(1 * time.Second)}, options...)...)
+
+	defaultOptions := []DialOption{
+		DialReadTimeout(1 * time.Second),
+		DialWriteTimeout(1 * time.Second),
+	}
+	c, err := Dial("tcp", addr, append(defaultOptions, options...)...)
 	if err != nil {
 		return nil, err
 	}

@@ -21,7 +21,7 @@ import (
 )
 
 // zpop pops a value from the ZSET key using WATCH/MULTI/EXEC commands.
-func zpop(c redis.Conn, key string) (result string, err error) {
+func zpop(c *redis.Conn, key string) (result string, err error) {
 
 	defer func() {
 		// Return connection to normal state on error.
