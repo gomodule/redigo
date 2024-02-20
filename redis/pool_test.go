@@ -48,6 +48,25 @@ func (c *poolTestConn) Close() error {
 func (c *poolTestConn) Err() error { return c.err }
 
 func (c *poolTestConn) Do(commandName string, args ...interface{}) (interface{}, error) {
+	return c.do(c.Conn.Do, commandName, args...)
+}
+
+func (c *poolTestConn) DoContext(ctx context.Context, commandName string, args ...interface{}) (interface{}, error) {
+	cwc, ok := c.Conn.(redis.ConnWithContext)
+	if !ok {
+		return nil, errors.New("redis: connection does not support ConnWithContext")
+	}
+	return c.do(
+		func(c string, a ...interface{}) (interface{}, error) {
+			return cwc.DoContext(ctx, c, a...)
+		},
+		commandName, args)
+}
+
+func (c *poolTestConn) do(
+	fn func(commandName string, args ...interface{}) (interface{}, error),
+	commandName string, args ...interface{},
+) (interface{}, error) {
 	if commandName == "ERR" {
 		c.err = args[0].(error)
 		commandName = "PING"
@@ -55,12 +74,20 @@ func (c *poolTestConn) Do(commandName string, args ...interface{}) (interface{},
 	if commandName != "" {
 		c.d.commands = append(c.d.commands, commandName)
 	}
-	return c.Conn.Do(commandName, args...)
+	return fn(commandName, args...)
 }
 
 func (c *poolTestConn) Send(commandName string, args ...interface{}) error {
 	c.d.commands = append(c.d.commands, commandName)
 	return c.Conn.Send(commandName, args...)
+}
+
+func (c *poolTestConn) ReceiveContext(ctx context.Context) (reply interface{}, err error) {
+	cwc, ok := c.Conn.(redis.ConnWithContext)
+	if !ok {
+		return nil, errors.New("redis: connection does not support ConnWithContext")
+	}
+	return cwc.ReceiveContext(ctx)
 }
 
 type poolDialer struct {
@@ -73,6 +100,10 @@ type poolDialer struct {
 }
 
 func (d *poolDialer) dial() (redis.Conn, error) {
+	return d.dialContext(context.Background())
+}
+
+func (d *poolDialer) dialContext(ctx context.Context) (redis.Conn, error) {
 	d.mu.Lock()
 	d.dialed += 1
 	dialErr := d.dialErr
@@ -80,7 +111,7 @@ func (d *poolDialer) dial() (redis.Conn, error) {
 	if dialErr != nil {
 		return nil, d.dialErr
 	}
-	c, err := redis.DialDefaultServer()
+	c, err := redis.DialDefaultServerContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -90,15 +121,14 @@ func (d *poolDialer) dial() (redis.Conn, error) {
 	return &poolTestConn{d: d, Conn: c}, nil
 }
 
-func (d *poolDialer) dialContext(ctx context.Context) (redis.Conn, error) {
-	return d.dial()
-}
-
 func (d *poolDialer) check(message string, p *redis.Pool, dialed, open, inuse int) {
+	d.t.Helper()
 	d.checkAll(message, p, dialed, open, inuse, 0, 0)
 }
 
 func (d *poolDialer) checkAll(message string, p *redis.Pool, dialed, open, inuse int, waitCountMax int64, waitDurationMax time.Duration) {
+	d.t.Helper()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -368,21 +398,142 @@ func TestPoolConcurrenSendReceive(t *testing.T) {
 }
 
 func TestPoolBorrowCheck(t *testing.T) {
-	d := poolDialer{t: t}
-	p := &redis.Pool{
-		MaxIdle:      2,
-		Dial:         d.dial,
-		TestOnBorrow: func(redis.Conn, time.Time) error { return redis.Error("BLAH") },
+	pingN := func(ctx context.Context, p *redis.Pool, n int) {
+		for i := 0; i < n; i++ {
+			func() {
+				c, err := p.GetContext(ctx)
+				require.NoError(t, err)
+				defer func() {
+					require.NoError(t, c.Close())
+				}()
+				_, err = redis.DoContext(c, ctx, "PING")
+				require.NoError(t, err)
+			}()
+		}
 	}
-	defer p.Close()
 
-	for i := 0; i < 10; i++ {
-		c := p.Get()
-		_, err := c.Do("PING")
-		require.NoError(t, err)
-		c.Close()
+	checkLastUsedTimes := func(lastUsedTimes []time.Time, startTime, endTime time.Time, wantLen int) {
+		require.Len(t, lastUsedTimes, wantLen)
+		for i, lastUsed := range lastUsedTimes {
+			if i == 0 {
+				require.True(t, lastUsed.After(startTime))
+			} else {
+				require.True(t, lastUsed.After(lastUsedTimes[i-1]))
+			}
+			require.True(t, lastUsed.Before(endTime))
+		}
 	}
-	d.check("1", p, 10, 1, 0)
+
+	t.Run("TestOnBorrow-error", func(t *testing.T) {
+		d := poolDialer{t: t}
+		p := &redis.Pool{
+			MaxIdle:      2,
+			DialContext:  d.dialContext,
+			TestOnBorrow: func(redis.Conn, time.Time) error { return redis.Error("BLAH") },
+		}
+		defer p.Close()
+		pingN(context.Background(), p, 10)
+		d.check("1", p, 10, 1, 0)
+	})
+
+	t.Run("TestOnBorrow-nil-error", func(t *testing.T) {
+		d := poolDialer{t: t}
+		var borrowErrs []error
+		var lastUsedTimes []time.Time
+		p := &redis.Pool{
+			MaxIdle:     2,
+			DialContext: d.dialContext,
+			TestOnBorrow: func(c redis.Conn, lastUsed time.Time) error {
+				lastUsedTimes = append(lastUsedTimes, lastUsed)
+				_, err := c.Do("PING")
+				if err != nil {
+					borrowErrs = append(borrowErrs, err)
+				}
+				return err
+			},
+		}
+		defer p.Close()
+
+		startTime := time.Now()
+		pingN(context.Background(), p, 10)
+		endTime := time.Now()
+
+		require.Empty(t, borrowErrs)
+		checkLastUsedTimes(lastUsedTimes, startTime, endTime, 9)
+		d.check("1", p, 1, 1, 0)
+	})
+
+	t.Run("TestOnBorrowContext-error", func(t *testing.T) {
+		d := poolDialer{t: t}
+		p := &redis.Pool{
+			MaxIdle:             2,
+			DialContext:         d.dialContext,
+			TestOnBorrowContext: func(context.Context, redis.Conn, time.Time) error { return redis.Error("BLAH") },
+		}
+		defer p.Close()
+		pingN(context.Background(), p, 10)
+		d.check("1", p, 10, 1, 0)
+	})
+
+	t.Run("TestOnBorrowContext-nil-error", func(t *testing.T) {
+		d := poolDialer{t: t}
+		var borrowErrs []error
+		var lastUsedTimes []time.Time
+		p := &redis.Pool{
+			MaxIdle:     2,
+			DialContext: d.dialContext,
+			TestOnBorrowContext: func(ctx context.Context, c redis.Conn, lastUsed time.Time) error {
+				lastUsedTimes = append(lastUsedTimes, lastUsed)
+				_, err := redis.DoContext(c, ctx, "PING")
+				if err != nil {
+					borrowErrs = append(borrowErrs, err)
+				}
+				return err
+			},
+		}
+		defer p.Close()
+
+		startTime := time.Now()
+		pingN(context.Background(), p, 10)
+		endTime := time.Now()
+
+		require.Empty(t, borrowErrs)
+		checkLastUsedTimes(lastUsedTimes, startTime, endTime, 9)
+		d.check("1", p, 1, 1, 0)
+	})
+
+	t.Run("TestOnBorrowContext-context.Canceled", func(t *testing.T) {
+		d := poolDialer{t: t}
+		var borrowErrs []error
+		p := &redis.Pool{
+			MaxIdle:     2,
+			DialContext: d.dialContext,
+			TestOnBorrowContext: func(ctx context.Context, c redis.Conn, _ time.Time) error {
+				_, err := redis.DoContext(c, ctx, "PING")
+				if err != nil {
+					borrowErrs = append(borrowErrs, err)
+				}
+				return err
+			},
+		}
+		defer p.Close()
+
+		ctx, ctxCancel := context.WithCancel(context.Background())
+		defer ctxCancel()
+
+		pingN(ctx, p, 2)
+		d.check("1", p, 1, 1, 0)
+		require.Empty(t, borrowErrs)
+
+		ctxCancel()
+
+		_, err := p.GetContext(ctx)
+		require.ErrorIs(t, err, context.Canceled)
+
+		d.check("1", p, 2, 0, 0)
+		require.Len(t, borrowErrs, 1)
+		require.ErrorIs(t, borrowErrs[0], context.Canceled)
+	})
 }
 
 func TestPoolMaxActive(t *testing.T) {
@@ -757,7 +908,7 @@ func TestLocking_TestOnBorrowFails_PoolDoesntCrash(t *testing.T) {
 		MaxIdle:   count,
 		MaxActive: count,
 		Dial:      d.dial,
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+		TestOnBorrow: func(redis.Conn, time.Time) error {
 			return errors.New("No way back into the real world.")
 		},
 	}
