@@ -28,13 +28,13 @@ jobs:
         with:
           redis-version: ${{ matrix.redis }}
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-
-      - name: Checkout code
-        uses: actions/checkout@v4
 
       - name: Go Test
         run: go test -race ./...
