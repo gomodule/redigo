@@ -887,7 +887,7 @@ func ExampleDialURL() {
 	defer c.Close()
 }
 
-// TextExecError tests handling of errors in a transaction. See
+// TestExecError tests handling of errors in a transaction. See
 // http://redis.io/topics/transactions for information on how Redis handles
 // errors in a transaction.
 func TestExecError(t *testing.T) {
