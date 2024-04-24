@@ -23,10 +23,10 @@ import (
 	"io"
 	"math"
 	"net"
-	"sync"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -680,6 +680,8 @@ var dialURLTests = []struct {
 	{"database 3", "redis://localhost/3", "+OK\r\n", "*2\r\n$6\r\nSELECT\r\n$1\r\n3\r\n"},
 	{"database 99", "redis://localhost/99", "+OK\r\n", "*2\r\n$6\r\nSELECT\r\n$2\r\n99\r\n"},
 	{"no database", "redis://localhost/", "+OK\r\n", ""},
+	{"database 99", "redis+socket://./server.sock?db=99", "+OK\r\n", "*2\r\n$6\r\nSELECT\r\n$2\r\n99\r\n"},
+	{"no database", "redis+socket://./server.sock", "+OK\r\n", ""},
 }
 
 func TestDialURL(t *testing.T) {
