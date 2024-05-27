@@ -324,8 +324,10 @@ func DialURL(rawurl string, options ...DialOption) (Conn, error) {
 }
 
 // DialURLContext connects to a Redis server at the given URL using the Redis
-// URI scheme. URLs should follow the draft IANA specification for the
-// scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
+// URI scheme. It supports:
+// redis - unencrypted tcp connection
+// rediss - TLS encrypted tcp connection
+// redis+unix - UNIX socket connection
 func DialURLContext(ctx context.Context, rawurl string, options ...DialOption) (Conn, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
@@ -342,68 +344,65 @@ func DialURLContext(ctx context.Context, rawurl string, options ...DialOption) (
 	)
 	switch u.Scheme {
 	case "redis", "rediss":
-		if (u.Host == "" || u.Host == ".") && len(u.Path) > 0 && u.Path[0] == '/' {
-			network = "unix"
+		network = "tcp"
 
-			address = u.Path
-			dbParameter := u.Query().Get("db")
-			if dbParameter != "" {
-				db, err = strconv.Atoi(dbParameter)
+		// As per the IANA draft spec, the host defaults to localhost and
+		// the port defaults to 6379.
+		host, port, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			// assume port is missing
+			host = u.Host
+			port = "6379"
+		}
+		if host == "" {
+			host = "localhost"
+		}
+		address = net.JoinHostPort(host, port)
+		if u.User != nil {
+			password, isSet := u.User.Password()
+			username := u.User.Username()
+			if isSet {
+				if username != "" {
+					// ACL
+					options = append(options, DialUsername(username), DialPassword(password))
+				} else {
+					// requirepass - user-info username:password with blank username
+					options = append(options, DialPassword(password))
+				}
+			} else if username != "" {
+				// requirepass - redis-cli compatibility which treats as single arg in user-info as a password
+				options = append(options, DialPassword(username))
+			}
+		}
+		match := pathDBRegexp.FindStringSubmatch(u.Path)
+		if len(match) == 2 {
+			if len(match[1]) > 0 {
+				db, err = strconv.Atoi(match[1])
 				if err != nil {
 					return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
 				}
-				if db != 0 {
-					options = append(options, DialDatabase(db))
-				}
 			}
-		} else {
-			network = "tcp"
-
-			// As per the IANA draft spec, the host defaults to localhost and
-			// the port defaults to 6379.
-			host, port, err := net.SplitHostPort(u.Host)
+			if db != 0 {
+				options = append(options, DialDatabase(db))
+			}
+		} else if u.Path != "" {
+			return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
+		}
+		options = append(options, DialUseTLS(u.Scheme == "rediss"))
+	case "redis+unix":
+		network = "unix"
+		address = u.Path
+		dbParameter := u.Query().Get("db")
+		if dbParameter != "" {
+			db, err = strconv.Atoi(dbParameter)
 			if err != nil {
-				// assume port is missing
-				host = u.Host
-				port = "6379"
-			}
-			if host == "" {
-				host = "localhost"
-			}
-			address = net.JoinHostPort(host, port)
-			if u.User != nil {
-				password, isSet := u.User.Password()
-				username := u.User.Username()
-				if isSet {
-					if username != "" {
-						// ACL
-						options = append(options, DialUsername(username), DialPassword(password))
-					} else {
-						// requirepass - user-info username:password with blank username
-						options = append(options, DialPassword(password))
-					}
-				} else if username != "" {
-					// requirepass - redis-cli compatibility which treats as single arg in user-info as a password
-					options = append(options, DialPassword(username))
-				}
-			}
-			match := pathDBRegexp.FindStringSubmatch(u.Path)
-			if len(match) == 2 {
-				if len(match[1]) > 0 {
-					db, err = strconv.Atoi(match[1])
-					if err != nil {
-						return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
-					}
-				}
-				if db != 0 {
-					options = append(options, DialDatabase(db))
-				}
-			} else if u.Path != "" {
 				return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
 			}
+			if db != 0 {
+				options = append(options, DialDatabase(db))
+			}
 		}
-
-		options = append(options, DialUseTLS(u.Scheme == "rediss"))
+		options = append(options, DialUseTLS(false))
 	default:
 		return nil, fmt.Errorf("invalid redis URL scheme: %s", u.Scheme)
 	}
