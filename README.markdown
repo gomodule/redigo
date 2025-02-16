@@ -3,7 +3,7 @@ Redigo
 
 [![GoDoc](https://godoc.org/github.com/gomodule/redigo/redis?status.svg)](https://pkg.go.dev/github.com/gomodule/redigo/redis)
 
-Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) database.
+Redigo is a [Go](http://golang.org/) client for the [Redis](http://redis.io/) / [Valkey](https://github.com/valkey-io/valkey) database.
 
 Features
 -------
