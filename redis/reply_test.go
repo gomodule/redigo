@@ -270,7 +270,7 @@ func TestLatency(t *testing.T) {
 		Max:    time.Millisecond,
 		Time:   latencyEvent.Time,
 	}
-	require.Equal(t, latencyEvent, expected)
+	require.Equal(t, expected, latencyEvent)
 }
 
 func TestLatencyHistories(t *testing.T) {
