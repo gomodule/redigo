@@ -264,10 +264,14 @@ func TestLatency(t *testing.T) {
 	require.Equal(t, 1, len(latestLatencies))
 
 	latencyEvent := latestLatencies[0]
+
+	// The actual latency might be longer than 1ms
+	require.GreaterOrEqual(t, latencyEvent.Latest, time.Millisecond)
+	require.GreaterOrEqual(t, latencyEvent.Max, time.Millisecond)
 	expected := redis.Latency{
 		Name:   "command",
-		Latest: time.Millisecond,
-		Max:    time.Millisecond,
+		Latest: latencyEvent.Latest,
+		Max:    latencyEvent.Max,
 		Time:   latencyEvent.Time,
 	}
 	require.Equal(t, expected, latencyEvent)
@@ -315,7 +319,8 @@ func TestLatencyHistories(t *testing.T) {
 
 	require.Len(t, latencyHistory, 1)
 	latencyEvent := latencyHistory[0]
-	require.Equal(t, time.Millisecond, latencyEvent.ExecutionTime)
+	// The actual latency might be longer than 1ms
+	require.GreaterOrEqual(t, latencyEvent.ExecutionTime, time.Millisecond)
 }
 
 // dial wraps DialDefaultServer() with a more suitable function name for examples.
