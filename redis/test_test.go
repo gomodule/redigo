@@ -63,7 +63,7 @@ type version struct {
 }
 
 func redisServerVersion() (*version, error) {
-	out, err := exec.Command("redis-server", "--version").Output()
+	out, err := exec.Command(*serverPath, "--version").Output()
 	if err != nil {
 		return nil, fmt.Errorf("server version: %w", err)
 	}
