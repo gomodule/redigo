@@ -624,6 +624,22 @@ var dialErrors = []struct {
 		"redis:foo//localhost:6379",
 		"invalid redis URL, url is opaque: redis:foo//localhost:6379",
 	},
+	{
+		"valkey://localhost:6379/abc123",
+		"invalid database: abc123",
+	},
+	{
+		"valkeys://localhost:6379/abc123",
+		"invalid database: abc123",
+	},
+	{
+		"valkey:foo//localhost:6379",
+		"invalid redis URL, url is opaque: valkey:foo//localhost:6379",
+	},
+	{
+		"valkeys:foo//localhost:6379",
+		"invalid redis URL, url is opaque: valkeys:foo//localhost:6379",
+	},
 }
 
 func TestDialURLErrors(t *testing.T) {

@@ -332,7 +332,10 @@ func DialURLContext(ctx context.Context, rawurl string, options ...DialOption) (
 		return nil, err
 	}
 
-	if u.Scheme != "redis" && u.Scheme != "rediss" {
+	switch u.Scheme {
+	case "redis", "rediss", "valkey", "valkeys":
+		// valid scheme
+	default:
 		return nil, fmt.Errorf("invalid redis URL scheme: %s", u.Scheme)
 	}
 
@@ -386,7 +389,7 @@ func DialURLContext(ctx context.Context, rawurl string, options ...DialOption) (
 		return nil, fmt.Errorf("invalid database: %s", u.Path[1:])
 	}
 
-	options = append(options, DialUseTLS(u.Scheme == "rediss"))
+	options = append(options, DialUseTLS(u.Scheme == "rediss" || u.Scheme == "valkeys"))
 
 	return DialContext(ctx, "tcp", address, options...)
 }
