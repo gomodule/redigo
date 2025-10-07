@@ -477,7 +477,7 @@ var errScanStructValue = errors.New("redigo.ScanStruct: value must be non-nil po
 // ScanStruct uses exported field names to match values in the response. Use
 // 'redis' field tag to override the name:
 //
-//      Field int `redis:"myName"`
+//	Field int `redis:"myName"`
 //
 // Fields with the tag redis:"-" are ignored.
 //
@@ -513,9 +513,9 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 			continue
 		}
 
-		name, ok := src[i].([]byte)
+		name, ok := convertToBulk(src[i])
 		if !ok {
-			return fmt.Errorf("redigo.ScanStruct: key %d not a bulk string value", i)
+			return fmt.Errorf("redigo.ScanStruct: key %d not a bulk string value got type: %T", i, src[i])
 		}
 
 		fs := ss.fieldSpec(name)
@@ -528,6 +528,19 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 		}
 	}
 	return nil
+}
+
+// convertToBulk converts src to a []byte if src is a string or bulk string
+// and returns true. Otherwise nil and false is returned.
+func convertToBulk(src interface{}) ([]byte, bool) {
+	switch v := src.(type) {
+	case []byte:
+		return v, true
+	case string:
+		return []byte(v), true
+	default:
+		return nil, false
+	}
 }
 
 var (

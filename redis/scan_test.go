@@ -327,6 +327,22 @@ func TestScanStruct(t *testing.T) {
 	}
 }
 
+func TestScanStructStringKeys(t *testing.T) {
+	reply := []interface{}{"simple", []byte("value"), "number", []byte("123")}
+	expected := &struct {
+		Simple string `redis:"simple"`
+		Number int    `redis:"number"`
+	}{
+		Simple: "value",
+		Number: 123,
+	}
+
+	value := reflect.New(reflect.ValueOf(expected).Type().Elem()).Interface()
+	err := redis.ScanStruct(reply, value)
+	require.NoError(t, err)
+	require.Equal(t, expected, value)
+}
+
 func TestBadScanStructArgs(t *testing.T) {
 	x := []interface{}{"A", "b"}
 	test := func(v interface{}) {
