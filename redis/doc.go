@@ -174,4 +174,35 @@
 // non-recoverable error such as a network error or protocol parsing error. If
 // Err() returns a non-nil value, then the connection is not usable and should
 // be closed.
+//
+// Metrics
+//
+// Metrics regarding the connection pool and its connections are exposed via
+// the pool.Stats() method, which can then be used with your preferred metrics
+// library. 
+// 
+// The below code snippet demonstrates an example using the
+// "github.com/prometheus/client_golang/prometheus" library.
+// Note that all the metrics exposed are gauges, even though the wait count and
+// wait duration are being used as counters - this is required to "set" the
+// value rather than add/increment it.
+//
+//  func collectRedisPoolStats(pool *redis.Pool, maxConn float64) {
+//    ticker := time.NewTicker(5 * time.Second)
+//    redisPoolMax.Set(maxConn)
+//
+//    go func() {
+//      defer ticker.Stop()
+//
+//      for range ticker.C {
+//        stats := pool.Stats()
+//
+//        redisPoolOpen.Set(float64(stats.ActiveCount))
+//        redisPoolInUse.Set(float64(stats.ActiveCount - stats.IdleCount))
+//        redisPoolIdle.Set(float64(stats.IdleCount))
+//        redisPoolWaitCount.Set(float64(stats.WaitCount))
+//        redisPoolWaitDuration.Set(stats.WaitDuration.Seconds())
+//      }
+//    }()
+//  }
 package redis
