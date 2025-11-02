@@ -291,6 +291,7 @@ type PoolStats struct {
 }
 
 // Stats returns pool's statistics.
+// Example usage with metric libraries can be found in the package documentation.
 func (p *Pool) Stats() PoolStats {
 	p.mu.Lock()
 	stats := PoolStats{
