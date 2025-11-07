@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -732,4 +733,160 @@ func LatencyHistories(result interface{}, err error) ([]LatencyHistory, error) {
 	}
 
 	return latencyHistories, nil
+}
+
+// ClientInfo is a helper that parse the CLIENT INFO command output and
+// returns a Client struct.
+func ClientInfo(result interface{}, err error) (*Client, error) {
+	rawInfo, err := String(result, err)
+	if err != nil {
+		return nil, fmt.Errorf("redigo: client info is not a string: %w", err)
+	}
+
+	return parseClientInfo(strings.TrimSpace(rawInfo))
+}
+
+func parseClientInfo(input string) (*Client, error) {
+	info := &Client{}
+	var err error
+	for _, s := range strings.Split(input, " ") {
+		kv := strings.Split(s, "=")
+		if len(kv) != 2 {
+			return nil, fmt.Errorf("redigo: unexpected client info data (%s)", s)
+		}
+		key, val := kv[0], kv[1]
+
+		switch key {
+		case "id":
+			info.ID, err = strconv.ParseInt(val, 10, 64)
+		case "addr":
+			info.Addr = val
+		case "laddr":
+			info.LAddr = val
+		case "fd":
+			info.FD, err = strconv.ParseInt(val, 10, 64)
+		case "name":
+			info.Name = val
+		case "age":
+			var age int
+			if age, err = strconv.Atoi(val); err == nil {
+				info.Age = time.Duration(age) * time.Second
+			}
+		case "idle":
+			var idle int
+			if idle, err = strconv.Atoi(val); err == nil {
+				info.Idle = time.Duration(idle) * time.Second
+			}
+		case "flags":
+			if val == "N" {
+				break
+			}
+			for i := 0; i < len(val); i++ {
+				switch val[i] {
+				case 'S':
+					info.Flags |= ClientSlave
+				case 'O':
+					info.Flags |= ClientSlave | ClientMonitor
+				case 'M':
+					info.Flags |= ClientMaster
+				case 'P':
+					info.Flags |= ClientPubSub
+				case 'x':
+					info.Flags |= ClientMulti
+				case 'b':
+					info.Flags |= ClientBlocked
+				case 't':
+					info.Flags |= ClientTracking
+				case 'R':
+					info.Flags |= ClientTrackingBrokenRedir
+				case 'B':
+					info.Flags |= ClientTrackingBCAST
+				case 'd':
+					info.Flags |= ClientDirtyCAS
+				case 'c':
+					info.Flags |= ClientCloseAfterCommand
+				case 'u':
+					info.Flags |= ClientUnBlocked
+				case 'A':
+					info.Flags |= ClientCloseASAP
+				case 'U':
+					info.Flags |= ClientUnixSocket
+				case 'r':
+					info.Flags |= ClientReadOnly
+				case 'e':
+					info.Flags |= ClientNoEvict
+				case 'T':
+					info.Flags |= ClientNoTouch
+				case 'C':
+					info.Flags |= ClientReplRDBChannel
+				case 'I':
+					info.Flags |= ClientInternal
+				case 'N':
+					// ignore
+				default:
+					return nil, fmt.Errorf("redigo: unexpected client info flags(%s)", string(val[i]))
+				}
+			}
+		case "db":
+			info.DB, err = strconv.Atoi(val)
+		case "sub":
+			info.Sub, err = strconv.Atoi(val)
+		case "psub":
+			info.PSub, err = strconv.Atoi(val)
+		case "ssub":
+			info.SSub, err = strconv.Atoi(val)
+		case "multi":
+			info.Multi, err = strconv.Atoi(val)
+		case "watch":
+			info.Watch, err = strconv.Atoi(val)
+		case "qbuf":
+			info.QueryBuf, err = strconv.Atoi(val)
+		case "qbuf-free":
+			info.QueryBufFree, err = strconv.Atoi(val)
+		case "argv-mem":
+			info.ArgvMem, err = strconv.Atoi(val)
+		case "multi-mem":
+			info.MultiMem, err = strconv.Atoi(val)
+		case "rbs":
+			info.BufferSize, err = strconv.Atoi(val)
+		case "rbp":
+			info.BufferPeak, err = strconv.Atoi(val)
+		case "obl":
+			info.OutputBufferLength, err = strconv.Atoi(val)
+		case "oll":
+			info.OutputListLength, err = strconv.Atoi(val)
+		case "omem":
+			info.OutputMemory, err = strconv.Atoi(val)
+		case "tot-mem":
+			info.TotalMemory, err = strconv.Atoi(val)
+		case "events":
+			info.Events = val
+		case "cmd":
+			info.LastCmd = val
+		case "user":
+			info.User = val
+		case "redir":
+			info.Redir, err = strconv.ParseInt(val, 10, 64)
+		case "resp":
+			info.Resp, err = strconv.Atoi(val)
+		case "lib-name":
+			info.LibName = val
+		case "lib-ver":
+			info.LibVer = val
+		case "io-thread":
+			info.IoThread, err = strconv.Atoi(val)
+		case "tot-net-in":
+			info.TotalNetIn, err = strconv.Atoi(val)
+		case "tot-net-out":
+			info.TotalNetOut, err = strconv.Atoi(val)
+		case "tot-cmds":
+			info.TotalCmds, err = strconv.Atoi(val)
+		default:
+			return nil, fmt.Errorf("redigo: unexpected client info key(%s)", key)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("redigo: invalid client info value(%s): %w", val, err)
+		}
+	}
+	return info, nil
 }

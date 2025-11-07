@@ -211,3 +211,102 @@ type LatencyHistory struct {
 	// ExecutationTime is the amount of time needed for the command execution.
 	ExecutionTime time.Duration
 }
+
+// ClientFlags is redis-server client flags, copy from redis/src/server.h (redis 8.2)
+type ClientFlags uint64
+
+const (
+	ClientSlave                 ClientFlags = 1 << iota /* This client is a replica */
+	ClientMaster                                        /* This client is a master */
+	ClientMonitor                                       /* This client is a slave monitor, see MONITOR */
+	ClientMulti                                         /* This client is in a MULTI context */
+	ClientBlocked                                       /* The client is waiting in a blocking operation */
+	ClientDirtyCAS                                      /* Watched keys modified. EXEC will fail. */
+	ClientCloseAfterReply                               /* Close after writing entire reply. */
+	ClientUnBlocked                                     /* This client was unblocked and is stored in server.unblocked_clients */
+	ClientScript                                        /* This is a non connected client used by Lua */
+	ClientAsking                                        /* Client issued the ASKING command */
+	ClientCloseASAP                                     /* Close this client ASAP */
+	ClientUnixSocket                                    /* Client connected via Unix domain socket */
+	ClientDirtyExec                                     /* EXEC will fail for errors while queueing */
+	ClientMasterForceReply                              /* Queue replies even if is master */
+	ClientForceAOF                                      /* Force AOF propagation of current cmd. */
+	ClientForceRepl                                     /* Force replication of current cmd. */
+	ClientPrePSync                                      /* Instance don't understand PSYNC. */
+	ClientReadOnly                                      /* Cluster client is in read-only state. */
+	ClientPubSub                                        /* Client is in Pub/Sub mode. */
+	ClientPreventAOFProp                                /* Don't propagate to AOF. */
+	ClientPreventReplProp                               /* Don't propagate to slaves. */
+	ClientPreventProp           ClientFlags = ClientPreventAOFProp | ClientPreventReplProp
+	ClientPendingWrite                      /* Client has output to send but a write handler is yet not installed. */
+	ClientReplyOff                          /* Don't send replies to client. */
+	ClientReplySkipNext                     /* Set CLIENT_REPLY_SKIP for next cmd */
+	ClientReplySkip                         /* Don't send just this reply. */
+	ClientLuaDebug                          /* Run EVAL in debug mode. */
+	ClientLuaDebugSync                      /* EVAL debugging without fork() */
+	ClientModule                            /* Non connected client used by some module. */
+	ClientProtected                         /* Client should not be freed for now. */
+	ClientExecutingCommand                  /* Indicates that the client is currently in the process of handling a command. usually this will be marked only during call() however, blocked clients might have this flag kept until they will try to reprocess the command. */
+	ClientPendingCommand                    /* Indicates the client has a fully parsed command ready for execution. */
+	ClientTracking                          /* Client enabled keys tracking in order to perform client side caching. */
+	ClientTrackingBrokenRedir               /* Target client is invalid. */
+	ClientTrackingBCAST                     /* Tracking in BCAST mode. */
+	ClientTrackingOptIn                     /* Tracking in opt-in mode. */
+	ClientTrackingOptOut                    /* Tracking in opt-out mode. */
+	ClientTrackingCaching                   /* CACHING yes/no was given, depending on optin/optout mode. */
+	ClientTrackingNoLoop                    /* Don't send invalidation messages about writes performed by myself.*/
+	ClientInToTable                         /* This client is in the timeout table. */
+	ClientProtocolError                     /* Protocol error chatting with it. */
+	ClientCloseAfterCommand                 /* Close after executing commands and writing entire reply. */
+	ClientDenyBlocking                      /* Indicate that the client should not be blocked. currently, turned on inside MULTI, Lua, RM_Call, and AOF client */
+	ClientReplRDBOnly                       /* This client is a replica that only wants RDB without replication buffer. */
+	ClientNoEvict                           /* This client is protected against client memory eviction. */
+	ClientAllowOOM                          /* Client used by RM_Call is allowed to fully execute scripts even when in OOM */
+	ClientNoTouch                           /* This client will not touch LFU/LRU stats. */
+	ClientPushing                           /* This client is pushing notifications. */
+	ClientModuleAuthHasResult               /* Indicates a client in the middle of module based auth had been authenticated from the Module. */
+	ClientModulePreventAOFProp              /* Module client do not want to propagate to AOF */
+	ClientModulePreventReplProp             /* Module client do not want to propagate to replica */
+	ClientReExecutingCommand                /* The client is re-executing the command. */
+	ClientReplRDBChannel                    /* Client which is used for RDB delivery as part of RDB channel replication */
+	ClientInternal                          /* Internal client connection */
+)
+
+// Client represents a redis-server client.
+type Client struct {
+	ID                 int64         // redis version 2.8.12, a unique 64-bit client ID
+	Addr               string        // address/port of the client
+	LAddr              string        // address/port of local address client connected to (bind address)
+	FD                 int64         // file descriptor corresponding to the socket
+	Name               string        // the name set by the client with CLIENT SETNAME
+	Age                time.Duration // total duration of the connection in seconds
+	Idle               time.Duration // idle time of the connection in seconds
+	Flags              ClientFlags   // client flags (see below)
+	DB                 int           // current database ID
+	Sub                int           // number of channel subscriptions
+	PSub               int           // number of pattern matching subscriptions
+	SSub               int           // number of shard channel subscriptions. Added in Redis 7.0.3
+	Multi              int           // number of commands in a MULTI/EXEC context
+	Watch              int           // number of keys this client is currently watching. Added in Redis 7.4
+	QueryBuf           int           // qbuf, query buffer length (0 means no query pending)
+	QueryBufFree       int           // qbuf-free, free space of the query buffer (0 means the buffer is full)
+	ArgvMem            int           // incomplete arguments for the next command (already extracted from query buffer)
+	MultiMem           int           // memory is used up by buffered multi commands. Added in Redis 7.0
+	BufferSize         int           // rbs, current size of the client's read buffer in bytes. Added in Redis 7.0
+	BufferPeak         int           // rbp, peak size of the client's read buffer since the client connected. Added in Redis 7.0
+	OutputBufferLength int           // obl, output buffer length
+	OutputListLength   int           // oll, output list length (replies are queued in this list when the buffer is full)
+	OutputMemory       int           // omem, output buffer memory usage
+	TotalMemory        int           // tot-mem, total memory consumed by this client in its various buffers
+	Events             string        // file descriptor events (see below)
+	LastCmd            string        // cmd, last command played
+	User               string        // the authenticated username of the client
+	Redir              int64         // client id of current client tracking redirection
+	Resp               int           // client RESP protocol version. Added in Redis 7.0
+	LibName            string        // client library name. Added in Redis 7.2
+	LibVer             string        // client library version. Added in Redis 7.2
+	IoThread           int           // io-thread, id of I/O thread assigned to the client. Added in Redis 8.0
+	TotalNetIn         int           // tot-net-in, total network input bytes read from this client.
+	TotalNetOut        int           // tot-net-out, total network output bytes sent to this client.
+	TotalCmds          int           // tot-cmds, total count of commands this client executed.
+}

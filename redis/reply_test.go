@@ -323,6 +323,24 @@ func TestLatencyHistories(t *testing.T) {
 	require.GreaterOrEqual(t, latencyEvent.ExecutionTime, time.Millisecond)
 }
 
+func TestCommandsInfo(t *testing.T) {
+	connectionName := "local-client"
+	c, err := redis.DialDefaultServer(redis.DialClientName(connectionName))
+	require.NoError(t, err)
+	defer c.Close()
+
+	reply, err = c.Do("client", "info")
+	require.NoError(t, err)
+
+	result, err := redis.ClientInfo(reply, err)
+	require.NoError(t, err)
+
+	require.Equal(t, result.Name, "local-client")
+	require.Equal(t, result.User, "default")
+	require.Equal(t, result.Events, "r")
+	require.Equal(t, result.DB, 0)
+}
+
 // dial wraps DialDefaultServer() with a more suitable function name for examples.
 func dial() (redis.Conn, error) {
 	return redis.DialDefaultServer()
