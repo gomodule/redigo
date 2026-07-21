@@ -428,6 +428,13 @@ func (c *conn) fatal(err error) error {
 	return err
 }
 
+// isTimeoutError reports whether err is a timeout from a read/write deadline.
+// Timeouts from ReceiveWithTimeout / DoWithTimeout must not close the connection.
+func isTimeoutError(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
 func (c *conn) Err() error {
 	c.mu.Lock()
 	err := c.err
@@ -710,7 +717,8 @@ func (c *conn) Flush() error {
 }
 
 func (c *conn) Receive() (interface{}, error) {
-	return c.ReceiveWithTimeout(c.readTimeout)
+	// Connection-level read timeouts are fatal: the connection may be stuck.
+	return c.receiveWithTimeout(c.readTimeout, true)
 }
 
 func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
@@ -733,7 +741,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	go func() {
 		defer close(endch)
 
-		r, e = c.ReceiveWithTimeout(realTimeout)
+		r, e = c.receiveWithTimeout(realTimeout, true)
 	}()
 	select {
 	case <-ctx.Done():
@@ -743,7 +751,14 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	}
 }
 
+// ReceiveWithTimeout receives a single reply with an explicit deadline.
+// Unlike the connection's default DialReadTimeout path, a deadline timeout
+// here does not close the connection so callers can poll (e.g. pub/sub).
 func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
+	return c.receiveWithTimeout(timeout, false)
+}
+
+func (c *conn) receiveWithTimeout(timeout time.Duration, closeOnTimeout bool) (reply interface{}, err error) {
 	var deadline time.Time
 	if timeout != 0 {
 		deadline = time.Now().Add(timeout)
@@ -753,6 +768,12 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 	}
 
 	if reply, err = c.readReply(); err != nil {
+		if !closeOnTimeout && isTimeoutError(err) {
+			// Clear the deadline so a subsequent receive is not immediately
+			// timed out by a stale past deadline. See #676.
+			_ = c.conn.SetReadDeadline(time.Time{})
+			return nil, err
+		}
 		return nil, c.fatal(err)
 	}
 	// When using pub/sub, the number of receives can be greater than the

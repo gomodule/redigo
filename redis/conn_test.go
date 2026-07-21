@@ -1125,3 +1125,46 @@ func TestWithTimeout(t *testing.T) {
 		}
 	}
 }
+
+
+func TestReceiveWithTimeoutDoesNotCloseConn(t *testing.T) {
+	// Regression for #676: a short ReceiveWithTimeout that hits the deadline
+	// must not permanently close the connection (pub/sub poll loops rely on this).
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	c := redis.NewConn(client, 0, 0)
+	defer c.Close()
+
+	// No data available; short timeout should surface as a timeout error only.
+	_, err := redis.ReceiveWithTimeout(c, 20*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+		t.Fatalf("expected net timeout error, got %T %v", err, err)
+	}
+	if c.Err() != nil {
+		t.Fatalf("connection should remain open after timeout, Conn.Err()=%v", c.Err())
+	}
+
+	// Server can still answer a subsequent command.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Consume the PING request then reply OK.
+		buf := make([]byte, 64)
+		_, _ = server.Read(buf)
+		_, _ = server.Write([]byte("+OK\r\n"))
+	}()
+
+	reply, err := c.Do("PING")
+	if err != nil {
+		t.Fatalf("Do after timeout: %v", err)
+	}
+	if s, _ := redis.String(reply, nil); s != "OK" {
+		t.Fatalf("reply = %v, want OK", reply)
+	}
+	<-done
+}
