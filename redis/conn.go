@@ -633,60 +633,77 @@ var (
 )
 
 func (c *conn) readReply() (interface{}, error) {
+	reply, _, err := c.readReplyBoundary()
+	return reply, err
+}
+
+// readReplyBoundary reads a single reply and additionally reports whether an
+// error (if any) occurred at a clean reply boundary.
+//
+// atBoundary is true only when the error happened before the first line of the
+// reply was fully read. In that case the underlying bufio.Reader still buffers
+// any partially received bytes and the wire is positioned at the start of a
+// reply, so the connection may be safely reused (e.g. an idle pub/sub poll that
+// hits its deadline). Once the first line has been consumed, any later error
+// (partial bulk body, array element) leaves an in-flight reply on the wire;
+// atBoundary is then false and callers must treat the connection as fatal to
+// avoid desynchronising subsequent reads. See #676 and review of #698.
+func (c *conn) readReplyBoundary() (reply interface{}, atBoundary bool, err error) {
 	line, err := c.readLine()
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	if len(line) == 0 {
-		return nil, protocolError("short response line")
+		return nil, false, protocolError("short response line")
 	}
 	switch line[0] {
 	case '+':
 		switch string(line[1:]) {
 		case "OK":
 			// Avoid allocation for frequent "+OK" response.
-			return okReply, nil
+			return okReply, false, nil
 		case "PONG":
 			// Avoid allocation in PING command benchmarks :)
-			return pongReply, nil
+			return pongReply, false, nil
 		default:
-			return string(line[1:]), nil
+			return string(line[1:]), false, nil
 		}
 	case '-':
-		return Error(line[1:]), nil
+		return Error(line[1:]), false, nil
 	case ':':
-		return parseInt(line[1:])
+		n, err := parseInt(line[1:])
+		return n, false, err
 	case '$':
 		n, err := parseLen(line[1:])
 		if n < 0 || err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		p := make([]byte, n)
 		_, err = io.ReadFull(c.br, p)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if line, err := c.readLine(); err != nil {
-			return nil, err
+			return nil, false, err
 		} else if len(line) != 0 {
-			return nil, protocolError("bad bulk string format")
+			return nil, false, protocolError("bad bulk string format")
 		}
-		return p, nil
+		return p, false, nil
 	case '*':
 		n, err := parseLen(line[1:])
 		if n < 0 || err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		r := make([]interface{}, n)
 		for i := range r {
-			r[i], err = c.readReply()
+			r[i], _, err = c.readReplyBoundary()
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		}
-		return r, nil
+		return r, false, nil
 	}
-	return nil, protocolError("unexpected response line")
+	return nil, false, protocolError("unexpected response line")
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {
@@ -767,13 +784,22 @@ func (c *conn) receiveWithTimeout(timeout time.Duration, closeOnTimeout bool) (r
 		return nil, c.fatal(err)
 	}
 
-	if reply, err = c.readReply(); err != nil {
-		if !closeOnTimeout && isTimeoutError(err) {
-			// Clear the deadline so a subsequent receive is not immediately
-			// timed out by a stale past deadline. See #676.
+	var atBoundary bool
+	if reply, atBoundary, err = c.readReplyBoundary(); err != nil {
+		if !closeOnTimeout && atBoundary && isTimeoutError(err) {
+			// The timeout happened before any bytes of a reply were consumed,
+			// so the wire is still positioned at a reply boundary. Clear the
+			// (now stale) deadline and surface the timeout without closing:
+			// callers such as pub/sub poll loops can safely receive again.
+			// See #676.
 			_ = c.conn.SetReadDeadline(time.Time{})
 			return nil, err
 		}
+		// Either a fatal read error, or a timeout that occurred mid-reply
+		// (partial bulk body / array element). A partially consumed reply
+		// leaves the connection desynchronised, so it must be closed to avoid
+		// returning stale bytes to a later Receive. Addresses the wire-state
+		// concern raised in review of #698.
 		return nil, c.fatal(err)
 	}
 	// When using pub/sub, the number of receives can be greater than the
