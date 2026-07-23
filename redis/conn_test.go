@@ -1168,3 +1168,51 @@ func TestReceiveWithTimeoutDoesNotCloseConn(t *testing.T) {
 	}
 	<-done
 }
+
+func TestReceiveWithTimeoutClosesConnWhenRequestInFlight(t *testing.T) {
+	// Wire-state guard raised by @stevenh in review of #698: a clean reply
+	// boundary at timeout is only safe to reuse when nothing is in flight. If a
+	// command has been sent but its reply has not yet arrived, that reply may
+	// still land later; reusing the connection would let it be misread as the
+	// answer to a subsequent receive. In that case the connection MUST be closed
+	// even though the timeout occurred at a boundary.
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	c := redis.NewConn(client, 0, 0)
+	defer c.Close()
+
+	// Drain the outgoing command on the server side but deliberately never
+	// reply, so from the client's perspective a request is outstanding
+	// (pending > 0) with its response still "in flight".
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		buf := make([]byte, 256)
+		_, _ = server.Read(buf)
+	}()
+
+	if err := c.Send("PING"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if err := c.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	<-drained
+
+	// The reply never comes, so the receive times out at a reply boundary while
+	// the PING response is still outstanding.
+	_, err := redis.ReceiveWithTimeout(c, 20*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+		t.Fatalf("expected net timeout error, got %T %v", err, err)
+	}
+	// Because a request was in flight, the connection must be closed to avoid
+	// the late reply corrupting a future receive.
+	if c.Err() == nil {
+		t.Fatal("connection must be closed after boundary timeout with a request in flight")
+	}
+}

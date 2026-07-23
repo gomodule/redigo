@@ -787,19 +787,39 @@ func (c *conn) receiveWithTimeout(timeout time.Duration, closeOnTimeout bool) (r
 	var atBoundary bool
 	if reply, atBoundary, err = c.readReplyBoundary(); err != nil {
 		if !closeOnTimeout && atBoundary && isTimeoutError(err) {
-			// The timeout happened before any bytes of a reply were consumed,
-			// so the wire is still positioned at a reply boundary. Clear the
-			// (now stale) deadline and surface the timeout without closing:
-			// callers such as pub/sub poll loops can safely receive again.
-			// See #676.
-			_ = c.conn.SetReadDeadline(time.Time{})
-			return nil, err
+			// The connection may only be safely reused after a timeout when
+			// BOTH conditions hold:
+			//
+			//  1. atBoundary: the timeout happened before any bytes of a reply
+			//     were consumed, so the wire is positioned at a reply boundary
+			//     and no half-read reply is left buffered.
+			//
+			//  2. c.pending == 0: there is no request whose response is still
+			//     outstanding. If a command has been sent but not yet answered,
+			//     its reply may still arrive later; keeping the connection would
+			//     let that in-flight response be misread as the reply to a
+			//     subsequent receive, corrupting response processing. This is
+			//     the wire-state concern raised by @stevenh in review: a clean
+			//     boundary *now* is not enough if a response could arrive in the
+			//     future. The safe-to-reuse case is an idle poll with nothing in
+			//     flight (e.g. pub/sub waiting for a server push), which is
+			//     exactly what #676 needs.
+			c.mu.Lock()
+			inflight := c.pending
+			c.mu.Unlock()
+			if inflight == 0 {
+				// Clear the (now stale) deadline and surface the timeout
+				// without closing so the caller can receive again. See #676.
+				_ = c.conn.SetReadDeadline(time.Time{})
+				return nil, err
+			}
 		}
-		// Either a fatal read error, or a timeout that occurred mid-reply
-		// (partial bulk body / array element). A partially consumed reply
-		// leaves the connection desynchronised, so it must be closed to avoid
-		// returning stale bytes to a later Receive. Addresses the wire-state
-		// concern raised in review of #698.
+		// Either a fatal read error, a timeout that occurred mid-reply (partial
+		// bulk body / array element), or a boundary timeout while a request is
+		// still in flight. In every one of these cases the connection can no
+		// longer be trusted to stay in sync, so it must be closed to avoid
+		// returning stale or misattributed bytes to a later Receive. Addresses
+		// the wire-state concern raised in review of #698.
 		return nil, c.fatal(err)
 	}
 	// When using pub/sub, the number of receives can be greater than the
