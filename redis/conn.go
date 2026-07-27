@@ -565,7 +565,10 @@ func (c *conn) readLine() ([]byte, error) {
 		p = buf
 	}
 	if err != nil {
-		return nil, err
+		// ReadSlice returns any bytes consumed before the error. Preserve them
+		// so callers can distinguish an idle timeout from a timeout after a
+		// partial response line.
+		return p, err
 	}
 	i := len(p) - 2
 	if i < 0 || p[i] != '\r' {
@@ -640,18 +643,14 @@ func (c *conn) readReply() (interface{}, error) {
 // readReplyBoundary reads a single reply and additionally reports whether an
 // error (if any) occurred at a clean reply boundary.
 //
-// atBoundary is true only when the error happened before the first line of the
-// reply was fully read. In that case the underlying bufio.Reader still buffers
-// any partially received bytes and the wire is positioned at the start of a
-// reply, so the connection may be safely reused (e.g. an idle pub/sub poll that
-// hits its deadline). Once the first line has been consumed, any later error
-// (partial bulk body, array element) leaves an in-flight reply on the wire;
-// atBoundary is then false and callers must treat the connection as fatal to
-// avoid desynchronising subsequent reads. See #676 and review of #698.
+// atBoundary is true only when the error happened before any bytes of the reply
+// were consumed. Once any part of the first line has been read, or a later read
+// fails (bulk body / array element), callers must treat the connection as fatal
+// to avoid desynchronising subsequent reads. See #676 and review of #698.
 func (c *conn) readReplyBoundary() (reply interface{}, atBoundary bool, err error) {
 	line, err := c.readLine()
 	if err != nil {
-		return nil, true, err
+		return nil, len(line) == 0, err
 	}
 	if len(line) == 0 {
 		return nil, false, protocolError("short response line")

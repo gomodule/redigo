@@ -23,10 +23,10 @@ import (
 	"io"
 	"math"
 	"net"
-	"sync"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1126,7 +1126,6 @@ func TestWithTimeout(t *testing.T) {
 	}
 }
 
-
 func TestReceiveWithTimeoutDoesNotCloseConn(t *testing.T) {
 	// Regression for #676: a short ReceiveWithTimeout that hits the deadline
 	// must not permanently close the connection (pub/sub poll loops rely on this).
@@ -1167,6 +1166,35 @@ func TestReceiveWithTimeoutDoesNotCloseConn(t *testing.T) {
 		t.Fatalf("reply = %v, want OK", reply)
 	}
 	<-done
+}
+
+func TestReceiveWithTimeoutClosesConnAfterPartialReplyLine(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	c := redis.NewConn(client, 0, 0)
+	defer c.Close()
+
+	written := make(chan struct{})
+	go func() {
+		defer close(written)
+		// A timeout after any bytes of a response line have been consumed does
+		// not leave the connection at a known RESP boundary.
+		_, _ = server.Write([]byte("+PARTIAL"))
+	}()
+
+	_, err := redis.ReceiveWithTimeout(c, 20*time.Millisecond)
+	<-written
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+		t.Fatalf("expected net timeout error, got %T %v", err, err)
+	}
+	if c.Err() == nil {
+		t.Fatal("connection must be closed after timeout with a partial reply line")
+	}
 }
 
 func TestReceiveWithTimeoutClosesConnWhenRequestInFlight(t *testing.T) {
