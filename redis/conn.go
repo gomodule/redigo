@@ -428,6 +428,13 @@ func (c *conn) fatal(err error) error {
 	return err
 }
 
+// isTimeoutError reports whether err is a timeout from a read/write deadline.
+// Timeouts from ReceiveWithTimeout / DoWithTimeout must not close the connection.
+func isTimeoutError(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
 func (c *conn) Err() error {
 	c.mu.Lock()
 	err := c.err
@@ -558,7 +565,10 @@ func (c *conn) readLine() ([]byte, error) {
 		p = buf
 	}
 	if err != nil {
-		return nil, err
+		// ReadSlice returns any bytes consumed before the error. Preserve them
+		// so callers can distinguish an idle timeout from a timeout after a
+		// partial response line.
+		return p, err
 	}
 	i := len(p) - 2
 	if i < 0 || p[i] != '\r' {
@@ -626,60 +636,73 @@ var (
 )
 
 func (c *conn) readReply() (interface{}, error) {
+	reply, _, err := c.readReplyBoundary()
+	return reply, err
+}
+
+// readReplyBoundary reads a single reply and additionally reports whether an
+// error (if any) occurred at a clean reply boundary.
+//
+// atBoundary is true only when the error happened before any bytes of the reply
+// were consumed. Once any part of the first line has been read, or a later read
+// fails (bulk body / array element), callers must treat the connection as fatal
+// to avoid desynchronising subsequent reads. See #676 and review of #698.
+func (c *conn) readReplyBoundary() (reply interface{}, atBoundary bool, err error) {
 	line, err := c.readLine()
 	if err != nil {
-		return nil, err
+		return nil, len(line) == 0, err
 	}
 	if len(line) == 0 {
-		return nil, protocolError("short response line")
+		return nil, false, protocolError("short response line")
 	}
 	switch line[0] {
 	case '+':
 		switch string(line[1:]) {
 		case "OK":
 			// Avoid allocation for frequent "+OK" response.
-			return okReply, nil
+			return okReply, false, nil
 		case "PONG":
 			// Avoid allocation in PING command benchmarks :)
-			return pongReply, nil
+			return pongReply, false, nil
 		default:
-			return string(line[1:]), nil
+			return string(line[1:]), false, nil
 		}
 	case '-':
-		return Error(line[1:]), nil
+		return Error(line[1:]), false, nil
 	case ':':
-		return parseInt(line[1:])
+		n, err := parseInt(line[1:])
+		return n, false, err
 	case '$':
 		n, err := parseLen(line[1:])
 		if n < 0 || err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		p := make([]byte, n)
 		_, err = io.ReadFull(c.br, p)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if line, err := c.readLine(); err != nil {
-			return nil, err
+			return nil, false, err
 		} else if len(line) != 0 {
-			return nil, protocolError("bad bulk string format")
+			return nil, false, protocolError("bad bulk string format")
 		}
-		return p, nil
+		return p, false, nil
 	case '*':
 		n, err := parseLen(line[1:])
 		if n < 0 || err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		r := make([]interface{}, n)
 		for i := range r {
-			r[i], err = c.readReply()
+			r[i], _, err = c.readReplyBoundary()
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		}
-		return r, nil
+		return r, false, nil
 	}
-	return nil, protocolError("unexpected response line")
+	return nil, false, protocolError("unexpected response line")
 }
 
 func (c *conn) Send(cmd string, args ...interface{}) error {
@@ -710,7 +733,8 @@ func (c *conn) Flush() error {
 }
 
 func (c *conn) Receive() (interface{}, error) {
-	return c.ReceiveWithTimeout(c.readTimeout)
+	// Connection-level read timeouts are fatal: the connection may be stuck.
+	return c.receiveWithTimeout(c.readTimeout, true)
 }
 
 func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
@@ -733,7 +757,7 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	go func() {
 		defer close(endch)
 
-		r, e = c.ReceiveWithTimeout(realTimeout)
+		r, e = c.receiveWithTimeout(realTimeout, true)
 	}()
 	select {
 	case <-ctx.Done():
@@ -743,7 +767,14 @@ func (c *conn) ReceiveContext(ctx context.Context) (interface{}, error) {
 	}
 }
 
+// ReceiveWithTimeout receives a single reply with an explicit deadline.
+// Unlike the connection's default DialReadTimeout path, a deadline timeout
+// here does not close the connection so callers can poll (e.g. pub/sub).
 func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
+	return c.receiveWithTimeout(timeout, false)
+}
+
+func (c *conn) receiveWithTimeout(timeout time.Duration, closeOnTimeout bool) (reply interface{}, err error) {
 	var deadline time.Time
 	if timeout != 0 {
 		deadline = time.Now().Add(timeout)
@@ -752,7 +783,42 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 		return nil, c.fatal(err)
 	}
 
-	if reply, err = c.readReply(); err != nil {
+	var atBoundary bool
+	if reply, atBoundary, err = c.readReplyBoundary(); err != nil {
+		if !closeOnTimeout && atBoundary && isTimeoutError(err) {
+			// The connection may only be safely reused after a timeout when
+			// BOTH conditions hold:
+			//
+			//  1. atBoundary: the timeout happened before any bytes of a reply
+			//     were consumed, so the wire is positioned at a reply boundary
+			//     and no half-read reply is left buffered.
+			//
+			//  2. c.pending == 0: there is no request whose response is still
+			//     outstanding. If a command has been sent but not yet answered,
+			//     its reply may still arrive later; keeping the connection would
+			//     let that in-flight response be misread as the reply to a
+			//     subsequent receive, corrupting response processing. This is
+			//     the wire-state concern raised by @stevenh in review: a clean
+			//     boundary *now* is not enough if a response could arrive in the
+			//     future. The safe-to-reuse case is an idle poll with nothing in
+			//     flight (e.g. pub/sub waiting for a server push), which is
+			//     exactly what #676 needs.
+			c.mu.Lock()
+			inflight := c.pending
+			c.mu.Unlock()
+			if inflight == 0 {
+				// Clear the (now stale) deadline and surface the timeout
+				// without closing so the caller can receive again. See #676.
+				_ = c.conn.SetReadDeadline(time.Time{})
+				return nil, err
+			}
+		}
+		// Either a fatal read error, a timeout that occurred mid-reply (partial
+		// bulk body / array element), or a boundary timeout while a request is
+		// still in flight. In every one of these cases the connection can no
+		// longer be trusted to stay in sync, so it must be closed to avoid
+		// returning stale or misattributed bytes to a later Receive. Addresses
+		// the wire-state concern raised in review of #698.
 		return nil, c.fatal(err)
 	}
 	// When using pub/sub, the number of receives can be greater than the
