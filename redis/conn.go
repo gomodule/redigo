@@ -747,12 +747,17 @@ func (c *conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err
 	var deadline time.Time
 	if timeout != 0 {
 		deadline = time.Now().Add(timeout)
+		defer c.conn.SetReadDeadline(time.Time{})
 	}
 	if err := c.conn.SetReadDeadline(deadline); err != nil {
 		return nil, c.fatal(err)
 	}
 
 	if reply, err = c.readReply(); err != nil {
+		var ne net.Error
+		if timeout != 0 && errors.As(err, &ne) && ne.Timeout() {
+			return nil, err
+		}
 		return nil, c.fatal(err)
 	}
 	// When using pub/sub, the number of receives can be greater than the
