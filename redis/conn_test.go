@@ -23,10 +23,10 @@ import (
 	"io"
 	"math"
 	"net"
-	"sync"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,6 +56,27 @@ func dialTestConn(r string, w io.Writer) redis.DialOption {
 	return redis.DialNetDial(func(network, addr string) (net.Conn, error) {
 		return &testConn{Reader: strings.NewReader(r), Writer: w}, nil
 	})
+}
+
+func TestReceiveWithTimeoutDoesNotCloseConnection(t *testing.T) {
+	c1, c2 := net.Pipe()
+	t.Cleanup(func() { c1.Close(); c2.Close() })
+
+	c, err := redis.Dial("", "", redis.DialNetDial(func(network, addr string) (net.Conn, error) {
+		return c1, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	_, err = redis.ReceiveWithTimeout(c, 20*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout")
+	}
+	if c.Err() != nil {
+		t.Fatalf("timeout should not mark the connection fatal: %v", c.Err())
+	}
 }
 
 type tlsTestConn struct {
