@@ -23,10 +23,10 @@ import (
 	"io"
 	"math"
 	"net"
-	"sync"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -757,41 +757,26 @@ func TestDialUseTLS(t *testing.T) {
 	checkPingPong(t, &buf, c)
 }
 
-type blockedReader struct {
-	ch chan struct{}
-}
-
-func (b blockedReader) Read(p []byte) (n int, err error) {
-	<-b.ch
-	return 0, io.EOF
-}
-
-func dialTestBlockedConn(ch chan struct{}, w io.Writer) redis.DialOption {
-	return redis.DialNetDial(func(network, addr string) (net.Conn, error) {
-		return &testConn{Reader: blockedReader{ch: ch}, Writer: w}, nil
-	})
-}
-
 func TestDialTLSHandshakeTimeout(t *testing.T) {
-	var buf bytes.Buffer
-	ch := make(chan struct{})
-	var err error
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	// Use a net.Conn whose Close unblocks I/O, as HandshakeContext requires.
+	done := make(chan error, 1)
 	go func() {
-		_, err = redis.Dial("tcp", "example.com:6379",
+		_, err := redis.Dial("tcp", "example.com:6379",
 			redis.DialTLSConfig(&clientTLSConfig),
 			redis.DialTLSHandshakeTimeout(time.Millisecond),
-			dialTestBlockedConn(ch, &buf),
+			redis.DialContextFunc(func(context.Context, string, string) (net.Conn, error) { return client, nil }),
 			redis.DialUseTLS(true))
-		close(ch)
+		done <- err
 	}()
 	select {
 	case <-time.After(time.Second):
 		t.Fatal("dial didn't timeout")
-	case <-ch:
-		if err == nil {
-			t.Fatal("dial didn't error")
-		} else if err.Error() != "TLS handshake timeout" {
-			t.Fatal("dial unexpected error:", err)
+	case err := <-done:
+		if err == nil || err.Error() != "TLS handshake timeout" {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	}
 }

@@ -222,6 +222,10 @@ func (tlsHandshakeTimeoutError) Error() string   { return "TLS handshake timeout
 // DialContext connects to the Redis server at the given network and
 // address using the specified options and context.
 func DialContext(ctx context.Context, network, address string, options ...DialOption) (Conn, error) {
+	deadline, _ := ctx.Deadline()
+	if err := commandContextError(ctx, deadline); err != nil {
+		return nil, err
+	}
 	do := dialOptions{
 		dialer: &net.Dialer{
 			Timeout:   time.Second * 30,
@@ -238,6 +242,10 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 
 	netConn, err := do.dialContext(ctx, network, address)
 	if err != nil {
+		return nil, err
+	}
+	if err := commandContextError(ctx, deadline); err != nil {
+		netConn.Close()
 		return nil, err
 	}
 
@@ -258,19 +266,21 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 		}
 
 		tlsConn := tls.Client(netConn, tlsConfig)
-		errc := make(chan error, 2) // buffered so we don't block timeout or Handshake
-		if d := do.tlsHandshakeTimeout; d != 0 {
-			timer := time.AfterFunc(d, func() {
-				errc <- tlsHandshakeTimeoutError{}
-			})
-			defer timer.Stop()
+		handshakeCtx := ctx
+		cancel := func() {}
+		if do.tlsHandshakeTimeout != 0 {
+			handshakeCtx, cancel = context.WithTimeout(ctx, do.tlsHandshakeTimeout)
 		}
-		go func() {
-			errc <- tlsConn.Handshake()
-		}()
-		if err := <-errc; err != nil {
-			// Timeout or Handshake error.
-			netConn.Close() // nolint: errcheck
+		err := tlsConn.HandshakeContext(handshakeCtx)
+		cancel()
+		if err != nil {
+			netConn.Close()
+			if ctxErr := commandContextError(ctx, deadline); ctxErr != nil {
+				return nil, ctxErr
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, tlsHandshakeTimeoutError{}
+			}
 			return nil, err
 		}
 
@@ -291,26 +301,29 @@ func DialContext(ctx context.Context, network, address string, options ...DialOp
 			authArgs = append(authArgs, do.username)
 		}
 		authArgs = append(authArgs, do.password)
-		if _, err := c.DoContext(ctx, "AUTH", authArgs...); err != nil {
+		if _, err := c.DoContextWithTimeout(ctx, do.readTimeout, "AUTH", authArgs...); err != nil {
 			netConn.Close()
 			return nil, err
 		}
 	}
 
 	if do.clientName != "" {
-		if _, err := c.DoContext(ctx, "CLIENT", "SETNAME", do.clientName); err != nil {
+		if _, err := c.DoContextWithTimeout(ctx, do.readTimeout, "CLIENT", "SETNAME", do.clientName); err != nil {
 			netConn.Close()
 			return nil, err
 		}
 	}
 
 	if do.db != 0 {
-		if _, err := c.DoContext(ctx, "SELECT", do.db); err != nil {
+		if _, err := c.DoContextWithTimeout(ctx, do.readTimeout, "SELECT", do.db); err != nil {
 			netConn.Close()
 			return nil, err
 		}
 	}
 
+	if err := commandContextError(ctx, deadline); err != nil {
+		return nil, c.fatal(err)
+	}
 	return c, nil
 }
 
@@ -808,6 +821,10 @@ func (c *conn) DoContext(ctx context.Context, cmd string, args ...interface{}) (
 }
 
 func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...interface{}) (interface{}, error) {
+	return c.doWithTimeout(readTimeout, time.Time{}, cmd, args...)
+}
+
+func (c *conn) doWithTimeout(readTimeout time.Duration, commandDeadline time.Time, cmd string, args ...interface{}) (interface{}, error) {
 	c.mu.Lock()
 	pending := c.pending
 	c.pending = 0
@@ -817,8 +834,12 @@ func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...inte
 		return nil, nil
 	}
 
-	if c.writeTimeout != 0 {
-		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+	if c.writeTimeout != 0 || !commandDeadline.IsZero() {
+		writeDeadline := time.Time{}
+		if c.writeTimeout != 0 {
+			writeDeadline = time.Now().Add(c.writeTimeout)
+		}
+		if err := c.conn.SetWriteDeadline(earlierDeadline(writeDeadline, commandDeadline)); err != nil {
 			return nil, c.fatal(err)
 		}
 	}
@@ -837,7 +858,7 @@ func (c *conn) DoWithTimeout(readTimeout time.Duration, cmd string, args ...inte
 	if readTimeout != 0 {
 		deadline = time.Now().Add(readTimeout)
 	}
-	if err := c.conn.SetReadDeadline(deadline); err != nil {
+	if err := c.conn.SetReadDeadline(earlierDeadline(deadline, commandDeadline)); err != nil {
 		return nil, c.fatal(err)
 	}
 
