@@ -204,23 +204,36 @@ func (p *Pool) Get() Conn {
 // If the function completes without error, then the application must close the
 // returned connection.
 func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
-	// Wait until there is a vacant connection in the pool.
+	if err := poolContextError(ctx); err != nil {
+		return errorConn{err}, err
+	}
 	waited, err := p.waitVacantConn(ctx)
 	if err != nil {
 		return errorConn{err}, err
 	}
+	// The reservation belongs to this call until transferred to an activeConn
+	// or returned with an idle connection. Every other exit releases it once.
+	reserved := true
+	defer func() {
+		if reserved {
+			p.releaseVacancy()
+		}
+	}()
 
 	p.mu.Lock()
-
 	if waited > 0 {
 		p.waitCount++
 		p.waitDuration += waited
 	}
 
-	// Prune stale connections at the back of the idle list.
+	// Prune stale connections without continuing work for a canceled caller.
 	if p.IdleTimeout > 0 {
 		n := p.idle.count
 		for i := 0; i < n && p.idle.back != nil && p.idle.back.t.Add(p.IdleTimeout).Before(nowFunc()); i++ {
+			if err := poolContextError(ctx); err != nil {
+				p.mu.Unlock()
+				return errorConn{err}, err
+			}
 			pc := p.idle.back
 			p.idle.popBack()
 			p.mu.Unlock()
@@ -230,47 +243,108 @@ func (p *Pool) GetContext(ctx context.Context) (Conn, error) {
 		}
 	}
 
-	// Get idle connection from the front of idle list.
 	for p.idle.front != nil {
+		if err := poolContextError(ctx); err != nil {
+			p.mu.Unlock()
+			return errorConn{err}, err
+		}
 		pc := p.idle.front
 		p.idle.popFront()
 		p.mu.Unlock()
-		if (p.TestOnBorrow == nil || p.TestOnBorrow(pc.c, pc.t) == nil) &&
-			(p.TestOnBorrowContext == nil || p.TestOnBorrowContext(ctx, pc.c, pc.t) == nil) &&
-			(p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
-			return &activeConn{p: p, pc: pc}, nil
+		borrowErr := poolContextError(ctx)
+		checked := false
+		if borrowErr == nil && p.TestOnBorrow != nil {
+			borrowErr = p.TestOnBorrow(pc.c, pc.t)
+			checked = true
+		}
+		if borrowErr == nil && poolContextError(ctx) == nil && p.TestOnBorrowContext != nil {
+			borrowErr = p.TestOnBorrowContext(ctx, pc.c, pc.t)
+			checked = true
+		}
+		if ctxErr := poolContextError(ctx); ctxErr != nil {
+			// Keep only an unchecked connection or one whose check succeeded.
+			// A callback error still closes this connection, as documented: Err()
+			// alone cannot prove that a custom callback left no pending replies.
+			forceClose := (checked && borrowErr != nil) || pc.c.Err() != nil ||
+				(p.MaxConnLifetime > 0 && nowFunc().Sub(pc.created) >= p.MaxConnLifetime)
+			reserved = false
+			p.putWithLastUsed(pc, forceClose, false)
+			return errorConn{ctxErr}, ctxErr
+		}
+		if borrowErr == nil && (p.MaxConnLifetime == 0 || nowFunc().Sub(pc.created) < p.MaxConnLifetime) {
+			p.mu.Lock()
+			closed := p.closed
+			p.mu.Unlock()
+			if !closed {
+				reserved = false
+				return &activeConn{p: p, pc: pc}, nil
+			}
 		}
 		pc.c.Close()
 		p.mu.Lock()
 		p.active--
 	}
 
-	// Check for pool closed before dialing a new connection.
+	if err := poolContextError(ctx); err != nil {
+		p.mu.Unlock()
+		return errorConn{err}, err
+	}
 	if p.closed {
 		p.mu.Unlock()
 		err := errors.New("redigo: get on closed pool")
 		return errorConn{err}, err
 	}
-
-	// Handle limit for p.Wait == false.
 	if !p.Wait && p.MaxActive > 0 && p.active >= p.MaxActive {
 		p.mu.Unlock()
 		return errorConn{ErrPoolExhausted}, ErrPoolExhausted
 	}
-
 	p.active++
 	p.mu.Unlock()
-	c, err := p.dial(ctx)
+	// Check again before invoking an application-supplied dialer.
+	var c Conn
+	err = poolContextError(ctx)
+	if err == nil {
+		c, err = p.dial(ctx)
+	}
+	if ctxErr := poolContextError(ctx); ctxErr != nil {
+		err = ctxErr
+	}
+	p.mu.Lock()
+	if err == nil && p.closed {
+		err = errors.New("redigo: get on closed pool")
+	}
 	if err != nil {
-		p.mu.Lock()
 		p.active--
-		if p.ch != nil && !p.closed {
-			p.ch <- struct{}{}
+	}
+	p.mu.Unlock()
+	if err != nil {
+		if c != nil {
+			c.Close()
 		}
-		p.mu.Unlock()
 		return errorConn{err}, err
 	}
+	reserved = false
 	return &activeConn{p: p, pc: &poolConn{c: c, created: nowFunc()}}, nil
+}
+
+// A deadline may expire before the context's cancellation callback is scheduled.
+func poolContextError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+// releaseVacancy serializes token returns with Close closing the channel.
+func (p *Pool) releaseVacancy() {
+	p.mu.Lock()
+	if p.ch != nil && !p.closed {
+		p.ch <- struct{}{}
+	}
+	p.mu.Unlock()
 }
 
 // PoolStats contains pool statistics.
@@ -369,7 +443,9 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 		return 0, nil
 	}
 
+	p.mu.Lock()
 	p.lazyInit()
+	p.mu.Unlock()
 
 	// wait indicates if we believe it will block so its not 100% accurate
 	// however for stats it should be good enough.
@@ -380,14 +456,14 @@ func (p *Pool) waitVacantConn(ctx context.Context) (waited time.Duration, err er
 	}
 
 	select {
-	case <-p.ch:
-		// Additionally check that context hasn't expired while we were waiting,
-		// because `select` picks a random `case` if several of them are "ready".
-		select {
-		case <-ctx.Done():
-			p.ch <- struct{}{}
-			return 0, ctx.Err()
-		default:
+	case _, ok := <-p.ch:
+		if !ok {
+			return 0, errors.New("redigo: get on closed pool")
+		}
+		// select may choose the reservation even when cancellation is ready.
+		if err := poolContextError(ctx); err != nil {
+			p.releaseVacancy()
+			return 0, err
 		}
 	case <-ctx.Done():
 		return 0, ctx.Err()
@@ -410,9 +486,15 @@ func (p *Pool) dial(ctx context.Context) (Conn, error) {
 }
 
 func (p *Pool) put(pc *poolConn, forceClose bool) error {
+	return p.putWithLastUsed(pc, forceClose, true)
+}
+
+func (p *Pool) putWithLastUsed(pc *poolConn, forceClose, updateLastUsed bool) error {
 	p.mu.Lock()
 	if !p.closed && !forceClose {
-		pc.t = nowFunc()
+		if updateLastUsed {
+			pc.t = nowFunc()
+		}
 		p.idle.pushFront(pc)
 		if p.idle.count > p.MaxIdle {
 			pc = p.idle.back

@@ -530,9 +530,8 @@ func TestPoolBorrowCheck(t *testing.T) {
 		_, err := p.GetContext(ctx)
 		require.ErrorIs(t, err, context.Canceled)
 
-		d.check("1", p, 2, 0, 0)
-		require.Len(t, borrowErrs, 1)
-		require.ErrorIs(t, borrowErrs[0], context.Canceled)
+		d.check("1", p, 1, 1, 0)
+		require.Empty(t, borrowErrs)
 	})
 }
 
